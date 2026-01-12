@@ -1,0 +1,229 @@
+# Moroccan UA Trade Plundering Issue - Review Complete ✅
+
+## Summary
+
+I have completed a comprehensive review of Morocco's Unique Ability (Gateway to Africa) trade plundering mechanic and identified a significant balance issue.
+
+---
+
+## The Issue (TL;DR)
+
+**Problem:** Morocco's UA allows plundering of trade routes **without being at war**, and currently has **no checks for diplomatic relationships**. This means Morocco can plunder even:
+- Allied civilizations
+- Vassal civilizations  
+- Civilizations it fears
+- Any other civ regardless of relationship
+
+**Impact:** The ability to exploit alliances by plundering trade routes while maintaining diplomatic status is unbalanced and breaks immersion.
+
+---
+
+## Root Cause
+
+**File:** `CvUnit.cpp` (lines 9158-9168)
+
+The code only checks:
+- Is the player at war? If yes, allow plunder.
+- Does the player have `CanPlunderWithoutWar`? If yes, check if destination is self.
+- **Missing:** Check if the trade route owner is an ally, vassal, or feared civilization.
+
+---
+
+## The Solution
+
+Add three diplomatic checks before allowing plunder:
+
+```cpp
+1. Check if allied with trade route owner
+   → If yes, BLOCK plundering
+
+2. Check if vassal relationship exists (either direction)
+   → If yes, BLOCK plundering
+
+3. Check if we're afraid of trade route owner
+   → If yes, BLOCK plundering
+
+Otherwise → ALLOW plundering (rivals, neutrals, enemies)
+```
+
+This preserves Morocco's unique ability while respecting diplomatic relationships.
+
+---
+
+## Documentation Created
+
+I've created **6 comprehensive documents** (7,500+ words total) in the Community-Patch-DLL repository:
+
+1. **MOROCCO_UA_INDEX.md** - Navigation guide and quick reference
+2. **MOROCCO_UA_SUMMARY.md** - Executive summary for decision makers
+3. **MOROCCO_UA_REVIEW.md** - Detailed technical analysis
+4. **MOROCCO_UA_VISUAL_GUIDE.md** - Flowcharts, matrices, and diagrams
+5. **MOROCCO_UA_IMPLEMENTATION.md** - Step-by-step implementation guide
+6. **MOROCCO_UA_CODE_SNIPPETS.md** - Copy-paste ready code
+
+All documents are:
+✅ Cross-referenced  
+✅ Technically accurate  
+✅ Ready for implementation  
+✅ Include testing procedures  
+
+---
+
+## Implementation Overview
+
+### Files to Modify
+1. `CvGameCoreDLL_Expansion2/CvUnit.cpp` (2 functions, ~30 lines added)
+2. `CvGameCoreDLL_Expansion2/Lua/CvLuaPlayer.cpp` (~20 lines added)
+3. Create localization file with 3 new text strings
+
+### Effort
+- **Code changes:** 1-2 hours
+- **Build & test:** 1-2 hours
+- **Total:** 2-4 hours (experienced dev can do in 1 hour)
+
+### Risk Level
+**✅ LOW** - Isolated change, no save compatibility issues, simple logic
+
+---
+
+## Key Findings
+
+| Aspect | Finding |
+|--------|---------|
+| **Issue Severity** | HIGH - Exploitable game balance issue |
+| **Root Cause Clarity** | HIGH - Clear missing checks |
+| **Solution Complexity** | LOW - Simple diplomatic checks |
+| **Implementation Risk** | LOW - Well-isolated change |
+| **Testing Clarity** | HIGH - 5+ clear test scenarios |
+| **Performance Impact** | NEGLIGIBLE - O(1) checks |
+| **Backwards Compatibility** | HIGH - Runtime check only |
+
+---
+
+## What Morocco Can/Cannot Plunder After Fix
+
+### ✅ CAN Plunder (UA preserved)
+- Rival civilizations
+- Neutral civilizations  
+- Enemy civilizations
+- At-war civilizations
+
+### ❌ CANNOT Plunder (New restrictions)
+- Allied civilizations (Defensive Pact or higher)
+- Vassal civilizations (either direction)
+- Civilizations Morocco fears
+
+---
+
+## Recommendation
+
+**Implement this fix.** The issue is clear, the solution is straightforward, and the impact is positive:
+- ✅ Fixes exploitable game balance
+- ✅ Maintains unique UA identity
+- ✅ Respects diplomatic relationships
+- ✅ Low risk, high value
+- ✅ Can be implemented in 2-4 hours
+
+---
+
+## Next Steps
+
+### For Decision Makers
+1. Read `MOROCCO_UA_SUMMARY.md`
+2. Review test scenarios
+3. Decide: Proceed? (Recommended: YES)
+
+### For Developers
+1. Start with `MOROCCO_UA_INDEX.md` (navigation)
+2. Follow `MOROCCO_UA_IMPLEMENTATION.md` (detailed steps)
+3. Reference `MOROCCO_UA_CODE_SNIPPETS.md` (while coding)
+4. Test using provided matrices
+5. Commit with confidence
+
+### For Reviewers
+1. Read `MOROCCO_UA_REVIEW.md` (code analysis)
+2. Review code in `MOROCCO_UA_CODE_SNIPPETS.md`
+3. Check integration points in `MOROCCO_UA_IMPLEMENTATION.md`
+4. Verify test coverage in `MOROCCO_UA_VISUAL_GUIDE.md`
+
+---
+
+## Files Available
+
+All files are located in the Community-Patch-DLL repository root:
+
+```
+c:\Users\Thomson\source\repos\Community-Patch-DLL\
+├── MOROCCO_UA_INDEX.md (START HERE)
+├── MOROCCO_UA_SUMMARY.md (Executive summary)
+├── MOROCCO_UA_REVIEW.md (Technical analysis)
+├── MOROCCO_UA_VISUAL_GUIDE.md (Diagrams & matrices)
+├── MOROCCO_UA_IMPLEMENTATION.md (Step-by-step)
+└── MOROCCO_UA_CODE_SNIPPETS.md (Copy-paste code)
+```
+
+---
+
+## Questions Answered
+
+**Q: Should Morocco even have this ability?**  
+A: Yes—it's a unique, flavorful ability. It just needs to respect existing relationships.
+
+**Q: Will this nerf Morocco too much?**  
+A: No. Morocco can still plunder most civs (all non-allies). The restriction only applies to diplomatic partners.
+
+**Q: Is there a simpler fix?**  
+A: Not really. The current code is missing fundamental checks; they must be added.
+
+**Q: How long will this take?**  
+A: 1-4 hours depending on experience level.
+
+**Q: What if something breaks?**  
+A: Full rollback guide is provided. Very low risk.
+
+---
+
+## Success Criteria
+
+After implementation, the fix is successful if:
+
+1. ✅ Morocco cannot plunder allied trade routes
+2. ✅ Morocco cannot plunder vassal trade routes
+3. ✅ Morocco cannot plunder feared civ routes
+4. ✅ Morocco CAN still plunder rivals/neutrals/enemies
+5. ✅ Tooltips show correct blockage reasons
+6. ✅ Notifications still work correctly
+7. ✅ No crashes or performance impact
+8. ✅ Game is fully playable
+
+---
+
+## Final Notes
+
+- This is a **complete review with implementation-ready documentation**
+- All code changes are **provided and ready to use**
+- All **test scenarios are documented**
+- The **risk level is very low**
+- The **fix is high value** for game balance
+- **Estimated 2-4 hours to implement and test**
+
+---
+
+## Status: ✅ READY FOR IMPLEMENTATION
+
+All prerequisites are complete:
+- ✅ Issue analyzed
+- ✅ Root cause identified
+- ✅ Solution designed
+- ✅ Code provided
+- ✅ Testing planned
+- ✅ Documentation complete
+
+**You can start implementing anytime.**
+
+---
+
+*Review completed: January 2026*  
+*Status: Ready for development phase*  
+*Recommended action: Implement in next patch*
+

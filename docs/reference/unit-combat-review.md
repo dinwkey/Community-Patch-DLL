@@ -1,0 +1,22 @@
+# Unit Combat Review
+
+## Overview
+- Summarizes how the battle pipeline is orchestrated through sections in `CvUnitCombat` and unit helpers so readers can understand combat resolution, damage math, flanking, and city bombard notifications ([CvGameCoreDLL_Expansion2/CvUnitCombat.cpp#L3224-L3390], [CvGameCoreDLL_Expansion2/CvUnit.cpp#L5238-L17420], [CvGameCoreDLL_Expansion2/CvPlot.cpp#L3688-L3735]).
+- Hooks already documented in the main mechanics doc; this file records any issues/improvements encountered while checking the code.
+
+## Deep Dive
+
+- **Combat flow:** `CvUnitCombat::ResolveCombat` dispatches based on the mission (nuclear/bombing/air sweep/ranged/melee) and produces a `CvCombatInfo` record that routes into the matching `Resolve*` helper while also firing the RED Lua hooks (`CombatResult`, `CombatEnded`) so tactical AI and UI scripts can inspect every attack outcome before experience and promotions are applied ([CvGameCoreDLL_Expansion2/CvUnitCombat.cpp#L3224-L3390]).
+- **Damage math:** `CvUnitCombat::DoDamageMath` takes attacker/defender strength, clamps the minimum damage, applies randomness (multiplied by a deterministic seed), and scales with per-unit modifiers so melee/ranged/air damage comes from one formula that cogs into `CvUnit::getMeleeCombatDamage`, `getMeleeCombatDamageCity`, `getRangeCombatDamage`, and the range bombard helpers ([CvGameCoreDLL_Expansion2/CvUnitCombat.cpp#L3041-L3325], [CvGameCoreDLL_Expansion2/CvUnit.cpp#L5238-L5390]).
+- **Combat odds:** Attack/defense strength are the sides of the odds triangle. `CvUnit::GetMaxAttackStrength` and `GetMaxDefenseStrength` assemble modifiers from terrain effects, adjacent units, promotions, flanking, river crossings, cities, and damage state before multiplying with base strength, while range, air, and interceptor strengths use those outputs to feed the damage math above ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L16275-L17420]).
+- **Promotions:** Every combat resolution path calls `testPromotionReady()` after damage/kill outcomes so that the `CvUnit::PromotionReady()` check inspects the fresh experience totals right after the attacker or defender survives or dies ([CvGameCoreDLL_Expansion2/CvUnitCombat.cpp#L18890-L19320]).
+- **Flanking:** `CvPlot::GetEffectiveFlankingBonus` and `GetEffectiveFlankingBonusAtRange` count adjacent enemy units and multiply by the attacker’s flank modifier plus the global `BONUS_PER_ADJACENT_FRIEND` constant, granting extra attack power for units settled beside weaker stacks ([CvGameCoreDLL_Expansion2/CvPlot.cpp#L3688-L3735]).
+- **City bombardment alerts:** When a unit finishes moving, it sweeps a square of radius `CITY_ATTACK_RANGE` (or the modded `MAX_CITY_ATTACK_RANGE`) and marks any enemy city in range so the UI can show the green artillery/cannon icon and Lua scripts can react ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L20831-L20870]).
+
+## Issues
+- None observed while reviewing the disclosed combat flow. The RED Lua events and post-combat promotion hooks are executed as expected after each resolver path ([CvGameCoreDLL_Expansion2/CvUnitCombat.cpp#L18890-L19320]).
+
+## Improvements
+1. **Clarify damage math constants.** The shared `CvUnitCombat::DoDamageMath` function depends on several global `GD_INT_GET` constants and provides a randomized seed. It would help readers if the constants (`ATTACK_SAME_STRENGTH_MIN_DAMAGE`, `ATTACK_SAME_STRENGTH_POSSIBLE_EXTRA_DAMAGE`, etc.) were documented alongside the function so they can quickly gauge how much randomness and minimum damage the calling code can expect ([CvGameCoreDLL_Expansion2/CvUnitCombat.cpp#L3041-L3325]).
+2. **Explicit flanking visibility.** The flanking bonus logic lives in `CvPlot::GetEffectiveFlankingBonus*`, but there is no in-code remark that ranged units use the `AtRange` version while melee units consult the plot via `CvUnit::GetMaxAttackStrength`/`GetMaxDefenseStrength`. A short comment linking the two code regions could prevent future regressions or confusion ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L16275-L17420], [CvGameCoreDLL_Expansion2/CvPlot.cpp#L3688-L3735]).
+3. **City bombard event resilience.** City in-range detection iterates a square around the unit; if `MOD_EVENTS_CITY_BOMBARD` is disabled, the loop still checks `plotXYWithRangeCheck`. Adding a quick guard or a descriptive comment would make the dependency on the mod option clearer and could avoid redundant checks when the event is off ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L20831-L20870]).
