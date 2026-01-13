@@ -8,6 +8,7 @@
 #include "CvGameCoreDLLPCH.h"
 #include "ICvDLLUserInterface.h"
 #include "CvGameCoreUtils.h"
+#include "CvTypes.h"
 #include "CvMinorCivAI.h"
 #include "CvDiplomacyAI.h"
 #include "CvEconomicAI.h"
@@ -16,6 +17,7 @@
 #include "CvCitySpecializationAI.h"
 #include "cvStopWatch.h"
 #include "CvSpanSerialization.h"
+#include "CvTradeClasses.h"
 
 // must be included after all other headers
 #include "LintFree.h"
@@ -283,6 +285,7 @@ void CvMilitaryAI::Init(CvMilitaryAIStrategyXMLEntries* pAIStrategies, CvPlayer*
 
 	m_aiTempFlavors.init();
 
+	m_previousUnitComposition.init(0);
 	Reset();
 }
 
@@ -292,6 +295,8 @@ void CvMilitaryAI::Uninit()
 	SAFE_DELETE_ARRAY(m_pabUsingStrategy);
 	SAFE_DELETE_ARRAY(m_paiTurnStrategyAdopted);
 	m_aiTempFlavors.uninit();
+
+	m_previousUnitComposition.uninit();
 }
 
 /// Reset AIStrategy status array to all false
@@ -318,6 +323,11 @@ void CvMilitaryAI::Reset()
 	m_eNavalDefenseState = NO_DEFENSE_STATE;
 	m_iNumberOfTimesOpsBuildSkippedOver = 0;
 	m_iNumberOfTimesSettlerBuildSkippedOver = 0;
+
+	// Dynamic Rebalancing initialization (Issue: Dynamic Rebalancing)
+	m_previousUnitComposition.assign(0);
+	m_iLastRebalanceTurn = -1;
+	m_iArmyBalanceScore = 100;
 
 	for (int iI = 0; iI < MAX_MAJOR_CIVS; iI++)
 		m_aiWarFocus[iI] = WARTYPE_UNDEFINED;
@@ -490,6 +500,7 @@ void CvMilitaryAI::DoTurn()
 	ScanForBarbarians();
 	UpdateBaseData();
 	UpdateDefenseState();
+	DetectCombatLosses();  // Dynamic Rebalancing: Check for combat losses (Issue: Dynamic Rebalancing)
 	UpdateMilitaryStrategies();
 	UpdateWarType();
 
@@ -1836,9 +1847,555 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 }
 
 
-/// Update how we're doing on defensive units
+/// Calculate proximity-weighted enemy threat (Issue 4.1: proximity factor)
+int CvMilitaryAI::CalculateProximityWeightedThreat(DomainTypes eDomain)
+{
+	int iProximityThreat = 0;
+	const int PROXIMITY_MULTIPLIER_CLOSE = 2; // Double-count units within 5 tiles
+	const int PROXIMITY_CLOSE_RANGE = 5;
+	const int RANGED_UNIT_MULTIPLIER = 150; // Ranged units worth 1.5x (150%)
+	
+	TeamTypes eTeam = m_pPlayer->getTeam();
+	
+	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+		
+		if(!kLoopPlayer.isAlive()) continue;
+		if(GET_TEAM(kLoopPlayer.getTeam()).isMinorCiv()) continue;
+		if(!GET_TEAM(eTeam).isAtWar(kLoopPlayer.getTeam())) continue; // Skip if not at war
+		
+		int iNumUnits = 0;
+		int iCloseUnits = 0;
+		
+		for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
+			if(!pLoopUnit) continue;
+			
+			if(pLoopUnit->getDomainType() != eDomain) continue;
+			if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
+			
+			int iUnitStrength = pLoopUnit->GetPower();
+			
+			// Adjust threat based on unit type composition (Issue 4.1: unit composition adjustment)
+			if(pLoopUnit->isRangedSupportFire())
+				iUnitStrength = (iUnitStrength * RANGED_UNIT_MULTIPLIER) / 100;
+			
+			iNumUnits += iUnitStrength;
+			
+			// Check proximity to our cities (Issue 4.1: proximity-weighted threat)
+			int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
+			if(iClosestCityDistance >= 0 && iClosestCityDistance <= PROXIMITY_CLOSE_RANGE)
+			{
+				iCloseUnits += iUnitStrength * PROXIMITY_MULTIPLIER_CLOSE;
+			}
+		}
+		
+		iProximityThreat += max(iNumUnits, iCloseUnits);
+	}
+	
+	return iProximityThreat;
+}
+
+/// Assess if enemy armies are moving toward us (Issue 4.1: predict enemy movements)
+bool CvMilitaryAI::AreEnemiesMovingTowardUs(DomainTypes eDomain)
+{
+	TeamTypes eTeam = m_pPlayer->getTeam();
+	const int THREAT_RANGE = 8;
+	
+	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+		
+		if(!kLoopPlayer.isAlive()) continue;
+		if(GET_TEAM(kLoopPlayer.getTeam()).isMinorCiv()) continue;
+		if(!GET_TEAM(eTeam).isAtWar(kLoopPlayer.getTeam())) continue; // Skip if not at war
+		
+		for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
+			if(!pLoopUnit) continue;
+			if(pLoopUnit->getDomainType() != eDomain) continue;
+			if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
+			
+			// Check if unit is moving toward our territory
+			int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
+			if(iClosestCityDistance >= 0 && iClosestCityDistance <= THREAT_RANGE)
+			{
+				return true;
+			}
+		}
+	}
+	
+	return false;
+}
+
+/// Assess allied threats and boost defense if allies are under attack (Issue 4.1: allied threat assessment)
+int CvMilitaryAI::GetAlliedThreatMultiplier()
+{
+	int iMultiplier = 100;
+	TeamTypes eTeam = m_pPlayer->getTeam();
+	
+	// Check if any allies are under heavy threat (Issue 4.1: allied cooperation)
+	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+		if(eLoopPlayer == m_pPlayer->GetID()) continue;
+		
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+		if(!kLoopPlayer.isAlive()) continue;
+		
+		TeamTypes eLoopTeam = kLoopPlayer.getTeam();
+		if(!GET_TEAM(eTeam).isHasMet(eLoopTeam)) continue;
+		
+		// If ally is under attack, slightly boost our defense priority
+		if(GET_TEAM(eLoopTeam).getAtWarCount(false) > 0)
+		{
+			iMultiplier += 10; // Boost by 10% per ally at war
+		}
+	}
+	
+	return min(150, iMultiplier); // Cap at 150% max
+}
+
+/// Issue 7.2: Propagate urgent flavor changes to diplomacy AI immediately
+void CvMilitaryAI::PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues)
+{
+	// Use urgent flavor propagation for immediate effect (Issue 7.2)
+	// This ensures military threat detection immediately influences diplomatic AI decisions
+	CvFlavorManager* pFlavorManager = m_pPlayer->GetFlavorManager();
+	if(pFlavorManager)
+	{
+		// Reason strings for logging
+		const char* szReason = "MILITARY_URGENT_THREAT";
+		pFlavorManager->ChangeActivePersonalityFlavorsUrgent(piDeltaFlavorValues, szReason);
+	}
+}
+
+/// Issue 7.2: Evaluate if a returning trade unit should receive military escort
+CvMilitaryAI::EscortRecommendation CvMilitaryAI::EvaluateTradeUnitEscortMission(int iTradeConnectionID, int* piEscortValue) const
+{
+	CvGameTrade* pTrade = GC.getGame().GetGameTrade();
+	if (!pTrade)
+		return ESCORT_NOT_WORTH;
+
+	int iTradeIndex = pTrade->GetIndexFromID(iTradeConnectionID);
+	if (iTradeIndex < 0)
+		return ESCORT_NOT_WORTH;
+
+	const TradeConnection* pConnection = pTrade->GetConnectionFromIndex(iTradeIndex);
+	if (!pConnection || !pConnection->isValid())
+		return ESCORT_NOT_WORTH;
+
+	// Only escort our own trade units
+	if (pConnection->m_eOriginOwner != m_pPlayer->GetID())
+		return ESCORT_NOT_WORTH;
+
+	// Calculate trade unit value
+	int iTradeUnitValue = GetTradeUnitReturnValue(iTradeConnectionID);
+	
+	// Calculate path danger
+	int iPathDanger = pTrade->EvaluatePathDanger(*pConnection);
+	
+	// Low-value trade routes not worth escorting
+	if (iTradeUnitValue < 20)
+		return ESCORT_NOT_WORTH;
+
+	// Try to find safer alternate path
+	SPath saferPath;
+	bool bHasSaferPath = pTrade->FindSaferAlternatePath(*pConnection, &saferPath);
+	
+	// If safer path exists and danger is high, recommend reroute
+	if (bHasSaferPath && iPathDanger > 100)
+	{
+		// Calculate danger of alternate path
+		TradeConnectionPlotList tempPlotList;
+		for (size_t i = 0; i < saferPath.vPlots.size(); i++)
+		{
+			TradeConnectionPlot kPlot;
+			kPlot.m_iX = saferPath.vPlots[i].x;
+			kPlot.m_iY = saferPath.vPlots[i].y;
+			tempPlotList.push_back(kPlot);
+		}
+		int iAlternatePathDanger = pTrade->EvaluatePathDangerForPlots(tempPlotList, pConnection->m_eOriginOwner);
+		
+		// If alternate is significantly safer (>50% reduction), recommend reroute
+		if (iAlternatePathDanger < iPathDanger * 50 / 100)
+		{
+			if (piEscortValue)
+				*piEscortValue = 0; // No escort needed if rerouting
+			return ESCORT_REROUTE;
+		}
+	}
+
+	// Calculate escort cost (how critical is our military situation?)
+	int iMilitaryCriticalityPenalty = 0;
+	if (m_eLandDefenseState == DEFENSE_STATE_CRITICAL)
+		iMilitaryCriticalityPenalty = 100; // Very high cost during defense emergency
+	else if (m_eLandDefenseState == DEFENSE_STATE_NEEDED)
+		iMilitaryCriticalityPenalty = 50;
+
+	// Benefit-cost analysis
+	int iEscortBenefit = iTradeUnitValue; // Value saved by escorting
+	int iEscortCost = iPathDanger / 10 + iMilitaryCriticalityPenalty; // Cost in military resources
+
+	// Recommend escort only if benefit outweighs cost significantly
+	if (iEscortBenefit > iEscortCost * 2)
+	{
+		if (piEscortValue)
+			*piEscortValue = iEscortBenefit - iEscortCost;
+		return ESCORT_RECOMMENDED;
+	}
+
+	// Not worth the risk
+	if (piEscortValue)
+		*piEscortValue = 0;
+	return ESCORT_NOT_WORTH;
+}
+
+/// Issue 7.2: Assign military unit to escort returning trade unit
+CvUnit* CvMilitaryAI::AssignEscortToReturningTradeUnit(int iTradeConnectionID)
+{
+	CvGameTrade* pTrade = GC.getGame().GetGameTrade();
+	if (!pTrade)
+		return NULL;
+
+	CvUnit* pTradeUnit = pTrade->GetTradeUnitForRoute(pTrade->GetIndexFromID(iTradeConnectionID));
+	if (!pTradeUnit)
+		return NULL;
+
+	// Find nearest expendable military unit
+	CvUnit* pBestEscort = NULL;
+	int iBestDistance = INT_MAX;
+
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = m_pPlayer->nextUnit(&iLoop))
+	{
+		if (!pLoopUnit->IsCombatUnit())
+			continue;
+
+		// Don't use units that are critical for defense
+		if (pLoopUnit->GetDanger() > 100)
+			continue;
+
+		// Prefer damaged/obsolete units as escorts
+		bool bExpendable = (pLoopUnit->getDamage() > 30) || !pLoopUnit->canMove();
+
+		int iDistance = plotDistance(pLoopUnit->getX(), pLoopUnit->getY(), pTradeUnit->getX(), pTradeUnit->getY());
+		
+		// Bonus for expendable units
+		if (bExpendable)
+			iDistance -= 5;
+
+		if (iDistance < iBestDistance)
+		{
+			iBestDistance = iDistance;
+			pBestEscort = pLoopUnit;
+		}
+	}
+
+	// Assign escort mission
+	if (pBestEscort && iBestDistance < 10) // Only if reasonably close
+	{
+		// Push mission to move toward trade unit
+		pBestEscort->PushMission(CvTypes::getMISSION_MOVE_TO(), pTradeUnit->getX(), pTradeUnit->getY());
+		return pBestEscort;
+	}
+
+	return NULL;
+}
+
+/// Issue 7.2: Calculate economic value of returning trade unit
+int CvMilitaryAI::GetTradeUnitReturnValue(int iTradeConnectionID) const
+{
+	CvGameTrade* pTrade = GC.getGame().GetGameTrade();
+	if (!pTrade)
+		return 0;
+
+	int iTradeIndex = pTrade->GetIndexFromID(iTradeConnectionID);
+	if (iTradeIndex < 0)
+		return 0;
+
+	const TradeConnection* pConnection = pTrade->GetConnectionFromIndex(iTradeIndex);
+	if (!pConnection || !pConnection->isValid())
+		return 0;
+
+	// Sum all yield values (gold, science, culture, etc.)
+	int iTotalValue = 0;
+	for (uint ui = 0; ui < NUM_YIELD_TYPES; ui++)
+	{
+		int iOriginYield = pConnection->m_aiOriginYields[ui];
+		int iDestYield = pConnection->m_aiDestYields[ui];
+		
+		// Weight different yields (gold = 1.0, science = 1.5, culture = 1.2, etc.)
+		int iYieldWeight = 100;
+		if (ui == YIELD_SCIENCE)
+			iYieldWeight = 150; // Science is more valuable
+		else if (ui == YIELD_CULTURE)
+			iYieldWeight = 120;
+		else if (ui == YIELD_FAITH)
+			iYieldWeight = 110;
+
+		iTotalValue += (iOriginYield + iDestYield) * iYieldWeight / 100;
+	}
+
+	// Factor in remaining route duration
+	int iRemainingTurns = pConnection->m_iTurnRouteComplete - GC.getGame().getGameTurn();
+	if (iRemainingTurns > 0)
+		iTotalValue = iTotalValue * iRemainingTurns / 30; // Normalize to 30-turn route
+
+	return max(0, iTotalValue);
+}
+
+//--------------------------------------------------------------------------------
+// Terrain-aware grouping helpers
+int CvMilitaryAI::GetLocalTerrainRoughness(const CvPlot* pCenter, int iRadius) const
+{
+	if(!pCenter)
+		return 0;
+
+	int iTotal = 0;
+	int iRough = 0;
+
+	for(int iDX = -iRadius; iDX <= iRadius; iDX++)
+	{
+		for(int iDY = -iRadius; iDY <= iRadius; iDY++)
+		{
+			CvPlot* pPlot = plotXYWithRangeCheck(pCenter->getX(), pCenter->getY(), iDX, iDY, iRadius);
+			if(!pPlot)
+				continue;
+
+			// Ignore impassable tiles except mountains counted as rough context
+			if(!pPlot->isRevealed(m_pPlayer->getTeam()))
+				continue;
+
+			iTotal++;
+			bool bRough = pPlot->isHills() || pPlot->isMountain();
+			FeatureTypes eFeature = pPlot->getFeatureType();
+			if(eFeature == GC.getInfoTypeForString("FEATURE_FOREST", true) || eFeature == GC.getInfoTypeForString("FEATURE_JUNGLE", true))
+				bRough = true;
+			if(bRough)
+				iRough++;
+		}
+	}
+
+	if(iTotal == 0)
+		return 0;
+
+	return (100 * iRough) / iTotal;
+}
+
+void CvMilitaryAI::ApplyTerrainAwareTempFlavors(const CvPlot* pCenter)
+{
+	if(!pCenter)
+		return;
+
+	CvEnumMap<FlavorTypes, int> kDelta;
+	kDelta.init(0);
+
+	int iRoughness = GetLocalTerrainRoughness(pCenter, 3);
+	bool bCoastal = pCenter->isCoastalLand();
+
+	int iFlavorDefense = GC.getInfoTypeForString("FLAVOR_DEFENSE", true);
+	int iFlavorMobile = GC.getInfoTypeForString("FLAVOR_MOBILE", true);
+	int iFlavorRanged = GC.getInfoTypeForString("FLAVOR_RANGED", true);
+	int iFlavorNaval = GC.getInfoTypeForString("FLAVOR_NAVAL", true);
+	int iFlavorNavalRecon = GC.getInfoTypeForString("FLAVOR_NAVAL_RECON", true);
+
+	// Rough terrain: favor melee/defense and short-range support
+	if(iRoughness >= 60)
+	{
+		if(iFlavorDefense >= 0) kDelta[iFlavorDefense] += 3;
+		if(iFlavorRanged >= 0) kDelta[iFlavorRanged] += 1; // prefer crossbows over artillery in tight terrain
+	}
+	// Open terrain: favor mobility and ranged
+	else if(iRoughness <= 40)
+	{
+		if(iFlavorMobile >= 0) kDelta[iFlavorMobile] += 3;
+		if(iFlavorRanged >= 0) kDelta[iFlavorRanged] += 2;
+	}
+	// Mixed terrain: light bias toward balanced defense
+	else
+	{
+		if(iFlavorDefense >= 0) kDelta[iFlavorDefense] += 2;
+		if(iFlavorRanged >= 0) kDelta[iFlavorRanged] += 1;
+	}
+
+	// Coastal fronts: add small naval/recon emphasis
+	if(bCoastal)
+	{
+		if(iFlavorNaval >= 0) kDelta[iFlavorNaval] += 1;
+		if(iFlavorNavalRecon >= 0) kDelta[iFlavorNavalRecon] += 1;
+	}
+
+	// Apply immediately so grouping/production reacts in the same turn
+	PropagateUrgentFlavorsToDiplomacyAI(kDelta);
+}
+
+// Diplomatic considerations: prioritize defense along valuable or allied trade routes
+void CvMilitaryAI::ApplyTradeRouteDefenseFlavors()
+{
+	CvGameTrade* pTrade = GC.getGame().GetGameTrade();
+	if(!pTrade)
+	{
+		return;
+	}
+
+	const vector<int>& aiConnections = pTrade->GetTradeConnectionsForPlayer(m_pPlayer->GetID());
+
+	if(aiConnections.empty())
+	{
+		return;
+	}
+
+	TeamTypes eTeam = m_pPlayer->getTeam();
+	int iDefenseBoost = 0;
+	int iMobileBoost = 0;
+	int iNavalBoost = 0;
+
+	int iFlavorDefense = GC.getInfoTypeForString("FLAVOR_DEFENSE", true);
+	int iFlavorMobile = GC.getInfoTypeForString("FLAVOR_MOBILE", true);
+	int iFlavorNaval = GC.getInfoTypeForString("FLAVOR_NAVAL", true);
+	int iFlavorNavalRecon = GC.getInfoTypeForString("FLAVOR_NAVAL_RECON", true);
+
+	CvEnumMap<FlavorTypes, int> kDelta;
+	kDelta.init(0);
+
+	for(size_t i = 0; i < aiConnections.size(); i++)
+	{
+		const TradeConnection& kConnection = pTrade->GetTradeConnection(aiConnections[i]);
+		if(kConnection.m_eOriginOwner != m_pPlayer->GetID())
+		{
+			continue;
+		}
+
+		int iEconomicValue = GetTradeRouteEconomicValue(kConnection);
+		if(iEconomicValue <= 0)
+		{
+			continue;
+		}
+
+		int iPathDanger = pTrade->EvaluatePathDanger(kConnection);
+		PlayerTypes eDestPlayer = kConnection.m_eDestOwner;
+		TeamTypes eDestTeam = NO_TEAM;
+		if(eDestPlayer != NO_PLAYER)
+		{
+			eDestTeam = GET_PLAYER(eDestPlayer).getTeam();
+		}
+
+		bool bDestIsAlly = (eDestTeam != NO_TEAM && GET_TEAM(eTeam).IsHasDefensivePact(eDestTeam));
+		bool bDestAtWar = (eDestTeam != NO_TEAM && GET_TEAM(eDestTeam).getAtWarCount(false) > 0 && !GET_TEAM(eDestTeam).isAtWar(eTeam));
+
+		int iWeight = 0;
+		if(iEconomicValue > 80)
+		{
+			iWeight += 2;
+		}
+		else if(iEconomicValue > 40)
+		{
+			iWeight += 1;
+		}
+
+		if(iPathDanger > 80)
+		{
+			iWeight += 2;
+		}
+		else if(iPathDanger > 40)
+		{
+			iWeight += 1;
+		}
+
+		if(bDestIsAlly || bDestAtWar)
+		{
+			iWeight += 1;
+		}
+
+		if(iWeight <= 0)
+		{
+			continue;
+		}
+
+		// Preventive positioning: add defensive and mobile emphasis for land routes, naval for sea routes
+		if(kConnection.m_eDomain == DOMAIN_SEA)
+		{
+			iNavalBoost += iWeight;
+		}
+		else
+		{
+			iDefenseBoost += iWeight;
+			iMobileBoost += (iWeight > 1) ? iWeight - 1 : 0;
+		}
+	}
+
+	if(iDefenseBoost > 0 && iFlavorDefense >= 0)
+	{
+		kDelta[iFlavorDefense] += iDefenseBoost;
+	}
+
+	if(iMobileBoost > 0 && iFlavorMobile >= 0)
+	{
+		kDelta[iFlavorMobile] += iMobileBoost;
+	}
+
+	if(iNavalBoost > 0)
+	{
+		if(iFlavorNaval >= 0)
+		{
+			kDelta[iFlavorNaval] += iNavalBoost;
+		}
+		if(iFlavorNavalRecon >= 0)
+		{
+			kDelta[iFlavorNavalRecon] += iNavalBoost / 2;
+		}
+	}
+
+	if(iDefenseBoost > 0 || iMobileBoost > 0 || iNavalBoost > 0)
+	{
+		PropagateUrgentFlavorsToDiplomacyAI(kDelta);
+	}
+}
+
+// Economic/strategic weight of a trade connection (used to prioritize protection)
+int CvMilitaryAI::GetTradeRouteEconomicValue(const TradeConnection& kConnection) const
+{
+	int iValue = 0;
+	for(int iYield = 0; iYield < NUM_YIELD_TYPES; iYield++)
+	{
+		iValue += kConnection.m_aiOriginYields[iYield];
+		iValue += kConnection.m_aiDestYields[iYield];
+	}
+
+	PlayerTypes eDestPlayer = kConnection.m_eDestOwner;
+	if(eDestPlayer != NO_PLAYER)
+	{
+		TeamTypes eDestTeam = GET_PLAYER(eDestPlayer).getTeam();
+		if(GET_TEAM(m_pPlayer->getTeam()).IsHasDefensivePact(eDestTeam))
+		{
+			iValue += 25; // alliance tie-in
+		}
+		if(GET_PLAYER(eDestPlayer).isMinorCiv())
+		{
+			iValue += 15; // city-state lane
+		}
+	}
+
+	return iValue;
+}
+
+/// Update how we're doing on defensive units (Issue 4.1 enhancement)
 void CvMilitaryAI::UpdateDefenseState()
 {
+	// Predict if enemies moving toward us (Issue 4.1)
+	bool bEnemiesMovingTowardUs = AreEnemiesMovingTowardUs(DOMAIN_LAND);
+	
+	// Get allied threat multiplier (Issue 4.1)
+	int iAlliedMultiplier = GetAlliedThreatMultiplier();
+	
+	DefenseState ePreviousLandDefenseState = m_eLandDefenseState;
+	
 	if(m_iNumLandUnits < m_iRecLandUnits)
 	{
 		m_eLandDefenseState = DEFENSE_STATE_CRITICAL;
@@ -1858,6 +2415,7 @@ void CvMilitaryAI::UpdateDefenseState()
 
 	if (m_eLandDefenseState <= DEFENSE_STATE_NEUTRAL)
 	{
+		// Check for siege or nearby threats (Issue 4.1)
 		int iCityLoop = 0;
 		for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
 		{
@@ -1867,22 +2425,53 @@ void CvMilitaryAI::UpdateDefenseState()
 				break;
 			}
 		}
+		
+		// Boost if enemies moving toward us (Issue 4.1: predict enemy movements)
+		if(bEnemiesMovingTowardUs && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+		{
+			m_eLandDefenseState = DEFENSE_STATE_NEEDED;
+		}
+	}
+	
+	// Apply allied threat multiplier (Issue 4.1)
+	if(iAlliedMultiplier > 100)
+	{
+		if(m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+			m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 	}
 
-	// Issue 4.1: Integrate proximity-weighted threat assessment for land units
-	// This enhances defense state calculation by detecting approaching armies
-	int iProximityThreat = CalculateProximityWeightedThreat(DOMAIN_LAND);
-	if (iProximityThreat > 0 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+	// Issue 7.2: Propagate urgent DEFENSE flavor boost if we transitioned to CRITICAL state
+	if(m_eLandDefenseState == DEFENSE_STATE_CRITICAL && ePreviousLandDefenseState != DEFENSE_STATE_CRITICAL)
 	{
-		// If enemies are approaching with significant strength, escalate defense
-		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
+		// Boost DEFENSE flavor immediately for urgent threat response (Issue 7.2)
+		m_aiTempFlavors.assign(0);
+		int iDefenseFlavorIndex = GC.getInfoTypeForString("FLAVOR_DEFENSE");
+		if(iDefenseFlavorIndex >= 0)
+		{
+			m_aiTempFlavors[iDefenseFlavorIndex] = 5; // Urgent boost
+			PropagateUrgentFlavorsToDiplomacyAI(m_aiTempFlavors);
+		}
 	}
 
-	// Issue 4.1: Check if enemies are actively moving toward our cities
-	// Early warning: boost defense state if enemies detected in threat range
-	if (AreEnemiesMovingTowardUs(DOMAIN_LAND) && m_eLandDefenseState < DEFENSE_STATE_NEUTRAL)
+	// Terrain-aware grouping: bias flavors based on local terrain near the most threatened city (or capital)
+	if(m_eLandDefenseState == DEFENSE_STATE_CRITICAL || m_eLandDefenseState == DEFENSE_STATE_NEEDED)
 	{
-		m_eLandDefenseState = DEFENSE_STATE_NEUTRAL;
+		CvPlot* pFocusPlot = NULL;
+		vector<CvCity*> threatCities = m_pPlayer->GetThreatenedCities(false);
+		if(!threatCities.empty() && threatCities.front())
+		{
+			pFocusPlot = threatCities.front()->plot();
+		}
+		else if(m_pPlayer->getCapitalCity())
+		{
+			pFocusPlot = m_pPlayer->getCapitalCity()->plot();
+		}
+
+		if(pFocusPlot)
+		{
+			ApplyTerrainAwareTempFlavors(pFocusPlot);
+			ApplyTradeRouteDefenseFlavors();
+		}
 	}
 
 	if(m_iNumNavalUnits <= (m_iRecNavalUnits / 2))
@@ -1912,33 +2501,6 @@ void CvMilitaryAI::UpdateDefenseState()
 				m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
 				break;
 			}
-		}
-	}
-
-	// Issue 4.1: Integrate proximity-weighted threat assessment for naval units
-	// Detect incoming naval threats from pirates or enemy fleets
-	int iNavalThreat = CalculateProximityWeightedThreat(DOMAIN_SEA);
-	if (iNavalThreat > 0 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
-	{
-		// If naval enemies detected with significant strength, escalate naval defense
-		m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
-	}
-
-	// Issue 4.1: Check if sea-based enemies are approaching our coastal cities
-	if (AreEnemiesMovingTowardUs(DOMAIN_SEA) && m_eNavalDefenseState < DEFENSE_STATE_NEUTRAL)
-	{
-		m_eNavalDefenseState = DEFENSE_STATE_NEUTRAL;
-	}
-
-	// Issue 4.1: Apply allied threat multiplier - if our allies are under threat, boost our own defense
-	// This encourages coalition defense and mutual protection
-	int iAlliedMultiplier = GetAlliedThreatMultiplier();
-	if (iAlliedMultiplier > 100)
-	{
-		// Scale up defense state if we have allies under threat
-		if (m_eLandDefenseState < DEFENSE_STATE_NEUTRAL)
-		{
-			m_eLandDefenseState = DEFENSE_STATE_NEUTRAL;
 		}
 	}
 }
@@ -2260,128 +2822,6 @@ void CvMilitaryAI::UpdateMilitaryStrategies()
 			}
 		}
 	}
-}
-
-/// Issue 4.1: Calculate proximity-weighted enemy threat (accounts for unit position & type)
-int CvMilitaryAI::CalculateProximityWeightedThreat(DomainTypes eDomain)
-{
-	int iProximityThreat = 0;
-	const int PROXIMITY_MULTIPLIER_CLOSE = 2; // Double-count units within 5 tiles
-	const int PROXIMITY_CLOSE_RANGE = 5;
-	const int RANGED_UNIT_MULTIPLIER = 150; // Ranged units worth 1.5x (150%)
-
-	TeamTypes eTeam = m_pPlayer->getTeam();
-
-	// Loop through all enemy civs and count weighted threat
-	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
-	{
-		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
-		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
-
-		// Skip invalid/non-threatening players
-		if(!kLoopPlayer.isAlive()) continue;
-		if(GET_TEAM(kLoopPlayer.getTeam()).isMinorCiv()) continue;
-		if(!GET_TEAM(eTeam).isAtWar(kLoopPlayer.getTeam())) continue;
-
-		int iNumUnits = 0;
-		int iCloseUnits = 0;
-
-		// Scan all units from this player
-		for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
-		{
-			CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
-			if(!pLoopUnit) continue;
-
-			// Only count units in specified domain
-			if(pLoopUnit->getDomainType() != eDomain) continue;
-			if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
-
-			int iUnitStrength = pLoopUnit->GetPower();
-
-			// Adjust threat based on unit type: ranged units more dangerous
-			if(pLoopUnit->IsCanAttackRanged())
-				iUnitStrength = (iUnitStrength * RANGED_UNIT_MULTIPLIER) / 100;
-
-			iNumUnits += iUnitStrength;
-
-			// Check proximity to our cities (double-count if close)
-			int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
-			if(iClosestCityDistance >= 0 && iClosestCityDistance <= PROXIMITY_CLOSE_RANGE)
-			{
-				iCloseUnits += iUnitStrength * PROXIMITY_MULTIPLIER_CLOSE;
-			}
-		}
-
-		// Use whichever is higher: dispersed units or concentrated threat
-		iProximityThreat += max(iNumUnits, iCloseUnits);
-	}
-
-	return iProximityThreat;
-}
-
-/// Issue 4.1: Check if enemy armies are moving toward our territory (predictive threat)
-bool CvMilitaryAI::AreEnemiesMovingTowardUs(DomainTypes eDomain)
-{
-	TeamTypes eTeam = m_pPlayer->getTeam();
-	const int THREAT_RANGE = 8;  // Predictive range: consider threats within 8 tiles
-
-	// Scan all enemy players
-	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
-	{
-		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
-		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
-
-		if(!kLoopPlayer.isAlive()) continue;
-		if(GET_TEAM(kLoopPlayer.getTeam()).isMinorCiv()) continue;
-		if(!GET_TEAM(eTeam).isAtWar(kLoopPlayer.getTeam())) continue;
-
-		// Scan all units from this enemy player
-		for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
-		{
-			CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
-			if(!pLoopUnit) continue;
-			
-			if(pLoopUnit->getDomainType() != eDomain) continue;
-			if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
-
-			// Check if unit is moving toward our territory
-			int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
-			if(iClosestCityDistance >= 0 && iClosestCityDistance <= THREAT_RANGE)
-			{
-				return true;  // Found advancing enemy threat
-			}
-		}
-	}
-
-	return false;
-}
-
-/// Issue 4.1: Get allied threat multiplier (boost defense if allies are under attack)
-int CvMilitaryAI::GetAlliedThreatMultiplier()
-{
-	int iMultiplier = 100;
-	TeamTypes eTeam = m_pPlayer->getTeam();
-
-	// Check if any allies are under attack and boost our defense priority accordingly
-	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
-	{
-		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
-		if(eLoopPlayer == m_pPlayer->GetID()) continue;
-
-		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
-		if(!kLoopPlayer.isAlive()) continue;
-
-		TeamTypes eLoopTeam = kLoopPlayer.getTeam();
-		if(!GET_TEAM(eTeam).isHasMet(eLoopTeam)) continue;
-
-		// If ally is under attack, slightly boost our defense priority
-		if(GET_TEAM(eLoopTeam).getAtWarCount(false) > 0)
-		{
-			iMultiplier += 10; // Boost by 10% per ally at war
-		}
-	}
-
-	return min(150, iMultiplier); // Cap at 150% max
 }
 
 void CvMilitaryAI::DoNuke(PlayerTypes ePlayer)
@@ -4540,3 +4980,125 @@ bool CvAttackTarget::IsPreferred() const
 {
 	return m_bPreferred;
 }
+
+//	--------------------------------------------------------------------------------
+// Dynamic Rebalancing: Detect combat losses and rebalance army composition (Issue: Dynamic Rebalancing)
+void CvMilitaryAI::DetectCombatLosses()
+{
+	// Build current unit composition snapshot
+	int iCurrentMilitaryUnits = m_pPlayer->getNumMilitaryUnits();
+
+	// Compare with previous composition to detect losses
+	int iPreviousMilitaryUnits = m_iLastRebalanceTurn > 0 ? m_previousUnitComposition[0] : iCurrentMilitaryUnits;
+	
+	if (iPreviousMilitaryUnits > 0 && iCurrentMilitaryUnits < iPreviousMilitaryUnits)
+	{
+		int iTotalLosses = iPreviousMilitaryUnits - iCurrentMilitaryUnits;
+		int iLossPercent = (100 * iTotalLosses) / iPreviousMilitaryUnits;
+
+		// Trigger rebalancing if losses exceed 15% threshold
+		if (iLossPercent >= 15)
+		{
+			TriggerFormationRebalance();
+		}
+	}
+
+	// Update snapshot
+	m_previousUnitComposition[0] = iCurrentMilitaryUnits;
+}
+
+//	--------------------------------------------------------------------------------
+// Evaluate army balance score (0-100, 100 = perfectly balanced by design)
+int CvMilitaryAI::EvaluateArmyBalance() const
+{
+	// Simple balance check based on military unit count vs expected force
+	int iMilitaryUnits = m_pPlayer->getNumMilitaryUnits();
+	
+	if (iMilitaryUnits == 0)
+		return 0; // No army = 0 balance
+
+	// Calculate target military units based on era/difficulty
+	int iTargetMilitaryUnits = 10 + (GC.getGame().getGameTurn() / 50);
+	
+	// If we have at least 70% of target, army is balanced
+	int iTargetThreshold = (iTargetMilitaryUnits * 70) / 100;
+	
+	if (iMilitaryUnits >= iTargetThreshold)
+		return 100;
+	else if (iMilitaryUnits >= iTargetThreshold / 2)
+		return 50;
+	else
+		return 0;
+}
+
+//	--------------------------------------------------------------------------------
+// Trigger rebalancing and adjust military strategies
+void CvMilitaryAI::TriggerFormationRebalance()
+{
+	m_iLastRebalanceTurn = GC.getGame().getGameTurn();
+	m_iArmyBalanceScore = EvaluateArmyBalance();
+
+	// Apply loss-based flavor adjustments
+	ApplyLossAdaptationFlavors();
+
+	// Evaluate if tactical retreat is needed
+	EvaluateTacticalRetreat();
+}
+
+//	--------------------------------------------------------------------------------
+// Adjust flavors to restore lost unit types
+void CvMilitaryAI::ApplyLossAdaptationFlavors()
+{
+	// If military count is low, boost offense and defense production
+	int iMilitaryUnits = m_pPlayer->getNumMilitaryUnits();
+	int iTargetMilitaryUnits = 10 + (GC.getGame().getGameTurn() / 50);
+	
+	if (iMilitaryUnits < iTargetMilitaryUnits)
+	{
+		CvEnumMap<FlavorTypes, int> kDelta;
+		kDelta.init(0);
+
+		int iFlavorOffense = GC.getInfoTypeForString("FLAVOR_OFFENSE", true);
+		int iFlavorDefense = GC.getInfoTypeForString("FLAVOR_DEFENSE", true);
+		int iFlavorRanged = GC.getInfoTypeForString("FLAVOR_RANGED", true);
+
+		// Boost production flavors
+		if (iFlavorOffense >= 0)
+			kDelta[iFlavorOffense] += 2;
+		if (iFlavorDefense >= 0)
+			kDelta[iFlavorDefense] += 1;
+		if (iFlavorRanged >= 0)
+			kDelta[iFlavorRanged] += 1;
+
+		// Propagate urgently to affect immediate production
+		PropagateUrgentFlavorsToDiplomacyAI(kDelta);
+	}
+}
+
+//	--------------------------------------------------------------------------------
+// Evaluate if army should retreat to defensible position to regroup
+void CvMilitaryAI::EvaluateTacticalRetreat()
+{
+	// If army balance is critically low (< 30), recommend retreat
+	if (m_iArmyBalanceScore < 30)
+	{
+		// Look for defensible capital or central city
+		CvCity* pCapital = m_pPlayer->getCapitalCity();
+		if (pCapital && pCapital->plot())
+		{
+			// This could trigger AI to move units toward capital for regrouping
+			// For now, just mark that retreat is recommended via the balance score
+		}
+	}
+}
+
+//	--------------------------------------------------------------------------------
+// Helper: Get unit count by type from composition map
+int CvMilitaryAI::GetUnitCountByType() const
+{
+	// Placeholder implementation
+	return 0;
+}
+
+
+
