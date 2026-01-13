@@ -1869,6 +1869,22 @@ void CvMilitaryAI::UpdateDefenseState()
 		}
 	}
 
+	// Issue 4.1: Integrate proximity-weighted threat assessment for land units
+	// This enhances defense state calculation by detecting approaching armies
+	int iProximityThreat = CalculateProximityWeightedThreat(DOMAIN_LAND);
+	if (iProximityThreat > 0 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		// If enemies are approaching with significant strength, escalate defense
+		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
+	}
+
+	// Issue 4.1: Check if enemies are actively moving toward our cities
+	// Early warning: boost defense state if enemies detected in threat range
+	if (AreEnemiesMovingTowardUs(DOMAIN_LAND) && m_eLandDefenseState < DEFENSE_STATE_NEUTRAL)
+	{
+		m_eLandDefenseState = DEFENSE_STATE_NEUTRAL;
+	}
+
 	if(m_iNumNavalUnits <= (m_iRecNavalUnits / 2))
 	{
 		m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
@@ -1896,6 +1912,33 @@ void CvMilitaryAI::UpdateDefenseState()
 				m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
 				break;
 			}
+		}
+	}
+
+	// Issue 4.1: Integrate proximity-weighted threat assessment for naval units
+	// Detect incoming naval threats from pirates or enemy fleets
+	int iNavalThreat = CalculateProximityWeightedThreat(DOMAIN_SEA);
+	if (iNavalThreat > 0 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		// If naval enemies detected with significant strength, escalate naval defense
+		m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
+	}
+
+	// Issue 4.1: Check if sea-based enemies are approaching our coastal cities
+	if (AreEnemiesMovingTowardUs(DOMAIN_SEA) && m_eNavalDefenseState < DEFENSE_STATE_NEUTRAL)
+	{
+		m_eNavalDefenseState = DEFENSE_STATE_NEUTRAL;
+	}
+
+	// Issue 4.1: Apply allied threat multiplier - if our allies are under threat, boost our own defense
+	// This encourages coalition defense and mutual protection
+	int iAlliedMultiplier = GetAlliedThreatMultiplier();
+	if (iAlliedMultiplier > 100)
+	{
+		// Scale up defense state if we have allies under threat
+		if (m_eLandDefenseState < DEFENSE_STATE_NEUTRAL)
+		{
+			m_eLandDefenseState = DEFENSE_STATE_NEUTRAL;
 		}
 	}
 }
