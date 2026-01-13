@@ -1869,12 +1869,13 @@ void CvPlayerTechs::CheckHasUUTech()
 							{
 								bHas = false;
 							}
-						}					
+						}
 					}
 				}
 			}
 		}
 	}
+
 	if (m_bHasUUTech != bHas)
 	{
 		m_bHasUUTech = bHas;
@@ -2138,7 +2139,8 @@ CvTeamTechs::CvTeamTechs():
 	m_pabNoTradeTech(NULL),
 	m_paiResearchProgressTimes100(NULL),
 	m_paiEurekaCounter(NULL),
-	m_paiTechCount(NULL)
+	m_paiTechCount(NULL),
+	m_iTechSetVersion(0)
 {
 }
 
@@ -2186,6 +2188,7 @@ void CvTeamTechs::Reset()
 
 	m_eLastTechAcquired = NO_TECH;
 	m_iNumTechs = 0;
+	m_iTechSetVersion = 0;
 
 	for(iI = 0; iI < m_pTechs->GetNumTechs(); iI++)
 	{
@@ -2288,6 +2291,9 @@ void CvTeamTechs::SetHasTech(TechTypes eIndex, bool bNewValue)
 
 		if(bNewValue)
 			SetLastTechAcquired(eIndex);
+
+		// bump version whenever ownership changes (especially on acquire)
+		m_iTechSetVersion++;
 
 		ICvEngineScriptSystem1* pkScriptSystem = gDLL->GetScriptSystem();
 		if(pkScriptSystem)
@@ -2440,11 +2446,22 @@ void CvTeamTechs::SetResearchProgressTimes100(TechTypes eIndex, int iNewValue, P
 				iOverflow = iOverflow * 100 / iPlayerOverflowDivisorTimes100;
 			}
 
+			// Cap overflow to a reasonable bound to avoid integer saturation in extremely long games
+			// Use a dynamic cap based on player's science per turn (times100) to keep proportional
+			{
+				const long long iSciencePerTurnTimes100 = (long long)GET_PLAYER(ePlayer).GetScienceTimes100();
+				const long long iDynamicCap = std::max( (long long)10000, iSciencePerTurnTimes100 * 10 ); // at least 100 beakers, up to 10 turns of science
+				if (iOverflow > iDynamicCap)
+					iOverflow = iDynamicCap;
+			}
+
 			if (iOverflow >= INT_MAX)
 				iOverflow = INT_MAX;
 
 			GET_PLAYER(ePlayer).changeOverflowResearchTimes100((int)iOverflow);
 			m_pTeam->setHasTech(eIndex, true, ePlayer, true, true);
+			// tech acquired via research completion, bump version for cache invalidation
+			m_iTechSetVersion++;
 			SetNoTradeTech(eIndex, true);
 
 			// Mark city specialization dirty
