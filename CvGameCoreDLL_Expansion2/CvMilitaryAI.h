@@ -298,6 +298,12 @@ private:
 	void UpdateDefenseState();
 	void UpdateMilitaryStrategies();
 	void UpdateOperations();
+
+	// Issue 4.1 helper functions for enhanced threat assessment
+	int CalculateProximityWeightedThreat(DomainTypes eDomain);
+	bool AreEnemiesMovingTowardUs(DomainTypes eDomain);
+	int GetAlliedThreatMultiplier();
+
 	void DoNuke(PlayerTypes ePlayer);
 	void CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity);
 	void CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity);
