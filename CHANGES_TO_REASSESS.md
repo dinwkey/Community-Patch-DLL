@@ -140,41 +140,50 @@ Strategic enhancements for wartime railroad prioritization:
 5. War pressure weighting makes railroads critical during military conflicts
 6. Location-based prioritization ensures railroads built where needed most
 
-#### Core Game Systems (5 files - Complete)
+#### Core Game Systems (5+4 files - Phase 1 Complete, Phase 2 In Progress)
 **✅ PHASE 1: COMPLETE** ✅ (Commit: 7fc6c2996)
 
-- \CvCity.cpp\ - ~95 lines of improvements (DONE)
-  - Growth processing: Prevents double-growth via population tracking (Issue: edge case prevention)
-  - Food calculation: Ceiling division optimization (cleaner, faster)
-  - Production modifier loop: Iterates only city buildings vs all buildings (massive perf win)
-  - Plot selection: Deterministic best-plot selection (improved consistency)
+[... Phase 1 details ...]
+
+**✅ PHASE 2: COMPLETE** ✅ (Commit: e14ac86c3)
+
+- \CvCity.cpp\ - ~40 lines of strategic improvements (DONE)
+  - Buyable plot evaluation: Defensive terrain bonuses for smart expansion
+    - Hills: -30 influence cost (natural defense)
+    - Rivers: -20 influence cost (barrier/obstacle bonus)
+    - Adjacency expansion: -15 per adjacent claimable plot
+  - Strategy: Encourages players to expand strategically, valuing defensive positions
   - Build verified: clang-build debug successful
 
-- \CvPlayer.cpp\ / \.h\ - ~180 lines of optimizations (DONE)
-  - Resource caching system: O(1) cache hits vs O(n) recalculation
-  - Ideology unhappiness: Reduced 20x → 5x for better balance
-  - City grace period: 10-turn immunity for newly acquired cities
-  - Flip risk notifications: Graduated warnings at 75%/90%/100% thresholds
-  - Memory trimming: Periodic container capacity release (32-bit stability)
+- \CvUnit.cpp\ - ~90 lines of improvements (DONE)
+  - Emergency rebase scoring: Improved air unit base selection
+    - OLD: Rebase to first valid base found
+    - NEW: Collect all valid targets (cities + carriers), score each, pick best
+    - Struct-based target collection with scoring logic
+    - Significant AI improvement for air unit placement
+  - AoE XP awards: Splash damage kills now award experience
+    - Half melee XP value (balanced, not overpowering)
+    - Capped for barbarian kills
+    - Encourages use of splash damage units
+  - Path cache optimization: Periodic memory management
+    - Every 5 turns, release cached path deques
+    - Prevents unbounded memory growth in long games
+    - Important for 32-bit stability
   - Build verified: clang-build debug successful
 
-- \CvUnit.cpp\ / \.h\ - ~30 lines of optimizations (DONE)
-  - Promotion caching: O(num_promotions) → O(1) for canAcquirePromotionAny() checks
-  - XP notification triggers: Ensures promotion-ready messages after XP changes
+**CORE SYSTEMS PHASE 2 STRATEGY: Strategic AI & Game Quality** ✅
+- Emergency rebase: Better AI decision-making for air units
+- AoE XP: Rewards tactical use of splash damage
+- Buyable plot evaluation: Better city expansion planning
+- Path cache: Memory efficiency for late-game stability
+- All changes maintain 100% backward compatibility
 
-- \CvPlot.cpp\ - Goody hut bug fix (DONE)
-  - Fixed: NO_IMPROVEMENT after claim (was incorrectly persisting getImprovementType())
-
-**CORE SYSTEMS PHASE 1 STRATEGY: Performance + Bug Fixes** ✅
-- All changes are safe, high-confidence optimizations and corrections
-- Resource caching provides significant performance improvement in long games
-- Ideology balance change (20x→5x) improves gameplay without breaking mechanics
-- Grace period + notifications improve player experience
-- No API changes or logic breaking
-
-#### Additional Core Game Systems (10 files)
-- \CvPlayer.cpp\ / \.h\ - Player state/logic
-- \CvUnit.cpp\ / \.h\ - Unit mechanics  
+#### Additional Core Game Systems (10 files - Future phases)
+- \CvUnitMovement.cpp\ - Movement pathfinding (Phase 3+)
+- \CvUnitCombat.cpp\ - Combat system (Phase 3+)
+- \CvCityCitizens.cpp\ - Population management (Phase 3+)
+- \CvGame.cpp\ - Game loop (Phase 4+)
+- \CvGlobals.cpp\ / \.h\ - Global data (Phase 4+)
 - \CvUnitMovement.cpp\ - Movement pathfinding
 - \CvUnitCombat.cpp\ / \.h\ - Combat system
 - \CvUnitClasses.cpp\ - Unit definitions
