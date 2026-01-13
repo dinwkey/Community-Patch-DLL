@@ -272,6 +272,10 @@ private:
 	int* m_piGSTechPriority;
 	bool m_bHasUUTech;
 	bool m_bWillHaveUUTechSoon;
+	mutable bool m_bMedianTechCacheValid;
+	mutable int m_iMedianTechCacheTurn;
+	mutable int m_iMedianTechCacheValue;
+	mutable int m_iMedianTechCacheVersion;
 	ResourceTypes* m_peLocaleTechResources;
 	UnitTypes* m_peCivTechUniqueUnits;
 	BuildingTypes* m_peCivTechUniqueBuildings;
@@ -328,6 +332,7 @@ public:
 	int GetResearchCost(TechTypes eTech) const;
 	int GetResearchLeftTimes100(TechTypes eTech) const;
 	CvTechXMLEntries* GetTechs() const;
+	int GetTechSetVersion() const;
 
 	set<TechTypes> GetTechsToResearchFor(TechTypes eTech, int iMaxSearchDepth) const;
 	bool HasPrereqTechs(TechTypes eTech, const vector<TechTypes>& extraTech) const;
@@ -342,6 +347,7 @@ private:
 
 	TechTypes m_eLastTechAcquired;
 	int m_iNumTechs;
+	int m_iTechSetVersion;
 
 	bool* m_pabHasTech;
 	bool* m_pabNoTradeTech;
