@@ -1283,8 +1283,9 @@ int CvCityCitizens::ScoreYieldChange(YieldAndGPPList yieldChanges, SPrecomputedE
 			int iValuePerAddedFoodAboveGrowthThreshold = GetBaseValuePerYield(eYield, cache, /*bAssumeStarving*/ false, /*bAssumeBelowGrowthThreshold*/ false);
 
 			CityAIFocusTypes eFocus = GetFocusType();
-			int iAssumedStagnationThreshold = (m_pCity->getPopulation() <= 3 && (eFocus == NO_CITY_AI_FOCUS_TYPE || eFocus == CITY_AI_FOCUS_TYPE_FOOD || eFocus == CITY_AI_FOCUS_TYPE_GOLD_GROWTH || eFocus == CITY_AI_FOCUS_TYPE_PROD_GROWTH)) ? 100 : 0; // in small cities, make sure we always have some growth. the first food above the stagnation threshold is evaluated as if the city was starving
-
+		// Small cities (pop <= 3) should maintain at least 2 food/turn surplus to ensure reliable growth
+		// Food below this threshold is valued as highly as if the city were starving
+		int iAssumedStagnationThreshold = (m_pCity->getPopulation() <= 3 && (eFocus == NO_CITY_AI_FOCUS_TYPE || eFocus == CITY_AI_FOCUS_TYPE_FOOD || eFocus == CITY_AI_FOCUS_TYPE_GOLD_GROWTH || eFocus == CITY_AI_FOCUS_TYPE_PROD_GROWTH)) ? 200 : 0;
 
 			// for the scoring, we split the difference in excess food in the different parts and value them accordingly
 			// the code below is a more efficient calculation of the following:
@@ -1505,8 +1506,18 @@ vector<TileChange> CvCityCitizens::GetBestOptionsQuick(int iNumOptions, bool bAd
 		}
 	}
 
-	// sort the options by score
-	std::stable_sort(vScoredOptions.begin(), vScoredOptions.end());
+	// sort only the top candidates so we can skip most of the lower scores in big cities
+	if (!vScoredOptions.empty())
+	{
+		int iCandidateLimit = max(10, iNumOptions * 4 + 4);
+		int iLimit = min(static_cast<int>(vScoredOptions.size()), iCandidateLimit);
+		if (iLimit < static_cast<int>(vScoredOptions.size()))
+		{
+			std::nth_element(vScoredOptions.begin(), vScoredOptions.begin() + iLimit, vScoredOptions.end());
+			vScoredOptions.erase(vScoredOptions.begin() + iLimit, vScoredOptions.end());
+		}
+		std::sort(vScoredOptions.begin(), vScoredOptions.end());
+	}
 
 	bool bYieldsAlreadyIncluded = false;
 	vector<TileChange> res;
@@ -1758,6 +1769,8 @@ bool CvCityCitizens::DoAddBestCitizenFromUnassigned(CvCity::eUpdateMode updateMo
 /// Pick the worst Plot to stop working
 bool CvCityCitizens::DoRemoveWorstCitizen(CvCity::eUpdateMode updateMode, bool bRemoveForcedStatus, SpecialistTypes eDontChangeSpecialist)
 {
+	int iCurrentCityPopulation = GetCity()->getPopulation(true);
+
 	// Are all of our guys already not working Plots?
 	if (GetNumUnassignedCitizens() == GetCity()->getPopulation(true))
 	{
@@ -1773,11 +1786,18 @@ bool CvCityCitizens::DoRemoveWorstCitizen(CvCity::eUpdateMode updateMode, bool b
 			ChangeNumDefaultSpecialists(-1, updateMode);
 			return true;
 		}
-		if (GetNumForcedDefaultSpecialists() > 0 && bRemoveForcedStatus)
+		if (GetNumDefaultSpecialists() > iCurrentCityPopulation)
 		{
-			ChangeNumForcedDefaultSpecialists(-1);
-			ChangeNumDefaultSpecialists(-1, updateMode);
-			return true;
+			if (bRemoveForcedStatus)
+			{
+				ChangeNumForcedDefaultSpecialists(-1);
+				ChangeNumDefaultSpecialists(-1, updateMode);
+				return true;
+			}
+			else
+			{
+				return false;
+			}
 		}
 	}
 
@@ -1958,10 +1978,12 @@ int CvCityCitizens::GetExcessFoodThreshold100() const
 	else
 	{
 		CityAIFocusTypes eFocus = GetFocusType();
+		// Growth threshold formulas use smoothed scaling to avoid cliff effects at high population
+		// min(20, ...) ensures large cities maintain some growth pressure instead of dropping to zero
 		if (eFocus == NO_CITY_AI_FOCUS_TYPE)
-			return max(1000, 500 + 2 * m_pCity->getPopulation() * max(0, 70 - m_pCity->getPopulation()));
+			return max(1000, 500 + 2 * m_pCity->getPopulation() * max(20, 70 - m_pCity->getPopulation()));
 		else if (eFocus == CITY_AI_FOCUS_TYPE_PROD_GROWTH || eFocus == CITY_AI_FOCUS_TYPE_GOLD_GROWTH)
-			return 1000 + max(1000, 500 + 2 * m_pCity->getPopulation() * max(0, 70 - m_pCity->getPopulation()));
+			return 1000 + max(1000, 500 + 2 * m_pCity->getPopulation() * max(20, 70 - m_pCity->getPopulation()));
 		else if (eFocus == CITY_AI_FOCUS_TYPE_FOOD)
 			return m_pCity->getPopulation() * 150;
 
@@ -3766,16 +3788,16 @@ void SPrecomputedExpensiveNumbers::update(CvCity* pCity, bool bInsideLoop)
 
 		// the smallest possible decrease in yield rate that would increase unhappiness from the respective need by 1
 		iBasicNeedsRateChangeForIncreasedDistress = -INT_MAX;
-		iBasicNeedsRateChangeForIncreasedDistress = -INT_MAX;
-		iBasicNeedsRateChangeForIncreasedDistress = -INT_MAX;
-		iBasicNeedsRateChangeForIncreasedDistress = -INT_MAX;
+		iGoldRateChangeForIncreasedPoverty = -INT_MAX;
+		iScienceRateChangeForIncreasedIlliteracy = -INT_MAX;
+		iCultureRateChangeForIncreasedBoredom = -INT_MAX;
 		int iLimit = MOD_BALANCE_UNCAPPED_UNHAPPINESS ? INT_MAX : pCity->getPopulation();
 		if (iDistress < iLimit)
 		{
 			// for additional distress to count, it must get us over the flat reduction threshold
 			int iNewDistressRaw = max(pCity->GetDistressRaw(false) + 1,
 				pCity->GetDistressFlatReduction() + kPlayer.GetDistressFlatReductionGlobal() + 1);
-			iBasicNeedsRateChangeForIncreasedDistress =(int)(pCity->GetBasicNeedsMedian(false, 0) * (pCity->getPopulation() - iNewDistressRaw + 1) - (pCity->getFoodPerTurnBeforeConsumptionTimes100() + pCity->getYieldRateTimes100(YIELD_PRODUCTION)));
+			iBasicNeedsRateChangeForIncreasedDistress = (int)(pCity->GetBasicNeedsMedian(false, 0) * (pCity->getPopulation() - iNewDistressRaw + 1) - (pCity->getFoodPerTurnBeforeConsumptionTimes100() + pCity->getYieldRateTimes100(YIELD_PRODUCTION)));
 		}
 		if (iPoverty < iLimit)
 		{
