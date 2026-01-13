@@ -322,6 +322,36 @@ void CvFlavorManager::ChangeCityFlavors(const CvEnumMap<FlavorTypes, int>& piDel
 	}
 }
 
+/// Issue 7.2: Urgent flavor change for immediate propagation (e.g., military threats)
+void CvFlavorManager::ChangeActivePersonalityFlavorsUrgent(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues, const char* reason)
+{
+	ASSERT(piDeltaFlavorValues.valid(), "Invalid map of flavor deltas passed to flavor manager");
+
+	if(!piDeltaFlavorValues.valid()) return;
+
+	// Update active flavors immediately
+	int iNumFlavors = GC.getNumFlavorTypes();
+	for(int iI = 0; iI < iNumFlavors; iI++)
+	{
+		if(piDeltaFlavorValues[iI] != 0)
+		{
+			LogActivePersonalityChange((FlavorTypes)iI, piDeltaFlavorValues[iI], reason, true);
+			m_piActiveFlavor[iI] += piDeltaFlavorValues[iI];
+		}
+	}
+
+	// Immediately flush to all recipients without delay (Issue 7.2)
+	// This ensures urgent changes like "under attack" are reflected in unit production now
+	for (Flavor_List::iterator it = m_FlavorTargetList.begin(); it != m_FlavorTargetList.end(); ++it)
+	{
+		if ((*it)->IsCity())
+			continue;
+
+		// Call ChangeFlavors immediately to trigger FlavorUpdate() synchronously
+		(*it)->ChangeFlavors(piDeltaFlavorValues, reason, true);
+	}
+}
+
 
 /// Resets active settings to player's base personality
 void CvFlavorManager::ResetToBasePersonality()

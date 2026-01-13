@@ -84,6 +84,37 @@ void CvGameTrade::DoTurn (void)
 	ResetPolicyDifference();
 	BuildTechDifference();
 	BuildPolicyDifference();
+	
+	// Issue 7.2: Evaluate trade route path danger and attempt rerouting
+	int iCurrentTurn = GC.getGame().getGameTurn();
+	for (size_t ui = 0; ui < m_aTradeConnections.size(); ui++)
+	{
+		if (!m_aTradeConnections[ui].isValid())
+			continue;
+			
+		TradeConnection& kConnection = m_aTradeConnections[ui];
+		
+		// Check path danger every 3 turns (performance optimization)
+		if (iCurrentTurn - kConnection.m_iLastPathDangerCheck >= 3)
+		{
+			int iPathDanger = EvaluatePathDanger(kConnection);
+			kConnection.m_iCurrentPathDanger = iPathDanger;
+			kConnection.m_iLastPathDangerCheck = iCurrentTurn;
+			
+			// If danger threshold exceeded, attempt rerouting
+			int iDangerThreshold = 100; // Configurable threshold
+			if (iPathDanger > iDangerThreshold)
+			{
+				if (RecalculateTradeRoutePath(ui))
+				{
+					// Successfully rerouted to safer path
+					CvString strMsg;
+					strMsg.Format("Trade route %d rerouted to avoid danger (danger=%d)", kConnection.m_iID, iPathDanger);
+					LogTradeMsg(strMsg);
+				}
+			}
+		}
+	}
 }
 
 int CvGameTrade::GetLongestPotentialTradeRoute(int iCityIndex, DomainTypes eDomain)
@@ -2171,6 +2202,139 @@ const vector<int>& CvGameTrade::GetTradeConnectionsForPlayer(PlayerTypes ePlayer
 }
 
 //	--------------------------------------------------------------------------------
+/// Issue 7.2: Recalculate trade route path dynamically to avoid danger
+bool CvGameTrade::RecalculateTradeRoutePath(int iTradeRouteIndex)
+{
+	PRECONDITION(iTradeRouteIndex >= 0 && iTradeRouteIndex < (int)m_aTradeConnections.size(), "iTradeRouteIndex out of bounds");
+	if (iTradeRouteIndex < 0 || iTradeRouteIndex >= (int)m_aTradeConnections.size())
+		return false;
+
+	TradeConnection& kConnection = m_aTradeConnections[iTradeRouteIndex];
+	if (!kConnection.isValid())
+		return false;
+
+	// Get origin and destination cities
+	CvCity* pOriginCity = GetOriginCity(kConnection);
+	CvCity* pDestCity = GetDestCity(kConnection);
+	if (!pOriginCity || !pDestCity)
+		return false;
+
+	// Try to find a safer alternate path
+	SPath newPath;
+	if (!FindSaferAlternatePath(kConnection, &newPath))
+		return false; // No safer path found
+
+	// Evaluate new path danger
+	TradeConnectionPlotList newPlotList;
+	for (size_t i = 0; i < newPath.vPlots.size(); i++)
+	{
+		TradeConnectionPlot kTradeConnectionPlot;
+		kTradeConnectionPlot.m_iX = newPath.vPlots[i].x;
+		kTradeConnectionPlot.m_iY = newPath.vPlots[i].y;
+		newPlotList.push_back(kTradeConnectionPlot);
+	}
+
+	int iNewPathDanger = EvaluatePathDangerForPlots(newPlotList, kConnection.m_eOriginOwner);
+	int iOldPathDanger = kConnection.m_iCurrentPathDanger;
+
+	// Only reroute if new path is significantly safer (at least 30% reduction)
+	if (iNewPathDanger >= iOldPathDanger * 70 / 100)
+		return false;
+
+	// Replace old path with new path
+	kConnection.m_aPlotList = newPlotList;
+	kConnection.m_iCurrentPathDanger = iNewPathDanger;
+	kConnection.m_iSpeedFactor = (100 * SPath::getNormalizedDistanceBase() * newPath.length()) / max(1, newPath.iNormalizedDistanceRaw);
+
+	// Reset trade unit location to start of new path
+	kConnection.m_iTradeUnitLocationIndex = 0;
+	kConnection.m_bTradeUnitMovingForward = true;
+
+	return true;
+}
+
+//	--------------------------------------------------------------------------------
+/// Issue 7.2: Evaluate total danger along a trade route path
+int CvGameTrade::EvaluatePathDanger(const TradeConnection& kTradeConnection) const
+{
+	return EvaluatePathDangerForPlots(kTradeConnection.m_aPlotList, kTradeConnection.m_eOriginOwner);
+}
+
+//	--------------------------------------------------------------------------------
+/// Issue 7.2: Evaluate danger for a specific plot list
+int CvGameTrade::EvaluatePathDangerForPlots(const TradeConnectionPlotList& aPlotList, PlayerTypes eOwner) const
+{
+	if (eOwner == NO_PLAYER)
+		return 0;
+
+	CvPlayer& kPlayer = GET_PLAYER(eOwner);
+	int iTotalDanger = 0;
+
+	for (size_t i = 0; i < aPlotList.size(); i++)
+	{
+		CvPlot* pPlot = GC.getMap().plot(aPlotList[i].m_iX, aPlotList[i].m_iY);
+		if (!pPlot)
+			continue;
+
+		// Get danger value from player's danger plots
+		int iPlotDanger = kPlayer.GetPlotDanger(*pPlot, false);
+		iTotalDanger += iPlotDanger;
+
+		// Extra penalty for enemy units on the plot
+		if (pPlot->getNumUnits() > 0)
+		{
+			CvUnit* pEnemyUnit = pPlot->getVisibleEnemyDefender(eOwner);
+			if (pEnemyUnit)
+			{
+				iTotalDanger += 50; // Fixed penalty for enemy presence
+			}
+		}
+	}
+
+	return iTotalDanger;
+}
+
+//	--------------------------------------------------------------------------------
+/// Issue 7.2: Find safer alternate path for a trade route
+bool CvGameTrade::FindSaferAlternatePath(const TradeConnection& kTradeConnection, SPath* pSaferPathOut)
+{
+	CvCity* pOriginCity = GetOriginCity(kTradeConnection);
+	CvCity* pDestCity = GetDestCity(kTradeConnection);
+	if (!pOriginCity || !pDestCity)
+		return false;
+
+	// Use standard pathfinding with danger weighting
+	// The pathfinder will automatically avoid high-danger tiles
+	SPath alternatePath;
+	bool bPathFound = IsValidTradeRoutePath(pOriginCity, pDestCity, kTradeConnection.m_eDomain, &alternatePath, true);
+	
+	if (!bPathFound || alternatePath.vPlots.empty())
+		return false;
+
+	// Make sure the alternate path is actually different
+	if (alternatePath.vPlots.size() == kTradeConnection.m_aPlotList.size())
+	{
+		bool bSamePath = true;
+		for (size_t i = 0; i < alternatePath.vPlots.size(); i++)
+		{
+			if (alternatePath.vPlots[i].x != kTradeConnection.m_aPlotList[i].m_iX ||
+				alternatePath.vPlots[i].y != kTradeConnection.m_aPlotList[i].m_iY)
+			{
+				bSamePath = false;
+				break;
+			}
+		}
+		if (bSamePath)
+			return false; // Path is identical, no point rerouting
+	}
+
+	if (pSaferPathOut)
+		*pSaferPathOut = alternatePath;
+
+	return true;
+}
+
+//	--------------------------------------------------------------------------------
 template<typename GameTrade, typename Visitor>
 void CvGameTrade::Serialize(GameTrade& gameTrade, Visitor& visitor)
 {
@@ -2263,6 +2427,10 @@ void TradeConnection::Serialize(TradeConnectionT& tradeConnection, Visitor& visi
 	visitor(tradeConnection.m_aPlotList);
 	visitor(tradeConnection.m_aiOriginYields);
 	visitor(tradeConnection.m_aiDestYields);
+	
+	// Issue 7.2: Danger tracking for trade route rerouting
+	visitor(tradeConnection.m_iLastPathDangerCheck);
+	visitor(tradeConnection.m_iCurrentPathDanger);
 }
 
 FDataStream& operator<<(FDataStream& saveTo, const TradeConnection& readFrom)
@@ -6276,17 +6444,17 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 		}
 	}
 
-	int iFlavorGold = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
-	int iFlavorScience = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_SCIENCE"));
-	int iFlavorReligion = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_RELIGION"));
-	int iFlavorCulture = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_CULTURE"));
-	int iGoldScore = iGoldDelta / max(1, (10-iFlavorGold));
-	int iScienceScore = (iTechDelta *  iFlavorScience);
-	int iCultureScore = (iCultureDelta * iFlavorCulture);
-	int iReligionScore = (iReligionDelta *  (iFlavorReligion / 2));
+	__int64 iFlavorGold = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
+	__int64 iFlavorScience = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_SCIENCE"));
+	__int64 iFlavorReligion = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_RELIGION"));
+	__int64 iFlavorCulture = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_CULTURE"));
+	__int64 iGoldScore = iGoldDelta / max(1, (10-int(iFlavorGold)));
+	__int64 iScienceScore = (iTechDelta *  iFlavorScience);
+	__int64 iCultureScore = (iCultureDelta * iFlavorCulture);
+	__int64 iReligionScore = (iReligionDelta *  (iFlavorReligion / 2));
 
 	//add it all up
-	int iScore = iGoldScore + iScienceScore + iCultureScore + iReligionScore;
+	__int64 iScore = iGoldScore + iScienceScore + iCultureScore + iReligionScore;
 
 	// yields in owned cities the trade route passes
 	for (uint uiLoopPlot = 0; uiLoopPlot < kTradeConnection.m_aPlotList.size(); uiLoopPlot++)
@@ -6562,11 +6730,11 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 		iScore /= max(2, m_pPlayer->GetMilitaryAI()->GetNumberCivsAtWarWith(false));
 	}
 
-	ret.m_iScore = iScore;
-	ret.m_iCultureScore = iCultureScore;
-	ret.m_iGoldScore = iGoldScore;
-	ret.m_iScienceScore = iScienceScore;
-	ret.m_iReligionScore = iReligionScore;
+	ret.m_iScore = (iScore > INT_MAX) ? INT_MAX : ((iScore < INT_MIN) ? INT_MIN : (int)iScore);
+	ret.m_iCultureScore = (iCultureScore > INT_MAX) ? INT_MAX : ((iCultureScore < INT_MIN) ? INT_MIN : (int)iCultureScore);
+	ret.m_iGoldScore = (iGoldScore > INT_MAX) ? INT_MAX : ((iGoldScore < INT_MIN) ? INT_MIN : (int)iGoldScore);
+	ret.m_iScienceScore = (iScienceScore > INT_MAX) ? INT_MAX : ((iScienceScore < INT_MIN) ? INT_MIN : (int)iScienceScore);
+	ret.m_iReligionScore = (iReligionScore > INT_MAX) ? INT_MAX : ((iReligionScore < INT_MIN) ? INT_MIN : (int)iReligionScore);
 	return ret;
 }
 
@@ -6949,22 +7117,21 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreGoldInternalTR(const TradeConnection& k
 
 				iReligionDelta += int(iToPressure * dExistingPressureModTo / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
 				iReligionDelta -= int(iFromPressure * dExistingPressureModFrom / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
-			}
+		}
 		}
 	}
 
-	int iFlavorGold = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
-	int iFlavorScience = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_SCIENCE"));
-	int iFlavorReligion = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_RELIGION"));
-	int iFlavorCulture = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_CULTURE"));
-	int iGoldScore = iGoldAmount / max(1, (10 - iFlavorGold));
-	int iScienceScore = (iAdjustedScienceAmount *  iFlavorScience);
-	int iCultureScore = (iAdjustedCultureAmount * iFlavorCulture);
-	int iReligionScore = (iReligionDelta *  (iFlavorReligion / 2));
+	__int64 iFlavorGold = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
+	__int64 iFlavorScience = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_SCIENCE"));
+	__int64 iFlavorReligion = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_RELIGION"));
+	__int64 iFlavorCulture = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_CULTURE"));
+	__int64 iGoldScore = iGoldAmount / max(1, (10 - int(iFlavorGold)));
+	__int64 iScienceScore = (iAdjustedScienceAmount *  iFlavorScience);
+	__int64 iCultureScore = (iAdjustedCultureAmount * iFlavorCulture);
+	__int64 iReligionScore = (iReligionDelta *  (iFlavorReligion / 2));
 
 	//add it all up
-	int iScore = iGoldScore + iScienceScore + iCultureScore + iReligionScore;
-
+	__int64 iScore = iGoldScore + iScienceScore + iCultureScore + iReligionScore;
 	//abort if we're negative
 	if (iScore <= 0)
 		return ret;
@@ -7028,11 +7195,11 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreGoldInternalTR(const TradeConnection& k
 	iScore = (iScore * iEra) / iDangerSum;
 
 	//finally
-	ret.m_iScore = iScore;
-	ret.m_iCultureScore = iCultureScore;
-	ret.m_iGoldScore = iGoldScore;
-	ret.m_iScienceScore = iScienceScore;
-	ret.m_iReligionScore = iReligionScore;
+	ret.m_iScore = (iScore > INT_MAX) ? INT_MAX : ((iScore < INT_MIN) ? INT_MIN : (int)iScore);
+	ret.m_iCultureScore = (iCultureScore > INT_MAX) ? INT_MAX : ((iCultureScore < INT_MIN) ? INT_MIN : (int)iCultureScore);
+	ret.m_iGoldScore = (iGoldScore > INT_MAX) ? INT_MAX : ((iGoldScore < INT_MIN) ? INT_MIN : (int)iGoldScore);
+	ret.m_iScienceScore = (iScienceScore > INT_MAX) ? INT_MAX : ((iScienceScore < INT_MIN) ? INT_MIN : (int)iScienceScore);
+	ret.m_iReligionScore = (iReligionScore > INT_MAX) ? INT_MAX : ((iReligionScore < INT_MIN) ? INT_MIN : (int)iReligionScore);
 	return ret;
 }
 

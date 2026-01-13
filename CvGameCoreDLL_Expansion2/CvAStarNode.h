@@ -89,6 +89,7 @@ struct CvPathNodeCacheData
 	bool bIsVisibleNeutralCombatUnit:1;
 	bool bUnitStackingLimitReached:1;
 	bool bIsValidRoute:1;
+	bool bNeedStackingCheck:1; //cached result of NeedToCheckStacking for this node
 
 	int iMoveFlags;
 
@@ -97,7 +98,7 @@ struct CvPathNodeCacheData
 	short plotMovementCostAdder;
 
 	//tell us when to update the cache ...
-	unsigned short iGenerationID;
+	unsigned int iGenerationID;
 
 	//housekeeping
 	CvPathNodeCacheData() { clear(); }

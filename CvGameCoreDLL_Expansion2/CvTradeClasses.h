@@ -57,6 +57,10 @@ struct TradeConnection
 			m_aiOriginYields[ui] = 0;
 			m_aiDestYields[ui] = 0;
 		}
+		
+		// Issue 7.2: Initialize danger tracking
+		m_iLastPathDangerCheck = -1;
+		m_iCurrentPathDanger = 0;
 	}
 
 	template<typename TradeConnectionT, typename Visitor>
@@ -103,6 +107,10 @@ struct TradeConnection
 	bool m_bTradeUnitRecalled;
 	int m_aiOriginYields[NUM_YIELD_TYPES];
 	int m_aiDestYields[NUM_YIELD_TYPES];
+	
+	// Issue 7.2: Trade route rerouting support
+	int m_iLastPathDangerCheck; // Turn when path danger was last evaluated
+	int m_iCurrentPathDanger; // Current danger level of the route
 };
 
 FDataStream& operator<<(FDataStream&, const TradeConnection&);
@@ -215,6 +223,12 @@ public:
 
 	void SetLongestPotentialTradeRoute(int iValue, int iCityIndex, DomainTypes eDomain);
 	int GetLongestPotentialTradeRoute(int iCityIndex, DomainTypes eDomain);
+
+	// Issue 7.2: Trade route dynamic rerouting
+	bool RecalculateTradeRoutePath(int iTradeRouteIndex);
+	int EvaluatePathDanger(const TradeConnection& kTradeConnection) const;
+	int EvaluatePathDangerForPlots(const TradeConnectionPlotList& aPlotList, PlayerTypes eOwner) const;
+	bool FindSaferAlternatePath(const TradeConnection& kTradeConnection, SPath* pSaferPathOut);
 
 private:
 	TradePathLookup& GetTradePathsCache(bool bWater);
