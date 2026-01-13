@@ -4518,6 +4518,8 @@ void CvGameDeals::ActivateDeal(PlayerTypes eFromPlayer, PlayerTypes eToPlayer, C
 		kDeal.SetSurrenderingPlayer(eToPlayer);
 	}
 
+	// Add to the new deal
+
 	kDeal.m_iDuration = iLongestDuration;
 	kDeal.m_iFinalTurn = iLatestItemLastTurn;
 	kDeal.m_iStartTurn = GC.getGame().getGameTurn();
