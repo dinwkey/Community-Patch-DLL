@@ -272,10 +272,6 @@ private:
 	int* m_piGSTechPriority;
 	bool m_bHasUUTech;
 	bool m_bWillHaveUUTechSoon;
-	mutable bool m_bMedianTechCacheValid;
-	mutable int m_iMedianTechCacheTurn;
-	mutable int m_iMedianTechCacheValue;
-	mutable int m_iMedianTechCacheVersion;
 	ResourceTypes* m_peLocaleTechResources;
 	UnitTypes* m_peCivTechUniqueUnits;
 	BuildingTypes* m_peCivTechUniqueBuildings;
@@ -283,6 +279,12 @@ private:
 	CvTechXMLEntries* m_pTechs;
 	CvPlayer* m_pPlayer;
 	CvTechAI* m_pTechAI;
+
+	// Transient cache for median tech research cost to avoid expensive recomputation within a turn
+	mutable int m_iMedianTechCacheValue;
+	mutable int m_iMedianTechCacheTurn;
+	mutable int m_iMedianTechCacheVersion;
+	mutable bool m_bMedianTechCacheValid;
 };
 
 FDataStream& operator>>(FDataStream&, CvPlayerTechs&);
@@ -344,10 +346,10 @@ public:
 
 private:
 	int GetMaxResearchOverflow(TechTypes eTech, PlayerTypes ePlayer) const;
+	int m_iTechSetVersion;
 
 	TechTypes m_eLastTechAcquired;
 	int m_iNumTechs;
-	int m_iTechSetVersion;
 
 	bool* m_pabHasTech;
 	bool* m_pabNoTradeTech;
