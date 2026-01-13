@@ -2558,6 +2558,51 @@ void CvHomelandAI::ExecuteFirstTurnSettlerMoves()
 			}
 			if (m_pPlayer->isMinorCiv() && /*0*/ GD_INT_GET(CS_CAN_MOVE_STARTING_SETTLER) == 0)
 			{
+				// YnAEMP fix: For island city-states, search for coastal plot if current plot isn't coastal
+				CvPlot* pFoundPlot = pUnit->plot();
+				if (pFoundPlot != NULL && !pFoundPlot->isWater() && !pFoundPlot->isCoastalLand())
+				{
+					int iAreaID = pFoundPlot->getArea();
+					CvArea* pArea = pFoundPlot->area();
+					if (pArea != NULL && pArea->getNumTiles() < 30) // Small island
+					{
+						CvPlot* pBestCoastal = NULL;
+						int iBestDistance = MAX_INT;
+						
+						// Search nearby plots for coastal location on same island
+						for (int iDX = -3; iDX <= 3; iDX++)
+						{
+							for (int iDY = -3; iDY <= 3; iDY++)
+							{
+								CvPlot* pLoopPlot = plotXYWithRangeCheck(pFoundPlot->getX(), pFoundPlot->getY(), iDX, iDY, 3);
+								if (pLoopPlot && !pLoopPlot->isWater() && pLoopPlot->isCoastalLand() && 
+									pLoopPlot->getArea() == iAreaID && pUnit->canFoundCity(pLoopPlot))
+								{
+									int iDistance = plotDistance(pFoundPlot->getX(), pFoundPlot->getY(), pLoopPlot->getX(), pLoopPlot->getY());
+									if (iDistance < iBestDistance)
+									{
+										iBestDistance = iDistance;
+										pBestCoastal = pLoopPlot;
+									}
+								}
+							}
+						}
+						
+						if (pBestCoastal != NULL)
+						{
+							pFoundPlot = pBestCoastal;
+							if (GC.getLogging() && GC.getAILogging())
+							{
+								CvString strLogString;
+								strLogString.Format("Moved island city-state to coastal plot, X: %d, Y: %d (was %d,%d)", 
+									pBestCoastal->getX(), pBestCoastal->getY(), pUnit->getX(), pUnit->getY());
+								LogHomelandMessage(strLogString);
+							}
+							pUnit->setXY(pBestCoastal->getX(), pBestCoastal->getY());
+						}
+					}
+				}
+				
 				pUnit->PushMission(CvTypes::getMISSION_FOUND());
 				UnitProcessed(pUnit->GetID());
 				if (GC.getLogging() && GC.getAILogging())
@@ -2637,51 +2682,6 @@ void CvHomelandAI::ExecuteFirstTurnSettlerMoves()
 		//did not find a better plot (ideal case in fact)
 		if (pUnit->canFoundCity(pUnit->plot()))
 		{
-			// Issue 7.1: YnAEMP fix - For island city-states, search for coastal plot if current plot isn't coastal
-			CvPlot* pFoundPlot = pUnit->plot();
-			if (pFoundPlot != NULL && !pFoundPlot->isWater() && !pFoundPlot->isCoastalLand())
-			{
-				int iAreaID = pFoundPlot->getArea();
-				CvArea* pArea = pFoundPlot->area();
-				if (pArea != NULL && pArea->getNumTiles() < 30) // Small island
-				{
-					CvPlot* pBestCoastal = NULL;
-					int iBestDistance = MAX_INT;
-
-					// Search nearby plots for coastal location on same island
-					for (int iDX = -3; iDX <= 3; iDX++)
-					{
-						for (int iDY = -3; iDY <= 3; iDY++)
-						{
-							CvPlot* pLoopPlot = plotXYWithRangeCheck(pFoundPlot->getX(), pFoundPlot->getY(), iDX, iDY, 3);
-							if (pLoopPlot && !pLoopPlot->isWater() && pLoopPlot->isCoastalLand() &&
-									pLoopPlot->getArea() == iAreaID && pUnit->canFoundCity(pLoopPlot))
-							{
-								int iDistance = plotDistance(pFoundPlot->getX(), pFoundPlot->getY(), pLoopPlot->getX(), pLoopPlot->getY());
-								if (iDistance < iBestDistance)
-								{
-									iBestDistance = iDistance;
-									pBestCoastal = pLoopPlot;
-								}
-							}
-						}
-					}
-
-					if (pBestCoastal != NULL)
-					{
-						pFoundPlot = pBestCoastal;
-						if (GC.getLogging() && GC.getAILogging())
-						{
-							CvString strLogString;
-							strLogString.Format("Moved island city-state to coastal plot, X: %d, Y: %d (was %d,%d)",
-													pBestCoastal->getX(), pBestCoastal->getY(), pUnit->getX(), pUnit->getY());
-							LogHomelandMessage(strLogString);
-						}
-						pUnit->setXY(pBestCoastal->getX(), pBestCoastal->getY());
-					}
-				}
-			}
-
 			pUnit->PushMission(CvTypes::getMISSION_FOUND());
 			UnitProcessed(pUnit->GetID());
 			if (GC.getLogging() && GC.getAILogging())
@@ -3332,6 +3332,12 @@ vector<OptionWithScore<pair<CvUnit*, BuilderDirective>>> CvHomelandAI::GetWeight
 			if (!m_pPlayer->GetBuilderTaskingAI()->CanUnitPerformDirective(pUnit, eDirective, true))
 				continue;
 
+			// Early exit: check air distance before expensive danger/pathfinding calculations
+			int iAirDistance = plotDistance(pUnit->getX(), pUnit->getY(), pDirectivePlot->getX(), pDirectivePlot->getY());
+			// If even with zero move time the score would be too low, skip this worker
+			if (iAirDistance > 10 && GetDirectiveWeight(eDirective, 1, iAirDistance / 2) <= iBestWeightedScore)
+				continue;
+
 			if (pUnit->GetDanger(pDirectivePlot) > pUnit->GetCurrHitPoints())
 			{
 				CvUnit* pBestDefender = pDirectivePlot->getBestDefender(m_pPlayer->GetID());
@@ -3548,6 +3554,19 @@ void CvHomelandAI::ExecuteWorkerMoves()
 		// We may have planned an improvement that we can't build yet, but should still update other plots as if we've built it
 		// E.g. if we're planning to build an improvement with a no-two-adjacent requirement, we still want to build other improvements next to it.
 		bool bCanBuild = pBuilder->canBuild(GC.getMap().plot(eDirective.m_sX, eDirective.m_sY), eDirective.m_eBuild);
+		
+		// Validate builder has enough charges (CIV6_WORKER mode) or won't be killed
+		if (bCanBuild && MOD_CIV6_WORKER)
+		{
+			CvBuildInfo* pkBuildInfo = GC.getBuildInfo(eDirective.m_eBuild);
+			if (pkBuildInfo)
+			{
+				int iBuilderCost = pkBuildInfo->getBuilderCost();
+				if (iBuilderCost > 0 && pBuilder->getBuilderStrength() < iBuilderCost)
+					bCanBuild = false;
+			}
+		}
+		
 		if (bCanBuild)
 		{
 			bool bIsAutomated = !m_pPlayer->isHuman(ISHUMAN_AI_UNITS) || pBuilder->IsAutomated();
@@ -3932,7 +3951,7 @@ void CvHomelandAI::ExecuteWorkerMoves()
 					if (pOtherPlot->getFeatureType() == eOldFeature)
 					{
 						FeatureTypes eFeatureFromOtherImprovement = pkOtherImprovementInfo ? pkOtherImprovementInfo->GetCreatedFeature() : NO_FEATURE;
-						FeatureTypes eOtherFeature = pkOtherBuildInfo && pOtherPlot->getFeatureType() != NO_FEATURE && pkOtherBuildInfo->isFeatureRemove(pOtherPlot->getFeatureType()) ? NO_FEATURE : pOtherPlot->getFeatureType();
+						FeatureTypes eOtherFeature = pkOtherBuildInfo && pkOtherBuildInfo->isFeatureRemove(pOtherPlot->getFeatureType()) ? NO_FEATURE : pOtherPlot->getFeatureType();
 						eOtherFeature = eFeatureFromOtherImprovement != NO_FEATURE ? eFeatureFromOtherImprovement : eOtherFeature;
 
 						if (eOtherFeature != pOtherPlot->getFeatureType() || eOtherImprovement != NO_IMPROVEMENT)
@@ -5506,8 +5525,8 @@ void CvHomelandAI::ExecuteSSPartMoves()
 		if(!pUnit)
 			continue;
 
-		// Issue 4.2: Prioritize threatened cities over just the capital for emergency airlift
 		// do an airlift if it's possible and we'd need more than one turn to reach the target normally
+		// Prioritize threatened cities and strategic locations, not just the capital
 		CvCity* pTargetCity = pCapitalCity;
 		int iBestThreatLevel = 0;
 
@@ -5614,7 +5633,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 	if (m_CurrentMoveUnits.empty())
 		return;
 	
-	// TODO: verify if these variables are really supposed to be unused
+	// Track air unit distribution for strategic rebasing decisions
 	int nAirUnitsInCarriers = 0;
 	int nAirUnitsInCities = 0;
 	int nSlotsInCarriers = 0;
@@ -5665,7 +5684,9 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		{
 			nSlotsInCarriers += pLoopUnit->cargoSpace();
 
-			//for simplicity we don't do carrier to carrier rebasing, only carrier to city
+			//Carrier-to-carrier rebasing is now supported. Aircraft can rebase between carriers
+			// directly if they're closer, or use intermediate cities if needed for pathfinding.
+			// Attach carrier to nearest city for multi-step pathfinding support.
 			CvCity* pRefCity = m_pPlayer->GetClosestCityByPlots(pLoopUnit->plot());
 			if (pRefCity)
 			{
@@ -5694,6 +5715,19 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		int iScore = HomelandAIHelpers::ScoreAirBase(pTarget, m_pPlayer->GetID(), false, iAssumedRange); //estimate a range
 		vPotentialBases.push_back( SPlotWithScore( pTarget, iScore ) );
 		scoreLookup[pTarget->GetPlotIndex()] = iScore;
+	}
+
+	//Use collected statistics to guide rebasing strategy
+	//If we have more defensive than offensive aircraft, prioritize offensive aircraft to combat bases
+	bool bPrioritizeOffensiveToCarriers = (nAirUnitsOffensive < nAirUnitsDefensive);
+	
+	if(GC.getLogging() && GC.getAILogging())
+	{
+		CvString strLogString;
+		strLogString.Format("Air unit distribution - Offensive: %d, Defensive: %d, InCarriers: %d, InCities: %d, CarrierSlots: %d, Prioritize Offensive to Carriers: %s",
+			nAirUnitsOffensive, nAirUnitsDefensive, nAirUnitsInCarriers, nAirUnitsInCities, nSlotsInCarriers,
+			bPrioritizeOffensiveToCarriers ? "YES" : "NO");
+		LogHomelandMessage(strLogString);
 	}
 
 	//then decide what to do with our units
@@ -5746,9 +5780,17 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				if (it->score<0)
 					continue;
 
-				//healing in cities only
-				if (!pUnit->canRebase() || !(it->pPlot->isCity()))
+				//healing units prefer cities, but can use healthy carriers if score is good
+				if (!pUnit->canRebase())
 					continue;
+		
+				// If targeting a carrier, ensure it's not dying (score -1) and has reasonable health
+				if (!it->pPlot->isCity())
+				{
+					CvUnit* pCarrier = it->pPlot->getBestDefender(m_pPlayer->GetID());
+					if (!pCarrier || it->score < 0)  // Skip unsuitable carriers
+						continue;
+				}
 
 				//apparently we're already in the best possible base?
 				if (pUnit->plot() == it->pPlot)
@@ -5820,10 +5862,20 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		bool bBest = false;
 		CvUnit* pUnit = vCombatReadyUnits[i];
 		CvPlot* pNewBase = NULL;
+		
+		// For offensive air units: if we're prioritizing offensive to carriers (defensive units outnumber offensive),
+		// then bias this unit toward carrier-based locations
+		bool bIsOffensiveAir = (pUnit->getDomainType() == DOMAIN_AIR && 
+			(pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_ATTACK_AIR ||
+			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_ICBM ||
+			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR));
+		
 		for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
 		{
 			//unsuitable - we want to fight!
-			if (it->score<0)
+			//Exception: if prioritizing offensive to carriers, allow carrier bases even with marginal scores
+			bool bIsCarrierBase = !it->pPlot->isCity();
+			if (it->score<0 && !(bPrioritizeOffensiveToCarriers && bIsOffensiveAir && bIsCarrierBase))
 				continue;
 
 			//make sure the unit fits the destination (ie missile to cruiser, fighter to carrier)
@@ -5849,14 +5901,18 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			}
 			else
 			{
-				//need to use the pathfinder
-				SPathFinderUserData data(pUnit, 0, 6);
-				data.ePath = PT_AIR_REBASE;
-				SPath path = GC.GetStepFinder().GetPath(pUnit->getX(),pUnit->getY(),it->pPlot->getX(),it->pPlot->getY(),data);
-				if (!!path)
+				//Carrier-to-carrier rebasing: check if target is a carrier with available slots
+				if (pUnit->getDomainType() == DOMAIN_AIR && !pUnit->canLoad(*(it->pPlot)))
 				{
-					pNewBase = PathHelpers::GetPathFirstPlot(path);
-					break;
+					//Unit can't load directly - try pathfinding for multi-step rebasing
+					SPathFinderUserData data(pUnit, 0, 6);
+					data.ePath = PT_AIR_REBASE;
+					SPath path = GC.GetStepFinder().GetPath(pUnit->getX(),pUnit->getY(),it->pPlot->getX(),it->pPlot->getY(),data);
+					if (!!path)
+					{
+						pNewBase = PathHelpers::GetPathFirstPlot(path);
+						break;
+					}
 				}
 			}
 		}
@@ -5866,9 +5922,32 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			if(GC.getLogging() && GC.getAILogging())
 			{
 				CvString strLogString;
-				strLogString.Format("Rebasing %s (%d) from %d,%d to %d,%d for combat (score %d)", 
-					pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
-					pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
+				// Determine if rebasing to a carrier or city for logging
+				bool bToCarrier = false;
+				IDInfo* pUnitNode = pNewBase->headUnitNode();
+				while(pUnitNode != NULL)
+				{
+					CvUnit* pCarrier = ::GetPlayerUnit(*pUnitNode);
+					pUnitNode = pNewBase->nextUnitNode(pUnitNode);
+					if (pCarrier && pCarrier->domainCargo() == DOMAIN_AIR)
+					{
+						bToCarrier = true;
+						break;
+					}
+				}
+				
+				if (bToCarrier && bIsOffensiveAir && bPrioritizeOffensiveToCarriers)
+					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d) [STRATEGY: prioritizing offensive to carriers]", 
+						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+						pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
+				else if (bToCarrier)
+					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d)", 
+						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+						pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
+				else
+					strLogString.Format("Rebasing %s (%d) from %d,%d to %d,%d for combat (score %d)", 
+						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+						pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
 				LogHomelandMessage(strLogString);
 			}
 
@@ -7020,6 +7099,23 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 			return -1;
 		if (pDefender->isProjectedToDieNextTurn() && !bDesperate)
 			return -1;
+
+		// Assess carrier health - damaged carriers are less suitable as rebase destinations
+		int iCarrierHealth = pDefender->GetCurrHitPoints();
+		int iCarrierMaxHealth = pDefender->GetMaxHitPoints();
+		int iHealthPercent = (iCarrierHealth * 100) / iCarrierMaxHealth;
+		
+		// Critical health carrier (<30%): unsuitable unless desperate
+		if (iHealthPercent < 30 && !bDesperate)
+			return -1;
+		
+		// Damaged carrier (30-60%): reduce score by 50%
+		if (iHealthPercent < 60)
+			iBaseScore = (iBaseScore + 1) / 2;
+		
+		// Lightly damaged carrier (60-80%): reduce score by 25%
+		if (iHealthPercent < 80)
+			iBaseScore = (iBaseScore * 3) / 4;
 	}
 
 	//check current targets during wartime
@@ -7051,6 +7147,65 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 			break;
 		}
 	}
+
+	// Bonus for visibility: fighters can provide early warning and scouting (typical fighter vision range is 2)
+	// This helps detect incoming enemies and gather intelligence
+	int iVisibilityBonus = 0;
+	int iVisionRange = 2; // Typical fighter vision range - could pass as parameter if needed
+	
+	// Count strategically valuable plots within vision range that are currently not visible to the player
+	for (int iX = -iVisionRange; iX <= iVisionRange; iX++)
+	{
+		for (int iY = -iVisionRange; iY <= iVisionRange; iY++)
+		{
+			CvPlot* pCheckPlot = plotXYWithRangeCheck(pBasePlot->getX(), pBasePlot->getY(), iX, iY, iVisionRange);
+			if (!pCheckPlot)
+				continue;
+
+			// Only count plots we can't currently see
+			if (pCheckPlot->isVisible(kPlayer.getTeam()))
+				continue;
+
+			// Prioritize plots near enemy territory or borders
+			bool bStrategic = false;
+
+			// Check if plot is in or adjacent to enemy territory
+			TeamTypes ePlotTeam = pCheckPlot->getTeam();
+			if (ePlotTeam != NO_TEAM && GET_TEAM(kPlayer.getTeam()).isAtWar(ePlotTeam))
+			{
+				iVisibilityBonus += 2; // Enemy territory
+				bStrategic = true;
+			}
+
+			// Check for adjacent enemy plots (border areas)
+			if (!bStrategic)
+			{
+				for (int iDirection = 0; iDirection < NUM_DIRECTION_TYPES; iDirection++)
+				{
+					CvPlot* pAdjacentPlot = plotDirection(pCheckPlot->getX(), pCheckPlot->getY(), (DirectionTypes)iDirection);
+					if (pAdjacentPlot)
+					{
+						TeamTypes eAdjacentTeam = pAdjacentPlot->getTeam();
+						if (eAdjacentTeam != NO_TEAM && GET_TEAM(kPlayer.getTeam()).isAtWar(eAdjacentTeam))
+						{
+							iVisibilityBonus += 1; // Near enemy border
+							bStrategic = true;
+							break;
+						}
+					}
+				}
+			}
+
+			// Bonus for unrevealed plots (fog of war = intelligence value)
+			if (!bStrategic && !pCheckPlot->isRevealed(kPlayer.getTeam()))
+			{
+				iVisibilityBonus += 1; // Unexplored territory
+			}
+		}
+	}
+
+	// Add visibility bonus to base score (cap at reasonable value to not overwhelm combat scoring)
+	iBaseScore += min(iVisibilityBonus, 15);
 
 	return iBaseScore;
 }
