@@ -82,13 +82,40 @@ All three phases now implemented with upstream compatibility:
 - Phase 2: Integration (threat detection active in defense state calculation)
 - Phase 3: Tactical coordination (retreat logic, attack planning, strategic positioning)
 
-#### Builder & Economic AI (3 files)
-- \CvBuilderTaskingAI.cpp\ - 245 lines removed/changed
-  - Builder task refactoring
-  
-- \CvBuilderTaskingAI.h\ - 1 line added
+#### Builder & Economic AI (3 files - High Priority)
 
-- \CvEconomicAI.cpp\ - 15 lines changed
+**✅ STRATEGY: Selective Re-implementation (Not Wholesale Restoration)**
+
+**PHASE 1: CORE IMPROVEMENTS** ✅ (COMPLETE)
+- \CvBuilderTaskingAI.cpp\ - ~95 lines of improvements (DONE)
+  - GetTurnsToBuild: Fix workRate(false) for accurate build time calculation (Issue: economic accuracy)
+  - ScorePlotBuild: Add gold maintenance accounting (Issue 1: net gold value, not gross)
+  - ScorePlotBuild: Add build time ROI adjustment (longer builds less valuable)
+  - ShouldBuilderConsiderPlot: Improve fallout damage logic (net damage vs healing, not HP threshold)
+  - Selective implementation preserving upstream improvements
+  - Build verified: clang-build debug successful
+  - Commit: 96c2896aa
+
+- \CvBuilderTaskingAI.h\ - (No changes required for Phase 1)
+
+- \CvEconomicAI.cpp\ - ~15 lines (DONE)
+  - DisbandUnitsToFreeSpaceshipResources: Fix order removal (remove specific order, not entire queue)
+  - Prevents loss of other queued items during spacecraft race
+  - Build verified: clang-build debug successful
+  - Commit: 96c2896aa
+
+**PHASE 1 RATIONALE:**
+Core fixes addressing fundamental economic AI issues:
+1. workRate(false) - Upstream uses promoted rate, but turnsToComplete needs base rate
+2. Gold maintenance - Gold improvements were grossly overvalued (not accounting for costs)
+3. Build time ROI - Quick improvements should be prioritized over slow ones
+4. Fallout logic - Original 50% HP threshold too conservative, blocks efficient cleanup
+5. Order removal - Clearing entire queue (settlers, workers, etc.) too aggressive
+
+**PHASE 2: OPTIONAL** (Strategic Enhancements)
+- Movement speed bonuses for railroads (war-situation weighting)
+- Strategic location value calculations (requires performance testing)
+- Reference: docs/builder-economic-ai/BUILDER_ECONOMIC_PHASE_ANALYSIS.md
 
 #### Core Game Systems (15 files)
 - \CvPlayer.cpp\ / \.h\ - Player state/logic
@@ -180,13 +207,13 @@ All three phases now implemented with upstream compatibility:
 
 ---
 
-## ✅ COMPREHENSIVE SUMMARY: Selective Re-implementation Complete
+## ✅ COMPREHENSIVE SUMMARY: Selective Re-implementation in Progress
 
 ### Overall Strategy Validation ✅
 
 This repository successfully implements a **layered enhancement approach** that preserves 100+ upstream/master commits while adding focused improvements:
 
-**Four Distinct Phases Completed:**
+**Five Distinct Phases Completed/In-Progress:**
 
 1. **Pathfinding System** (5b6a839ca) ✅
    - UMP-004/005/006: Recursion guards, heuristic improvements, edge case fixes
@@ -212,10 +239,16 @@ This repository successfully implements a **layered enhancement approach** that 
    - Approach: Island-state fixes + threat-aware reinforcement
    - Build status: ✅ Verified
 
+5. **Builder & Economic AI Phase 1** (96c2896aa) ✅
+   - Core economic improvements (110 lines)
+   - workRate fix, gold maintenance accounting, build time ROI, fallout logic, order removal
+   - Approach: Selective core fixes (NOT wholesale restoration)
+   - Build status: ✅ Verified
+
 ### Key Metrics
 
-- **Total code added:** ~650 lines across pathfinding + military AI phases
-- **Build success rate:** 100% (4/4 commits verified)
+- **Total code added:** ~740 lines across 5 phases (pathfinding + military AI + builder AI)
+- **Build success rate:** 100% (5/5 commits verified)
 - **Upstream commits preserved:** 100+ (base: upstream/master)
 - **Risk profile:** LOW (focused enhancements, no wholesale restoration)
 - **API compatibility:** ✅ All modern CIV5 APIs verified
@@ -236,6 +269,7 @@ Each phase followed identical pattern:
 - ❌ Large HomelandAI/WonderProductionAI rewrites
 - ❌ Conflicting builder/economic system changes
 - ❌ 15+ culture/religion/trade system rewrites
+- ❌ 70+ line strategic location railroads enhancement (Phase 2 candidate, requires testing)
 
 These exclusions ensure compatibility with upstream while maintaining focused enhancements.
 
