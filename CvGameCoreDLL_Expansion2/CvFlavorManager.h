@@ -81,6 +81,7 @@ public:
 	// External routines used to set flavors - each call broadcasts a flavor update to all recipients
 	void ChangeActivePersonalityFlavors(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues, const char* reason, bool effectstart);
 	void ChangeCityFlavors(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues, const char* reason, bool effectstart);
+	void ChangeActivePersonalityFlavorsUrgent(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues, const char* reason);
 	void ResetToBasePersonality();
 	void AdjustWeightsForMap();
 
