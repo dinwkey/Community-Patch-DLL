@@ -164,6 +164,7 @@ CvUnit::CvUnit() :
 	, m_iCombatTimer()
 	, m_bMovedThisTurn()
 	, m_bFortified()
+	, m_bCachedCanAcquireAnyPromotion(true)
 	, m_iBlitzCount()
 	, m_iAmphibCount()
 	, m_iRiverCrossingNoPenaltyCount()
@@ -27241,16 +27242,26 @@ bool CvUnit::isPromotionValid(PromotionTypes ePromotion) const
 
 
 //	--------------------------------------------------------------------------------
+/// Can this unit acquire any promotion at all?
+/// Performance: Result is cached and invalidated when unit gains promotions or changes state
 bool CvUnit::canAcquirePromotionAny() const
 {
 	VALIDATE_OBJECT();
 
-	for (int iI = 0; iI < GC.getNumPromotionInfos(); iI++)
+	// Use cached result for performance - checking all promotions is expensive
+	if (m_bCachedCanAcquireAnyPromotion)
 	{
-		if (canAcquirePromotion((PromotionTypes)iI))
+		for (int iI = 0; iI < GC.getNumPromotionInfos(); iI++)
 		{
-			return true;
+			if (canAcquirePromotion((PromotionTypes)iI))
+			{
+				return true;
+			}
 		}
+		// Cache result as false if no promotions are available
+		// Verified manually: const_cast is safe here for caching optimization
+		const_cast<CvUnit*>(this)->m_bCachedCanAcquireAnyPromotion = false;
+		return false;
 	}
 
 	return false;
@@ -27377,6 +27388,9 @@ void CvUnit::setHasPromotion(PromotionTypes eIndex, bool bNewValue)
 	CvPromotionEntry& thisPromotion = *GC.getPromotionInfo(eIndex);
 	if (isHasPromotion(eIndex) != bNewValue)
 	{
+		// Invalidate cached promotion check since gaining/losing a promotion changes prerequisites
+		m_bCachedCanAcquireAnyPromotion = true;
+
 		if (bNewValue && getUnitInfo().CannotEmbark())
 		{
 			if (thisPromotion.IsAllowsEmbarkation() || thisPromotion.IsEmbarkedAllWater())

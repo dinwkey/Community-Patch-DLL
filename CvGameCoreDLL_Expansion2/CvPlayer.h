@@ -3499,6 +3499,8 @@ protected:
 	std::vector<int> m_paiResourcesSiphoned;
 	std::vector<int> m_paiHighestResourceQuantity;
 	std::vector<byte> m_aiNumResourceFromGP;
+	std::vector<int> m_paiNumResourceTotalCached;
+	std::vector<int> m_paiNumResourceTotalCachedNoImport;
 	std::vector<int> m_paiImprovementCount;
 	std::vector<int> m_paiImprovementBuiltCount;
 	std::vector<int> m_paiTotalImprovementsBuilt;

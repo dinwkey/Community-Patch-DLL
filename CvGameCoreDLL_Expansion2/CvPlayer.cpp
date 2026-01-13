@@ -1062,6 +1062,8 @@ void CvPlayer::uninit()
 	m_paiResourcesSiphoned.clear();
 	m_paiHighestResourceQuantity.clear();
 	m_aiNumResourceFromGP.clear();
+	m_paiNumResourceTotalCached.clear();
+	m_paiNumResourceTotalCachedNoImport.clear();
 	m_paiImprovementCount.clear();
 	m_paiImprovementBuiltCount.clear();
 	m_paiTotalImprovementsBuilt.clear();
@@ -10199,6 +10201,19 @@ void CvPlayer::doTurn()
 
 	if(isHuman(ISHUMAN_ACHIEVEMENTS) && !GC.getGame().isGameMultiPlayer())
 		checkArmySizeAchievement();
+
+	// Memory optimization: periodically trim excess capacity from resource vectors
+	// This prevents STL containers from accumulating excess capacity in long games
+	if (GC.getGame().getGameTurn() % 20 == 0)
+	{
+		// Trim resource tracking vectors if they've grown beyond 2x their current size
+		if (m_paiNumResourceUsed.capacity() > m_paiNumResourceUsed.size() * 2)
+			std::vector<int>(m_paiNumResourceUsed).swap(m_paiNumResourceUsed);
+		if (m_paiNumResourceFromTiles.capacity() > m_paiNumResourceFromTiles.size() * 2)
+			std::vector<int>(m_paiNumResourceFromTiles).swap(m_paiNumResourceFromTiles);
+		if (m_paiNumResourceUnimproved.capacity() > m_paiNumResourceUnimproved.size() * 2)
+			std::vector<int>(m_paiNumResourceUnimproved).swap(m_paiNumResourceUnimproved);
+	}
 
 	if( (bHasActiveDiploRequest || GC.GetEngineUserInterface()->isDiploActive()) && !GC.getGame().isGameMultiPlayer() && !isHuman(ISHUMAN_AI_DIPLOMACY))
 	{
@@ -21108,6 +21123,14 @@ CvCity *CvPlayer::GetMostUnhappyCity()
 			if (pLoopCity->IsPuppet())
 				iUnhappiness *= 2;
 
+			// 10-turn grace period for recently conquered or settled cities
+			int iTurnsSinceAcquired = GC.getGame().getGameTurn() - pLoopCity->getGameTurnAcquired();
+			if (iTurnsSinceAcquired < 10)
+			{
+				// Cities are immune to flipping for 10 turns
+				continue;
+			}
+
 			int iCapitalDistance = plotDistance(pLoopCity->getX(), pLoopCity->getY(), getCapitalCity()->getX(), getCapitalCity()->getY());
 
 			int iDistanceFactor = 100 - iCapitalDistance;
@@ -21127,6 +21150,50 @@ CvCity *CvPlayer::GetMostUnhappyCity()
 			{
 				iHighestUnhappiness = iUnhappiness;
 				pRtnValue = pLoopCity;
+			}
+
+			// Graduated flip risk notifications
+			if (isHuman() && iUnhappiness > 0)
+			{
+				int iFlipRiskPercent = min(100, (iUnhappiness * 100) / max(1, iHighestUnhappiness));
+
+				// Check if we should send a notification (at 75%, 90%, 100% thresholds)
+				if (iFlipRiskPercent >= 100)
+				{
+					CvNotifications* pNotifications = GetNotifications();
+					if (pNotifications)
+					{
+						Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_CITY_FLIP_CRITICAL");
+						strMessage << pLoopCity->getNameKey();
+						Localization::String strSummary = Localization::Lookup("TXT_KEY_NOTIFICATION_SUMMARY_CITY_FLIP_CRITICAL");
+						strSummary << pLoopCity->getNameKey();
+						pNotifications->Add(NOTIFICATION_CITY_REVOLT_POSSIBLE, strMessage.toUTF8(), strSummary.toUTF8(), pLoopCity->getX(), pLoopCity->getY(), pLoopCity->GetID());
+					}
+				}
+				else if (iFlipRiskPercent >= 90)
+				{
+					CvNotifications* pNotifications = GetNotifications();
+					if (pNotifications)
+					{
+						Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_CITY_FLIP_HIGH");
+						strMessage << pLoopCity->getNameKey();
+						Localization::String strSummary = Localization::Lookup("TXT_KEY_NOTIFICATION_SUMMARY_CITY_FLIP_HIGH");
+						strSummary << pLoopCity->getNameKey();
+						pNotifications->Add(NOTIFICATION_CITY_REVOLT_POSSIBLE, strMessage.toUTF8(), strSummary.toUTF8(), pLoopCity->getX(), pLoopCity->getY(), pLoopCity->GetID());
+					}
+				}
+				else if (iFlipRiskPercent >= 75)
+				{
+					CvNotifications* pNotifications = GetNotifications();
+					if (pNotifications)
+					{
+						Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_CITY_FLIP_WARNING");
+						strMessage << pLoopCity->getNameKey();
+						Localization::String strSummary = Localization::Lookup("TXT_KEY_NOTIFICATION_SUMMARY_CITY_FLIP_WARNING");
+						strSummary << pLoopCity->getNameKey();
+						pNotifications->Add(NOTIFICATION_CITY_REVOLT_POSSIBLE, strMessage.toUTF8(), strSummary.toUTF8(), pLoopCity->getX(), pLoopCity->getY(), pLoopCity->GetID());
+					}
+				}
 			}
 		}
 	}
@@ -37349,23 +37416,50 @@ int CvPlayer::getNumResourceTotal(ResourceTypes eIndex, bool bIncludeImport) con
 	PRECONDITION(eIndex >= 0, "eIndex is expected to be non-negative (invalid Index)");
 	PRECONDITION(eIndex < GC.getNumResourceInfos(), "eIndex is expected to be within maximum bounds (invalid Index)");
 
-	int iTotalNumResource = m_paiNumResourceFromTiles[eIndex];
-	iTotalNumResource += m_paiNumResourceFromBuildings[eIndex];
-	iTotalNumResource += m_paiNumResourceFromEvents[eIndex];
-
-	//add resources from other sources, ex Corporations, Policies, Religion
-	iTotalNumResource += getNumResourcesFromOther(eIndex);
-
-	if(bIncludeImport)
+	// Check if cache is valid (size matches resource count)
+	const int iNumResources = GC.getNumResourceInfos();
+	if (bIncludeImport)
 	{
-		iTotalNumResource += getResourceFromMinors(eIndex);
-		iTotalNumResource += getResourceImportFromMajor(eIndex);
-		iTotalNumResource += getResourceSiphoned(eIndex);
+		if ((int)m_paiNumResourceTotalCached.size() == iNumResources)
+		{
+			return m_paiNumResourceTotalCached[eIndex];
+		}
+	}
+	else
+	{
+		if ((int)m_paiNumResourceTotalCachedNoImport.size() == iNumResources)
+		{
+			return m_paiNumResourceTotalCachedNoImport[eIndex];
+		}
 	}
 
-	iTotalNumResource -= getResourceExport(eIndex);
+	// Cache miss - calculate and rebuild entire cache for all resources
+	std::vector<int>& cache = bIncludeImport ? const_cast<std::vector<int>&>(m_paiNumResourceTotalCached) : const_cast<std::vector<int>&>(m_paiNumResourceTotalCachedNoImport);
+	cache.resize(iNumResources);
 
-	return iTotalNumResource;
+	for (int i = 0; i < iNumResources; i++)
+	{
+		ResourceTypes eResource = (ResourceTypes)i;
+		int iTotalNumResource = m_paiNumResourceFromTiles[eResource];
+		iTotalNumResource += m_paiNumResourceFromBuildings[eResource];
+		iTotalNumResource += m_paiNumResourceFromEvents[eResource];
+
+		//add resources from other sources, ex Corporations, Policies, Religion
+		iTotalNumResource += getNumResourcesFromOther(eResource);
+
+		if(bIncludeImport)
+		{
+			iTotalNumResource += getResourceFromMinors(eResource);
+			iTotalNumResource += getResourceImportFromMajor(eResource);
+			iTotalNumResource += getResourceSiphoned(eResource);
+		}
+
+		iTotalNumResource -= getResourceExport(eResource);
+
+		cache[i] = iTotalNumResource;
+	}
+
+	return cache[eIndex];
 }
 void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bFromBuilding, bool bCheckForMonopoly, bool bFromEvent)
 {
@@ -37465,6 +37559,10 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 		{
 			GET_PLAYER((PlayerTypes)iPlayerLoop).UpdateResourcesSiphoned();
 		}
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 
 	GC.GetEngineUserInterface()->setDirty(GameData_DIRTY_BIT, true);
@@ -38572,6 +38670,10 @@ void CvPlayer::changeResourceExport(ResourceTypes eIndex, int iChange)
 		ASSERT(getResourceExport(eIndex) >= 0);
 
 		CalculateNetHappiness();
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -38602,6 +38704,10 @@ void CvPlayer::changeResourceImportFromMajor(ResourceTypes eIndex, int iChange)
 		{
 			CheckForMonopoly(eIndex);
 		}
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -38639,6 +38745,10 @@ void CvPlayer::changeResourceFromMinors(ResourceTypes eIndex, int iChange)
 
 		if (IsCSResourcesCountMonopolies())
 			CheckForMonopoly(eIndex);
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -38699,6 +38809,10 @@ void CvPlayer::changeResourceSiphoned(ResourceTypes eIndex, int iChange)
 		ASSERT(getResourceSiphoned(eIndex) >= 0);
 
 		CalculateNetHappiness();
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 

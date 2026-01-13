@@ -2554,21 +2554,24 @@ void CvCity::doTurn()
 
 		UpdateCityYieldFromYield();
 
-		bool bWeGrew = false;
-		int iDifference = getYieldRateTimes100(YIELD_FOOD);
-		if (isFoodProduction() || getFood() <= 5 || iDifference <= 0)
-		{
-			doGrowth();
-			bWeGrew = true;
-		}
+	// Growth processing: done early for food production (settlers), low food storage, or starvation to allow citizen reallocation
+	bool bGrowthProcessed = false;
+	int iPopulationBeforeGrowth = getPopulation();
+	int iDifference = getYieldRateTimes100(YIELD_FOOD);
+	if (isFoodProduction() || getFood() <= 5 || iDifference <= 0)
+	{
+		doGrowth();
+		bGrowthProcessed = true;
+	}
 
-		doProduction(!doCheckProduction());
-		doDecay();
-		doMeltdown();
+	doDecay();
+	doMeltdown();
 
-		for (int iI = 0; iI < GetNumWorkablePlots(); iI++)
-		{
-			CvPlot* pLoopPlot = GetCityCitizens()->GetCityPlotFromIndex(iI);
+	doProduction(!doCheckProduction());
+
+	for (int iI = 0; iI < GetNumWorkablePlots(); iI++)
+	{
+		CvPlot* pLoopPlot = GetCityCitizens()->GetCityPlotFromIndex(iI);
 			if (pLoopPlot != NULL)
 			{
 				if (GetCityCitizens()->IsWorkingPlot(iI))
@@ -2625,14 +2628,15 @@ void CvCity::doTurn()
 			}
 		}
 
-		if (!bWeGrew)
-		{
-			doGrowth();
-		}
-		GetCityCitizens()->DoTurn();
+	// Process growth if not already done, but only if population hasn't changed (safety check against double-growth)
+	if (!bGrowthProcessed && getPopulation() == iPopulationBeforeGrowth)
+	{
+		doGrowth();
+		bGrowthProcessed = true;
+	}
 
-		// sending notifications on when routes are connected to the capital
-		if (!isCapital())
+	// sending notifications on when routes are connected to the capital
+	if (!isCapital())
 		{
 			CvNotifications* pNotifications = GET_PLAYER(m_eOwner).GetNotifications();
 			if (pNotifications)
@@ -10546,11 +10550,8 @@ int CvCity::getFoodTurnsLeft() const
 	{
 		if (iFoodNeededToGrow > 0)
 		{
-			int iTurnsLeft = iFoodNeededToGrow / iDeltaPerTurn;
-			//correct for truncation
-			if (iTurnsLeft * iDeltaPerTurn < iFoodNeededToGrow)
-				iTurnsLeft++;
-
+			// Use ceiling division: (a + b - 1) / b for positive integers
+			int iTurnsLeft = (iFoodNeededToGrow + iDeltaPerTurn - 1) / iDeltaPerTurn;
 			return iTurnsLeft;
 		}
 		else //already over the threshold
@@ -10559,11 +10560,9 @@ int CvCity::getFoodTurnsLeft() const
 	//starving
 	else if (iDeltaPerTurn < 0)
 	{
-		int iTurnsLeft = iFoodStored / iDeltaPerTurn;
-		//correct for truncation
-		if (iTurnsLeft * iDeltaPerTurn < iFoodStored)
-			iTurnsLeft++;
-
+		// For negative division (starvation), calculate turns until food reaches 0
+		// Use ceiling of absolute values then negate
+		int iTurnsLeft = (iFoodStored + (-iDeltaPerTurn) - 1) / (-iDeltaPerTurn);
 		return -iTurnsLeft;
 	}
 
@@ -12973,26 +12972,24 @@ int CvCity::getProductionModifier(UnitTypes eUnit, CvString* toolTipSink, bool b
 	// Production bonus for having a particular building
 	iTempMod = 0;
 	int iBuildingMod = 0;
-	BuildingTypes eBuilding;
-	for (int iI = 0; iI < GC.getNumBuildingInfos(); iI++)
+	// Performance optimization: iterate only through buildings this city actually has
+	const std::vector<BuildingTypes>& buildingsInCity = GetCityBuildings()->GetAllBuildingsHere();
+	for (std::vector<BuildingTypes>::const_iterator it = buildingsInCity.begin(); it != buildingsInCity.end(); ++it)
 	{
-		eBuilding = (BuildingTypes)iI;
+		BuildingTypes eBuilding = *it;
 		CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
 		if (pkBuildingInfo)
 		{
-			if (GetCityBuildings()->GetNumBuilding(eBuilding) > 0)
+			iTempMod = pkUnitInfo->GetBuildingProductionModifier(eBuilding);
+
+			if (iTempMod != 0)
 			{
-				iTempMod = pkUnitInfo->GetBuildingProductionModifier(eBuilding);
+				iTempMod *= GetCityBuildings()->GetNumBuilding(eBuilding);
 
-				if (iTempMod != 0)
+				iBuildingMod += iTempMod;
+				if (toolTipSink && iTempMod)
 				{
-					iTempMod *= GetCityBuildings()->GetNumBuilding(eBuilding);
-
-					iBuildingMod += iTempMod;
-					if (toolTipSink && iTempMod)
-					{
-						GC.getGame().BuildProdModHelpText(toolTipSink, "TXT_KEY_PRODMOD_UNIT_WITH_BUILDING", iTempMod, pkBuildingInfo->GetDescription());
-					}
+					GC.getGame().BuildProdModHelpText(toolTipSink, "TXT_KEY_PRODMOD_UNIT_WITH_BUILDING", iTempMod, pkBuildingInfo->GetDescription());
 				}
 			}
 		}
@@ -27895,8 +27892,8 @@ CvPlot* CvCity::GetNextBuyablePlot(bool bForPurchase)
 	if (aiPlotList.empty())
 		return NULL;
 
-	uint uPickedIndex = GC.getGame().urandLimitExclusive(aiPlotList.size(), CvSeeder(getFoodTimes100()).mix(GET_PLAYER(m_eOwner).GetNumPlots()));
-	return GC.getMap().plotByIndex(aiPlotList[uPickedIndex]);
+	// Pick the best plot (first in sorted list) instead of random
+	return GC.getMap().plotByIndex(aiPlotList[0]);
 }
 
 //	--------------------------------------------------------------------------------
