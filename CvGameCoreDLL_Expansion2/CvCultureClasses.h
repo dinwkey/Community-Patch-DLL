@@ -257,7 +257,9 @@ public:
 	void SetLastTurnInfluenceIPTTimes100(PlayerTypes ePlayer, int iNewValue);
 	int GetInfluencePerTurnTimes100(PlayerTypes ePlayer) const;
 	InfluenceLevelTypes GetInfluenceLevel(PlayerTypes ePlayer) const;
+	// PERFORMANCE OPTIMIZATION: Lazy evaluate influence trends, cache per turn
 	InfluenceLevelTrend GetInfluenceTrend(PlayerTypes ePlayer) const;
+	void InvalidateInfluenceTrendCache() { m_influenceTrendCache.clear(); }
 	int GetTurnsToInfluential(PlayerTypes ePlayer);
 	int GetNumCivsInfluentialOn() const;
 	int GetNumCivsToBeInfluentialOn() const;
@@ -330,6 +332,25 @@ public:
 	int m_iSwappableArtifactIndex;
 	int m_iSwappableMusicIndex;
 
+	// PERFORMANCE OPTIMIZATION: Theming bonus caching
+	// Avoids O(N works × M eras × K civs) lookups on every theming evaluation
+	struct ForeignWorkCombination
+	{
+		std::vector<bool> m_abErasSeen;    // Sized to GC.getNumEraInfos()
+		bool m_abCivsSeen[MAX_MAJOR_CIVS];
+		int m_iTurnCached;
+	};
+	mutable std::map<PlayerTypes, ForeignWorkCombination> m_ForeignWorkCache;
+	void InvalidateThemingBonusCache() { m_ForeignWorkCache.clear(); }
+	void UpdateThemingBonusCacheForPlayer(PlayerTypes eOtherPlayer);
+	bool HasForeignWorkInEra(PlayerTypes eOtherPlayer, EraTypes eEra) const;
+	bool HasForeignWorkFromCiv(PlayerTypes eOtherPlayer, PlayerTypes eFromCiv) const;
+
+	// PERFORMANCE OPTIMIZATION: Batch theming updates at turn end instead of per-work
+	vector<pair<int, int>> m_BatchThemingUpdates;  // (CityID, BuildingClassID) pairs
+	bool m_bBatchThemingDirty;
+	void ApplyBatchedThemingUpdates();
+
 private:
 	int ComputePublicOpinionUnhappiness(int iDissatisfaction);
 	// Logging functions
@@ -347,6 +368,7 @@ private:
 
 	CvPlayer *m_pPlayer;
 
+	// Cache: stores (GameTurnSlice, TrendValue) per player for lazy evaluation
 	mutable map<PlayerTypes, pair<int, InfluenceLevelTrend>> m_influenceTrendCache;
 };
 
