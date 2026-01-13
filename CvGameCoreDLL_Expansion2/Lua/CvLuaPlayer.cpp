@@ -10897,6 +10897,37 @@ int CvLuaPlayer::lGetReasonPlunderTradeRouteDisabled(lua_State* L)
 		}
 		else
 		{
+			// Check for Morocco UA with diplomatic restrictions
+			if (pkPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
+			{
+				for (uint uiTradeRoute = 0; uiTradeRoute < aiTradeUnitsAtPlot.size(); uiTradeRoute++)
+				{
+					PlayerTypes eTradeUnitOwner = GC.getGame().GetGameTrade()->GetOwnerFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
+					if (eTradeUnitOwner == NO_PLAYER)
+					{
+						continue;
+					}
+					
+					TeamTypes eMoroccoTeam = pkPlayer->getTeam();
+					TeamTypes eOwnerTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
+					
+					// Check defensive pact
+					if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
+					{
+						lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED");
+						return 1;
+					}
+					
+					// Check vassal
+					if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
+						GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
+					{
+						lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_VASSAL");
+						return 1;
+					}
+				}
+			}
+			
 			// second check: is there a trade routes here that we can't plunder because of the other civ's corporation
 			for (uint uiTradeRoute = 0; uiTradeRoute < aiTradeUnitsAtPlot.size(); uiTradeRoute++)
 			{

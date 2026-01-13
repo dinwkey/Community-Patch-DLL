@@ -9170,6 +9170,26 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 					PlayerTypes eTradeUnitDest = GC.getGame().GetGameTrade()->GetDestFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
 					if (eTradeUnitDest != m_eOwner)
 					{
+						// Check diplomatic status before allowing plunder without war
+						TeamTypes eMoroccoTeam = GET_PLAYER(m_eOwner).getTeam();
+						TeamTypes eOwnerTeam = eTeam;
+						
+						// Do NOT plunder allies with defensive pact
+						if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
+						{
+							bShowTooltip = true;
+							continue;  // Skip this trade route - cannot plunder
+						}
+						
+						// Do NOT plunder vassals or overlords
+						if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
+							GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
+						{
+							bShowTooltip = true;
+							continue;  // Skip this trade route - cannot plunder
+						}
+						
+						// All checks passed - can plunder
 						return true;
 					}
 				}
@@ -9233,6 +9253,24 @@ bool CvUnit::plunderTradeRoute()
 			PlayerTypes eTradeUnitDest = GC.getGame().GetGameTrade()->GetDestFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
 			if (eTradeUnitDest != m_eOwner)
 			{
+				// Check diplomatic status before allowing plunder without war
+				TeamTypes eMoroccoTeam = GET_PLAYER(m_eOwner).getTeam();
+				TeamTypes eOwnerTeam = eTeam;
+				
+				// Do NOT plunder allies with defensive pact
+				if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
+				{
+					continue;  // Skip this trade route - cannot plunder
+				}
+				
+				// Do NOT plunder vassals or overlords
+				if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
+					GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
+				{
+					continue;  // Skip this trade route - cannot plunder
+				}
+				
+				// All checks passed - can plunder
 				bValidTarget = true;
 			}
 		}
