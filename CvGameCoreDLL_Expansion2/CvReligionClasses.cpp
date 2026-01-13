@@ -36,36 +36,14 @@ CvReligionEntry::~CvReligionEntry()
 {
 }
 
-/// Load XML data
-bool CvReligionEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility& kUtility)
-{
-	if(!CvBaseInfo::CacheResults(kResults, kUtility))
-		return false;
-
-	//Basic Properties
-	m_strIconString = kResults.GetText("IconString");
-
-	if (MOD_RELIGION_LOCAL_RELIGIONS)
-		m_iLocalReligion = kResults.GetInt("LocalReligion");
-
-	return true;
-}
-
-//------------------------------------------------------------------------------
-CvString CvReligionEntry::GetIconString() const
-{
-	return m_strIconString;
-}
-
 //------------------------------------------------------------------------------
 bool CvReligionEntry::IsLocalReligion() const
-{
-	return m_iLocalReligion != 0;
-}
-
-//=====================================
-// CvReligionXMLEntries
-//=====================================
+						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
+					}
+					if (!pCity)
+					{
+						iAvailabilityModifier--;
+					}
 /// Constructor
 CvReligionXMLEntries::CvReligionXMLEntries(void)
 {
