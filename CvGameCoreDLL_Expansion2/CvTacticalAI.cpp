@@ -693,6 +693,149 @@ void CvTacticalAI::PrioritizeNavalTargetsAndAddToMainList()
 	m_NavalBlockadePoints.clear();
 }
 
+/// Issue 4.2: Assess if unit should retreat based on losses sustained
+bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
+{
+	if(vUnits.empty())
+		return false;
+
+	const int RETREAT_DAMAGE_THRESHOLD = 20; // Retreat if losing > 20% of army
+
+	int iTotalHealth = 0;
+	int iTotalMaxHealth = 0;
+
+	for(size_t i = 0; i < vUnits.size(); i++)
+	{
+		const CvUnit* pUnit = vUnits[i];
+		if(!pUnit) continue;
+		iTotalHealth += pUnit->GetCurrHitPoints();
+		iTotalMaxHealth += pUnit->GetMaxHitPoints();
+	}
+
+	if(iTotalMaxHealth == 0)
+		return false;
+
+	int iHealthPercent = (iTotalHealth * 100) / iTotalMaxHealth;
+
+	// If army has lost > 20% health and no allies nearby, retreat (Issue 4.2)
+	if(iHealthPercent < (100 - RETREAT_DAMAGE_THRESHOLD))
+	{
+		// Check if allies nearby can support (Issue 4.2: army coordination)
+		int iAlliedSupport = 0;
+		for(size_t i = 0; i < vUnits.size(); i++)
+		{
+			const CvUnit* pUnit = vUnits[i];
+			if(!pUnit) continue;
+			iAlliedSupport += FindNearbyAlliedUnits(const_cast<CvUnit*>(pUnit), 5, pUnit->getDomainType());
+		}
+
+		if(iAlliedSupport == 0)
+		{
+			return true; // Retreat
+		}
+	}
+
+	return false;
+}
+
+/// Issue 4.2: Find nearby allied units that can provide support
+int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain)
+{
+	if(!pUnit) return 0;
+
+	int iAlliedCount = 0;
+	CvPlot* pPlot = pUnit->plot();
+	if(!pPlot) return 0;
+
+	TeamTypes eTeam = pUnit->getTeam();
+
+	int iPlotX = pPlot->getX();
+	int iPlotY = pPlot->getY();
+
+	// Search nearby plots for allied units (Issue 4.2: army coordination)
+	for(int iDX = -iMaxDistance; iDX <= iMaxDistance; iDX++)
+	{
+		for(int iDY = -iMaxDistance; iDY <= iMaxDistance; iDY++)
+		{
+			CvPlot* pLoopPlot = GC.getMap().plot(iPlotX + iDX, iPlotY + iDY);
+			if(!pLoopPlot) continue;
+
+			if(plotDistance(iPlotX, iPlotY, pLoopPlot->getX(), pLoopPlot->getY()) > iMaxDistance)
+				continue;
+
+			for(int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+			{
+				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+				if(!pLoopUnit) continue;
+				if(pLoopUnit == pUnit) continue; // don't count self
+				if(pLoopUnit->getDomainType() != eDomain) continue;
+				if(pLoopUnit->isDelayedDeath()) continue;
+
+				TeamTypes eLoopTeam = pLoopUnit->getTeam();
+				if (GET_TEAM(eLoopTeam).isAtWar(eTeam))
+					continue;
+
+				bool bAllied = false;
+
+				// Same team always qualifies
+				if (eLoopTeam == eTeam)
+				{
+					bAllied = true;
+				}
+				// Defensive-pact partner counts as support
+				else if (GET_TEAM(eLoopTeam).IsHasDefensivePact(eTeam))
+				{
+					bAllied = true;
+				}
+				// City-state ally of the owner counts as support
+				else if (GET_PLAYER(pLoopUnit->getOwner()).isMinorCiv())
+				{
+					CvMinorCivAI* pMinorAI = GET_PLAYER(pLoopUnit->getOwner()).GetMinorCivAI();
+					if (pMinorAI && pMinorAI->IsAllies(pUnit->getOwner()))
+						bAllied = true;
+				}
+
+				if(!bAllied)
+					continue;
+
+				// Count units that can fight (not civilians)
+				if(!pLoopUnit->IsCombatUnit())
+					continue;
+
+				iAlliedCount++;
+			}
+		}
+	}
+
+	return iAlliedCount;
+}
+
+/// Issue 4.2: Find opportunity for coordinated attack with nearby allies
+bool CvTacticalAI::FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const vector<CvUnit*>& vAlliedUnits)
+{
+	if(!pTargetPlot || vAlliedUnits.empty())
+		return false;
+
+	const int COORDINATION_RANGE = 6; // Units within 6 tiles can coordinate
+
+	// Count friendly units that can reach target
+	int iFriendlyNearby = 0;
+	for(size_t i = 0; i < vAlliedUnits.size(); i++)
+	{
+		const CvUnit* pUnit = vAlliedUnits[i];
+		if(!pUnit) continue;
+
+		int iDistance = plotDistance(pUnit->getX(), pUnit->getY(), pTargetPlot->getX(), pTargetPlot->getY());
+		if(iDistance <= COORDINATION_RANGE && pUnit->canMoveInto(*pTargetPlot))
+		{
+			iFriendlyNearby++;
+		}
+	}
+
+	// If multiple units can coordinate, proceed with attack (Issue 4.2: multi-unit planning)
+	return (iFriendlyNearby >= 2);
+}
+
 void CvTacticalAI::ProcessDominanceZones()
 {
 	// Barbarian processing is straightforward -- just one big list of priorites and everything is considered at once

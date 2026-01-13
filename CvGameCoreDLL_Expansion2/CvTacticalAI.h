@@ -413,6 +413,11 @@ private:
 	void PlotNavalEscortMoves();
 	void ReviewUnassignedUnits();
 
+	// Issue 4.2: Tactical retreat and coordination support (Phase 3)
+	bool ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits);
+	int FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain);
+	bool FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const vector<CvUnit*>& vAlliedUnits);
+
 	// Operational AI support functions
 	bool CheckForEnemiesNearArmy(CvArmyAI* pArmy);
 	void ExecuteGatherMoves(CvArmyAI* pArmy, CvPlot* pTurnTarget);

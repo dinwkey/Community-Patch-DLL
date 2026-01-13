@@ -2637,6 +2637,51 @@ void CvHomelandAI::ExecuteFirstTurnSettlerMoves()
 		//did not find a better plot (ideal case in fact)
 		if (pUnit->canFoundCity(pUnit->plot()))
 		{
+			// Issue 7.1: YnAEMP fix - For island city-states, search for coastal plot if current plot isn't coastal
+			CvPlot* pFoundPlot = pUnit->plot();
+			if (pFoundPlot != NULL && !pFoundPlot->isWater() && !pFoundPlot->isCoastalLand())
+			{
+				int iAreaID = pFoundPlot->getArea();
+				CvArea* pArea = pFoundPlot->area();
+				if (pArea != NULL && pArea->getNumTiles() < 30) // Small island
+				{
+					CvPlot* pBestCoastal = NULL;
+					int iBestDistance = MAX_INT;
+
+					// Search nearby plots for coastal location on same island
+					for (int iDX = -3; iDX <= 3; iDX++)
+					{
+						for (int iDY = -3; iDY <= 3; iDY++)
+						{
+							CvPlot* pLoopPlot = plotXYWithRangeCheck(pFoundPlot->getX(), pFoundPlot->getY(), iDX, iDY, 3);
+							if (pLoopPlot && !pLoopPlot->isWater() && pLoopPlot->isCoastalLand() &&
+									pLoopPlot->getArea() == iAreaID && pUnit->canFoundCity(pLoopPlot))
+							{
+								int iDistance = plotDistance(pFoundPlot->getX(), pFoundPlot->getY(), pLoopPlot->getX(), pLoopPlot->getY());
+								if (iDistance < iBestDistance)
+								{
+									iBestDistance = iDistance;
+									pBestCoastal = pLoopPlot;
+								}
+							}
+						}
+					}
+
+					if (pBestCoastal != NULL)
+					{
+						pFoundPlot = pBestCoastal;
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("Moved island city-state to coastal plot, X: %d, Y: %d (was %d,%d)",
+													pBestCoastal->getX(), pBestCoastal->getY(), pUnit->getX(), pUnit->getY());
+							LogHomelandMessage(strLogString);
+						}
+						pUnit->setXY(pBestCoastal->getX(), pBestCoastal->getY());
+					}
+				}
+			}
+
 			pUnit->PushMission(CvTypes::getMISSION_FOUND());
 			UnitProcessed(pUnit->GetID());
 			if (GC.getLogging() && GC.getAILogging())
@@ -5461,18 +5506,37 @@ void CvHomelandAI::ExecuteSSPartMoves()
 		if(!pUnit)
 			continue;
 
-		// do an airlift if it's possible and we'd need more than one turn to reach the capital normally
-		if (pUnit->plot() != pCapitalCity->plot())
+		// Issue 4.2: Prioritize threatened cities over just the capital for emergency airlift
+		// do an airlift if it's possible and we'd need more than one turn to reach the target normally
+		CvCity* pTargetCity = pCapitalCity;
+		int iBestThreatLevel = 0;
+
+		// Check for threatened cities needing reinforcement
+		int iCityLoop = 0;
+		for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
 		{
-			bool bCanAirlift = pUnit->canAirliftAt(pUnit->plot(), pCapitalCity->plot()->getX(), pCapitalCity->plot()->getY());
+			if (pLoopCity->plot() == pUnit->plot())
+				continue; // Already there
+
+			int iThreatLevel = m_pPlayer->GetPlotDanger(pLoopCity);
+			if (iThreatLevel > iBestThreatLevel && pUnit->canAirliftAt(pUnit->plot(), pLoopCity->plot()->getX(), pLoopCity->plot()->getY()))
+			{
+				pTargetCity = pLoopCity;
+				iBestThreatLevel = iThreatLevel;
+			}
+		}
+
+		if (pUnit->plot() != pTargetCity->plot())
+		{
+			bool bCanAirlift = pUnit->canAirliftAt(pUnit->plot(), pTargetCity->plot()->getX(), pTargetCity->plot()->getY());
 			bool bShouldUseAirlift = bCanAirlift;
 
-			if (pUnit->GeneratePath(pCapitalCity->plot(), CvUnit::MOVEFLAG_NO_ENEMY_TERRITORY | CvUnit::MOVEFLAG_ABORT_IF_NEW_ENEMY_REVEALED))
+			if (pUnit->GeneratePath(pTargetCity->plot(), CvUnit::MOVEFLAG_NO_ENEMY_TERRITORY | CvUnit::MOVEFLAG_ABORT_IF_NEW_ENEMY_REVEALED))
 			{
 				CvPlot* pWayPoint = pUnit->GetPathEndFirstTurnPlot();
-				if (pWayPoint == pCapitalCity->plot())
+				if (pWayPoint == pTargetCity->plot())
 				{
-					// can reach the capital normally in one turn or less
+					// can reach the target normally in one turn or less
 					bShouldUseAirlift = false;
 				}
 			}
@@ -5484,14 +5548,17 @@ void CvHomelandAI::ExecuteSSPartMoves()
 					CvString strLogString;
 					CvString strTemp;
 					strTemp = pUnit->getUnitInfo().GetDescription();
-					strLogString.Format("Airlifting %s into capital", strTemp.GetCString());
+					if (iBestThreatLevel > 0)
+						strLogString.Format("Airlifting %s to threatened city %s", strTemp.GetCString(), pTargetCity->getName().c_str());
+					else
+						strLogString.Format("Airlifting %s into capital", strTemp.GetCString());
 					LogHomelandMessage(strLogString);
 				}
-				pUnit->airlift(pCapitalCity->plot()->getX(), pCapitalCity->plot()->getY());
+				pUnit->airlift(pTargetCity->plot()->getX(), pTargetCity->plot()->getY());
 			}
 			else
 			{
-				ExecuteMoveToTarget(pUnit, pCapitalCity->plot(), CvUnit::MOVEFLAG_NO_ENEMY_TERRITORY | CvUnit::MOVEFLAG_ABORT_IF_NEW_ENEMY_REVEALED);
+				ExecuteMoveToTarget(pUnit, pTargetCity->plot(), CvUnit::MOVEFLAG_NO_ENEMY_TERRITORY | CvUnit::MOVEFLAG_ABORT_IF_NEW_ENEMY_REVEALED);
 			}
 		}
 
