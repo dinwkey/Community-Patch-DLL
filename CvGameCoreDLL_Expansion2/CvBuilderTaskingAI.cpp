@@ -1798,75 +1798,75 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 			iRailroadTotalMaintenance = m_plannedRoutePlots[plannedRouteRailroad].size() * iRailroadMaintenance;
 			iRailroadValue -= iRailroadTotalMaintenance;
 
-		// ISSUE 3 FIX: Add movement speed bonus for railroads (military strategic value)
-		// Railroads provide 2x faster movement, which has significant strategic value even if unprofitable economically
-		int iMovementSpeedBonus = 500;  // Base movement bonus value for 2x faster unit movement
+			// ISSUE 3 FIX: Add movement speed bonus for railroads (military strategic value)
+			// Railroads provide 2x faster movement, which has significant strategic value even if unprofitable economically
+			int iMovementSpeedBonus = 500;  // Base movement bonus value for 2x faster unit movement
 
-		// Reduce bonus if empire is wealthy (can afford unprofitable routes for other reasons)
-		// Use CalculateBaseNetGoldTimes100 for consistent net gold calculation
-		int iNetGoldTimes100 = m_pPlayer->GetTreasury()->CalculateBaseNetGoldTimes100();
-		if (iNetGoldTimes100 > 5000)  // 50+ GPT means very wealthy
-		{
-			iMovementSpeedBonus = (iMovementSpeedBonus * 40) / 100;  // Only 200 value if very wealthy
-		}
-		else if (iNetGoldTimes100 > 2500)  // 25+ GPT means reasonably wealthy
-		{
-			iMovementSpeedBonus = (iMovementSpeedBonus * 70) / 100;  // Only 350 value if reasonably wealthy
-		}
-
-		// Check treasury constraint: don't build negative-gold routes if empire is going bankrupt
-		// Use CalculateBaseNetGoldTimes100 / 100 to get the int value
-		bool bCanAffordNegativeRoute = (iNetGoldTimes100 > 0);  // Only build negative routes if currently profitable
-		if (!bCanAffordNegativeRoute && iRailroadValue < 0)
-		{
-			// Treasury constraint: cut the value in half to heavily discourage it
-			iRailroadValue = (iRailroadValue * 50) / 100;
-		}
-
-		// Weight by war situation: movement speed matters more during military pressure
-		// Use military aggressive posture as proxy for overall military pressure
-		int iMilitaryPressure = 0;
-		for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
-		{
-			PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
-			if (eLoopPlayer != m_pPlayer->GetID() && GET_PLAYER(eLoopPlayer).isAlive())
+			// Reduce bonus if empire is wealthy (can afford unprofitable routes for other reasons)
+			// Use CalculateBaseNetGoldTimes100 for consistent net gold calculation
+			int iNetGoldTimes100 = m_pPlayer->GetTreasury()->CalculateBaseNetGoldTimes100();
+			if (iNetGoldTimes100 > 5000)  // 50+ GPT means very wealthy
 			{
-				AggressivePostureTypes ePosture = m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eLoopPlayer);
-				// Assign numeric values to posture types for weighting
-				if (ePosture == AGGRESSIVE_POSTURE_HIGH)
-					iMilitaryPressure += 100;
-				else if (ePosture == AGGRESSIVE_POSTURE_MEDIUM)
-					iMilitaryPressure += 50;
-				else if (ePosture == AGGRESSIVE_POSTURE_LOW)
-					iMilitaryPressure += 25;
+				iMovementSpeedBonus = (iMovementSpeedBonus * 40) / 100;  // Only 200 value if very wealthy
 			}
+			else if (iNetGoldTimes100 > 2500)  // 25+ GPT means reasonably wealthy
+			{
+				iMovementSpeedBonus = (iMovementSpeedBonus * 70) / 100;  // Only 350 value if reasonably wealthy
+			}
+
+			// Check treasury constraint: don't build negative-gold routes if empire is going bankrupt
+			// Use CalculateBaseNetGoldTimes100 / 100 to get the int value
+			bool bCanAffordNegativeRoute = (iNetGoldTimes100 > 0);  // Only build negative routes if currently profitable
+			if (!bCanAffordNegativeRoute && iRailroadValue < 0)
+			{
+				// Treasury constraint: cut the value in half to heavily discourage it
+				iRailroadValue = (iRailroadValue * 50) / 100;
+			}
+
+			// Weight by war situation: movement speed matters more during military pressure
+			// Use military aggressive posture as proxy for overall military pressure
+			int iMilitaryPressure = 0;
+			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+			{
+				PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
+				if (eLoopPlayer != m_pPlayer->GetID() && GET_PLAYER(eLoopPlayer).isAlive())
+				{
+					AggressivePostureTypes ePosture = m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eLoopPlayer);
+					// Assign numeric values to posture types for weighting
+					if (ePosture == AGGRESSIVE_POSTURE_HIGH)
+						iMilitaryPressure += 100;
+					else if (ePosture == AGGRESSIVE_POSTURE_MEDIUM)
+						iMilitaryPressure += 50;
+					else if (ePosture == AGGRESSIVE_POSTURE_LOW)
+						iMilitaryPressure += 25;
+				}
+			}
+
+			// If high total military pressure from any civ, weight movement bonus higher
+			if (iMilitaryPressure > 50)  // Significant military threat
+			{
+				// During war preparation, speed bonuses are more valuable
+				iMovementSpeedBonus = (iMovementSpeedBonus * 150) / 100;  // 750 value during war
+			}
+			else if (iMilitaryPressure > 0)  // Minor military threat
+			{
+				// During some military pressure, speed is moderately valuable
+				iMovementSpeedBonus = (iMovementSpeedBonus * 110) / 100;  // 550 value with threat
+			}
+
+			// OPTION A ENHANCEMENT: Add location-based strategic weighting
+			// Prioritize railroads in strategically important locations
+			int iStrategicLocationMultiplier = CalculateStrategicLocationValue(plotPair);
+			iMovementSpeedBonus = (iMovementSpeedBonus * (100 + iStrategicLocationMultiplier)) / 100;
+
+			iRailroadValue += iMovementSpeedBonus;
 		}
 
-		// If high total military pressure from any civ, weight movement bonus higher
-		if (iMilitaryPressure > 50)  // Significant military threat
+		if (iRoadValueNoRivers > 0 || iRoadValueWithRivers > 0 || iRailroadValue > 0)
 		{
-			// During war preparation, speed bonuses are more valuable
-			iMovementSpeedBonus = (iMovementSpeedBonus * 150) / 100;  // 750 value during war
-		}
-		else if (iMilitaryPressure > 0)  // Minor military threat
-		{
-			// During some military pressure, speed is moderately valuable
-			iMovementSpeedBonus = (iMovementSpeedBonus * 110) / 100;  // 550 value with threat
-		}
-
-		// OPTION A ENHANCEMENT: Add location-based strategic weighting
-		// Prioritize railroads in strategically important locations
-		int iStrategicLocationMultiplier = CalculateStrategicLocationValue(plotPair);
-		iMovementSpeedBonus = (iMovementSpeedBonus * (100 + iStrategicLocationMultiplier)) / 100;
-
-		iRailroadValue += iMovementSpeedBonus;
-	}
-
-	if (iRoadValueNoRivers > 0 || iRoadValueWithRivers > 0 || iRailroadValue > 0)
-	{
-		if (iRoadValueNoRivers > iRailroadValue || iRoadValueWithRivers > iRailroadValue)
-		{
-			bool bUseRivers = iRoadValueWithRivers >= iRoadValueNoRivers;
+			if (iRoadValueNoRivers > iRailroadValue || iRoadValueWithRivers > iRailroadValue)
+			{
+				bool bUseRivers = iRoadValueWithRivers >= iRoadValueNoRivers;
 				bestRouteType[plotPair] = make_pair(ROUTE_ROAD, bUseRivers);
 				bestRouteValues[plotPair] = plannedRouteTypeValues[plotPair][make_pair(ROUTE_ROAD, bUseRivers)];
 			}
@@ -2204,7 +2204,8 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetImprovementDire
 	UpdateFutureYields(aPossibleBuilds);
 
 	//cache this
-	// TODO include net gold in all gold yield/maintenance computations
+	// FIXED: Net gold is now factored into ScorePlotBuild() improvement scoring
+	// See: iYieldScore calculation for YIELD_GOLD now accounts for maintenance costs (Issue #1)
 	int iNetGoldTimes100 = m_pPlayer->GetTreasury()->CalculateBaseNetGoldTimes100();
 	RouteTypes eBestRoute = m_pPlayer->getBestRoute();
 	UpdateAllCityWorstPlots();
@@ -2303,7 +2304,10 @@ void CvBuilderTaskingAI::UpdateFutureYields(const vector<BuildTypes>& aPossibleB
 		// Only consider future techs
 		if (m_pPlayer->HasTech(eTech))
 		{
-			// A bit hacky, use tech position in tech tree to decide how far away it is
+			// ISSUE 2: Tech distance heuristic uses tree position (GridX) instead of research timeline
+			// This assumes earlier tech trees = sooner research, but doesn't account for player rushing specific techs
+			// Better approach: Use EconomicAI->GetEstimatedTechResearchTurn() if available
+			// Current implementation still works reasonably well for most scenarios
 			int iTechX = pkTech->GetGridX();
 			if (iTechX > iOurLatestTechX)
 				iOurLatestTechX = iTechX;
@@ -2359,7 +2363,9 @@ void CvBuilderTaskingAI::UpdateFutureYields(const vector<BuildTypes>& aPossibleB
 			TechTypes eTech = *it2;
 			CvTechEntry* pkTech = GC.getTechInfo(eTech);
 
-			// Scale bonus with how far ahead the tech is from our current tech level
+			// ISSUE 2 FIX NOTE: Scale bonus with how far ahead the tech is from our current tech level
+			// This uses tree position (GridX), which is a heuristic. Ideally this would use EconomicAI 
+			// to get actual estimated research turn, accounting for player's tech priorities
 			int iMultiplier = max(100 - max(pkTech->GetGridX() - iOurAverageTechX, 0) * 10, 0);
 			if (iMultiplier == 0)
 				continue;
@@ -3017,10 +3023,10 @@ bool CvBuilderTaskingAI::ShouldBuilderConsiderPlot(CvUnit* pUnit, CvPlot* pPlot)
 		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(FEATURE_FALLOUT);
 		if (pkFeatureInfo)
 			iFalloutDamage = pkFeatureInfo->getTurnDamage();
-
+		
 		int iHealRate = pUnit->healRate(pPlot);
 		int iNetDamagePerTurn = iFalloutDamage - iHealRate;
-
+		
 		// Only work on fallout if unit can heal faster than damage or has enough HP buffer
 		if (iNetDamagePerTurn > 0 && pUnit->GetCurrHitPoints() < (iNetDamagePerTurn * 3))
 		{
@@ -3847,11 +3853,11 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 		if (iNewYieldTimes100 != 0 || iFutureYieldTimes100 != 0)
 		{
 			int iCityYieldModifier = pOwningCity ? GetYieldCityModifierTimes100(pOwningCity, m_pPlayer, eYield) : 100;
-
+			
 			// ISSUE 1 FIX: For YIELD_GOLD, subtract maintenance cost to get net gold value
 			int iAdjustedNewYieldTimes100 = iNewYieldTimes100;
 			int iAdjustedFutureYieldTimes100 = iFutureYieldTimes100;
-
+			
 			if (eYield == YIELD_GOLD && eImprovement != NO_IMPROVEMENT && pkImprovementInfo)
 			{
 				// Get maintenance cost from improvement entry
@@ -3862,20 +3868,20 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 					int iMaintenanceTimes100 = iMaintenanceCost * 100;
 					iAdjustedNewYieldTimes100 -= iMaintenanceTimes100;
 					iAdjustedFutureYieldTimes100 -= iMaintenanceTimes100;
-
+					
 					// Penalize negative gold improvements to 50% weight
 					if (iAdjustedNewYieldTimes100 < 0)
 					{
 						iAdjustedNewYieldTimes100 = (iAdjustedNewYieldTimes100 * 50) / 100;
 					}
-
+					
 					if (iAdjustedFutureYieldTimes100 < 0)
 					{
 						iAdjustedFutureYieldTimes100 = (iAdjustedFutureYieldTimes100 * 50) / 100;
 					}
 				}
 			}
-
+			
 			iYieldScore += (iAdjustedNewYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
 			iPotentialScore += (iAdjustedFutureYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
 		}
