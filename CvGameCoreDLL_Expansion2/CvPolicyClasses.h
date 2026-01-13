@@ -1033,6 +1033,7 @@ public:
 	void Init(CvPolicyXMLEntries* pPolicies, CvPlayer* pPlayer, bool bIsCity);
 	void Uninit();
 	void Reset();
+	void InvalidateTenetCache();
 	template<typename PlayerPolicies, typename Visitor>
 	static void Serialize(PlayerPolicies& playerPolicies, Visitor& visitor);
 	void Read(FDataStream& kStream);
@@ -1164,6 +1165,8 @@ private:
 
 	//cache for repeated calls
 	std::vector<int> m_aiPolicyModifiers;
+	bool m_bTenetCacheDirty;
+	std::map<std::pair<PolicyBranchTypes, int>, std::vector<PolicyTypes> > m_cachedAvailableTenets;
 };
 
 FDataStream& operator>>(FDataStream&, CvPlayerPolicies&);

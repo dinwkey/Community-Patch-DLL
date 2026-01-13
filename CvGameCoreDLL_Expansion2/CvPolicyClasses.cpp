@@ -3948,7 +3948,8 @@ CvPlayerPolicies::CvPlayerPolicies():
 	m_paePolicyBlockedBranchCheck(NULL),
 	m_pPolicyAI(NULL),
 	m_pPolicies(NULL),
-	m_pPlayer(NULL)
+	m_pPlayer(NULL),
+	m_bTenetCacheDirty(true)
 {
 	m_vBuildingClassHappinessModifier.resize(GC.getNumBuildingClassInfos(), 0);
 }
@@ -4017,6 +4018,13 @@ void CvPlayerPolicies::Uninit()
 	SAFE_DELETE_ARRAY(m_paePolicyBlockedBranchCheck);
 }
 
+/// Invalidate tenet cache when policies change
+void CvPlayerPolicies::InvalidateTenetCache()
+{
+	m_bTenetCacheDirty = true;
+	m_cachedAvailableTenets.clear();
+}
+
 /// Reset policy status array to all false
 void CvPlayerPolicies::Reset()
 {
@@ -4047,6 +4055,10 @@ void CvPlayerPolicies::Reset()
 
 	// Reset AI too
 	m_pPolicyAI->Reset();
+
+	// Invalidate tenet cache
+	m_bTenetCacheDirty = true;
+	m_cachedAvailableTenets.clear();
 
 
 	ASSERT( m_pPolicies->GetNumPolicies() == m_pPolicies->GetNumPolicies());
@@ -4125,6 +4137,7 @@ void CvPlayerPolicies::Read(FDataStream& kStream)
 	Serialize(*this, serialVisitor);
 
 	UpdateModifierCache();
+	InvalidateTenetCache();
 }
 
 /// Serialization write
@@ -4214,6 +4227,7 @@ void CvPlayerPolicies::SetPolicy(PolicyTypes eIndex, bool bNewValue, bool bFree)
 
 		GetPlayer()->ChangeNumPolicies(iChange);
 		UpdateModifierCache();
+		InvalidateTenetCache();
 
 		if (bNewValue)
 		{
@@ -5242,6 +5256,7 @@ void CvPlayerPolicies::SetPolicyBranchUnlocked(PolicyBranchTypes eBranchType, bo
 			}
 		}
 
+		InvalidateTenetCache();
 		m_pabPolicyBranchUnlocked[eBranchType] = bNewValue;
 
 		if (!bRevolution)
@@ -6019,6 +6034,18 @@ bool CvPlayerPolicies::IsTimeToChooseIdeology() const
 /// List of tenets that can be adopted for an Ideology
 std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(PolicyBranchTypes eBranch, int iLevel)
 {
+	// Check cache first
+	std::pair<PolicyBranchTypes, int> cacheKey(eBranch, iLevel);
+	if (!m_bTenetCacheDirty)
+	{
+		std::map<std::pair<PolicyBranchTypes, int>, std::vector<PolicyTypes> >::iterator it = 
+			m_cachedAvailableTenets.find(cacheKey);
+		if (it != m_cachedAvailableTenets.end())
+		{
+			return it->second;
+		}
+	}
+
 	std::vector<PolicyTypes> availableTenets;
 
 	CvPolicyXMLEntries* pkPolicies = GC.GetGamePolicies();
@@ -6037,6 +6064,10 @@ std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(PolicyBranchTypes 
 			availableTenets.push_back(eTenet);
 		}
 	}
+
+	// Cache the result
+	m_cachedAvailableTenets[cacheKey] = availableTenets;
+	m_bTenetCacheDirty = false;
 
 	return availableTenets;
 }
