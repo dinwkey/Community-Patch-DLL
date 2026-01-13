@@ -8315,52 +8315,56 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 		iRtnValue += 10 * pEntry->GetHappinessPerCity() * iHappinessMultiplier;
 	}
 
-	// Building class happiness
-	for (jJ = 0; jJ < GC.getNumBuildingClassInfos(); jJ++)
+	// Building class happiness - cache loop count to avoid repeated calls
+	int iNumBuildingClassesLoop = GC.getNumBuildingClassInfos();
+	for (jJ = 0; jJ < iNumBuildingClassesLoop; jJ++)
 	{
-		if (pEntry->GetBuildingClassHappiness(jJ) > 0)
-		{
-			BuildingTypes eBuilding = (BuildingTypes)m_pPlayer->getCivilizationInfo().getCivilizationBuildings((BuildingClassTypes)jJ);
-			if (eBuilding == NO_BUILDING)
-				continue;
+		int iBuildingClassHappinessValue = pEntry->GetBuildingClassHappiness(jJ);
+		if (iBuildingClassHappinessValue <= 0)
+			continue;
 
-			if (pCity && pCity->GetCityBuildings()->HasBuildingClass((BuildingClassTypes)jJ))
+		BuildingTypes eBuilding = (BuildingTypes)m_pPlayer->getCivilizationInfo().getCivilizationBuildings((BuildingClassTypes)jJ);
+		if (eBuilding == NO_BUILDING)
+			continue;
+
+		CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
+		if (!pkBuildingInfo)
+			continue;
+
+		if (pCity && pCity->GetCityBuildings()->HasBuildingClass((BuildingClassTypes)jJ))
+		{
+			iAvailabilityModifier = 10;
+		}
+		else if (pCity && pCity->canConstruct(eBuilding))
+		{
+			iAvailabilityModifier = 8;
+		}
+		else
+		{
+			if (pkBuildingInfo->IsCapitalOnly() && !bIsCapital)
 			{
-				iAvailabilityModifier = 10;
-			}
-			else if (pCity && pCity->canConstruct(eBuilding))
-			{
-				iAvailabilityModifier = 8;
+				iAvailabilityModifier = 0;
 			}
 			else
 			{
-				CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
-				if (pkBuildingInfo->IsCapitalOnly() && !bIsCapital)
+				TechTypes ePrereqTech = (TechTypes)pkBuildingInfo->GetPrereqAndTech();
+				
+				if (ePrereqTech == NO_TECH || GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->HasTech(ePrereqTech))
 				{
-					iAvailabilityModifier = 0;
+					iAvailabilityModifier = 6;
 				}
 				else
 				{
-					TechTypes ePrereqTech = (TechTypes)pkBuildingInfo->GetPrereqAndTech();
-					
-					if (ePrereqTech == NO_TECH || GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->HasTech(ePrereqTech))
-					{
-						iAvailabilityModifier = 6;
-					}
-					else
-					{
-						CvTechEntry* pkTechInfo = GC.getTechInfo(ePrereqTech);
-						if (!pkTechInfo)
-							continue;
-
-						int iEraNeeded = pkTechInfo->GetEra();
-						int iCurrentEra = m_pPlayer->GetCurrentEra();
-						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
-					}
+					CvTechEntry* pkTechInfo = GC.getTechInfo(ePrereqTech);
+					if (!pkTechInfo)
+						continue;
+					int iEraNeeded = pkTechInfo->GetEra();
+					int iCurrentEra = m_pPlayer->GetCurrentEra();
+					iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
 				}
 			}
-			iRtnValue += iAvailabilityModifier * pEntry->GetBuildingClassHappiness(jJ) * iHappinessMultiplier;
 		}
+		iRtnValue += iAvailabilityModifier * iBuildingClassHappinessValue * iHappinessMultiplier;
 	}
 
 	ReligionTypes eReligion = m_pPlayer->GetReligions()->GetStateReligion(true);
@@ -8448,36 +8452,14 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 
 	if (bIsCapital || (pCity && pCity->GetCityReligions()->IsHolyCityAnyReligion()))
 	{
-		for (jJ = 0; jJ < GC.getNumGreatPersonInfos(); jJ++)
-		{
-			GreatPersonTypes eGP = (GreatPersonTypes)jJ;
-			if (eGP == NO_GREATPERSON)
-				continue;
-
-			if (pEntry->GetGreatPersonPoints(eGP) > 0)
-			{
-				iTempValue = 10 * pEntry->GetGreatPersonPoints(eGP) * iGPValue;
-				if (eGP == GetGreatPersonFromUnitClass((UnitClassTypes)GC.getInfoTypeForString("UNITCLASS_SCIENTIST")))
-				{
-					iTempValue *= 100 + 2 * pPlayerTraits->GetGreatScientistRateModifier();
-					iTempValue /= 100;
-				}
-				iRtnValue += iTempValue;
-			}
-		}
-	}
-
-	////////////////////
-	// Yield Changes
 	///////////////////
 
-	for (iI = 0; iI < NUM_YIELD_TYPES; iI++)
-	{
-		iTempValue = 0;
-
-		// City yield change
-		iTempValue += 10 * pEntry->GetCityYieldChange(iI);
-
+						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
+					}
+					if (!pCity)
+					{
+						iAvailabilityModifier--;
+					}
 		if (bIsCapital) {
 			iTempValue += 10 * pEntry->GetCapitalYieldChange(iI);
 		}
@@ -8550,42 +8532,46 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 			iTempValue += iAvailabilityModifier * pEntry->GetYieldChangeAnySpecialist(iI);
 		}
 		
-		for (jJ = 0; jJ < GC.getNumSpecialistInfos(); jJ++)
+		// Specialist yield change - cache specialist count to avoid repeated calls
+		int iNumSpecialists = GC.getNumSpecialistInfos();
+		for (jJ = 0; jJ < iNumSpecialists; jJ++)
 		{
-			if (pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI) > 0)
+			int iSpecialistYieldChangeValue = pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI);
+			if (iSpecialistYieldChangeValue <= 0)
+				continue;
+
+			if (pCity)
 			{
-				if (pCity)
+				// do we have a specialist already?
+				if (pCity->GetCityCitizens()->GetSpecialistCount((SpecialistTypes)jJ) > 0)
 				{
-					// do we have a specialist already?
-					if (pCity->GetCityCitizens()->GetSpecialistCount((SpecialistTypes)jJ) > 0)
-					{
-						iTempValue += 10 * pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI) * pCity->GetCityCitizens()->GetSpecialistCount((SpecialistTypes)jJ);
-					}
-					// if not, current population gives us an indicator how long it'll take to get one
-					else if (pCity->GetCityCitizens()->GetSpecialistSlots((SpecialistTypes)jJ) > 0)
-					{
-						iAvailabilityModifier = max(4, min(10, iCurrentCityPop));
-						iTempValue += iAvailabilityModifier * pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI);
-					}
-					else
-					{
-						iAvailabilityModifier = min(2, min(7, iCurrentCityPop));
-						iTempValue += iAvailabilityModifier * pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI);
-					}
+					iTempValue += 10 * iSpecialistYieldChangeValue * pCity->GetCityCitizens()->GetSpecialistCount((SpecialistTypes)jJ);
+				}
+				// if not, current population gives us an indicator how long it'll take to get one
+				else if (pCity->GetCityCitizens()->GetSpecialistSlots((SpecialistTypes)jJ) > 0)
+				{
+					iAvailabilityModifier = max(4, min(10, iCurrentCityPop));
+					iTempValue += iAvailabilityModifier * iSpecialistYieldChangeValue;
 				}
 				else
 				{
-					iTempValue += 2 * pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI);
+					iAvailabilityModifier = min(2, min(7, iCurrentCityPop));
+					iTempValue += iAvailabilityModifier * iSpecialistYieldChangeValue;
 				}
+			}
+			else
+			{
+				iTempValue += 2 * iSpecialistYieldChangeValue;
 			}
 		}
 
-		// Luxuries. count only in capital
+		// Luxuries. count only in capital - cache resource count and luxury count to avoid repeated calls
 		if (bIsCapital && pEntry->GetYieldPerLux(iI) > 0)
 		{
 			int iNumLuxNow = 0;
 			ResourceTypes eResource;
-			for (int iResourceLoop = 0; iResourceLoop < GC.getNumResourceInfos(); iResourceLoop++)
+			int iNumResourcesForLux = GC.getNumResourceInfos();
+			for (int iResourceLoop = 0; iResourceLoop < iNumResourcesForLux; iResourceLoop++)
 			{
 				eResource = (ResourceTypes)iResourceLoop;
 
@@ -8609,45 +8595,56 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 			iTempValue += 10 * pCity->GetCityCulture()->GetNumGreatWorks();
 		}
 
-		// Building class yield change
-		for (jJ = 0; jJ < GC.getNumBuildingClassInfos(); jJ++)
+		// Building class yield change - cache building class count to avoid repeated calls
+		int iNumBuildingClassesYield = GC.getNumBuildingClassInfos();
+		for (jJ = 0; jJ < iNumBuildingClassesYield; jJ++)
 		{
-			CvBuildingClassInfo* pkBuildingClassInfo = GC.getBuildingClassInfo((BuildingClassTypes)jJ);
-			if (!pkBuildingClassInfo)
-			{
+			int iBuildingClassYieldChangeValue = pEntry->GetBuildingClassYieldChange(jJ, iI);
+			if (iBuildingClassYieldChangeValue <= 0)
 				continue;
-			}
 
-			if (pEntry->GetBuildingClassYieldChange(jJ, iI) > 0)
+			BuildingTypes eBuilding = (BuildingTypes)m_pPlayer->getCivilizationInfo().getCivilizationBuildings((BuildingClassTypes)jJ);
+			if (eBuilding == NO_BUILDING)
+				continue;
+
+			CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
+			if (!pkBuildingInfo)
+				continue;
+
+			if (pCity && pCity->GetCityBuildings()->HasBuildingClass((BuildingClassTypes)jJ))
 			{
-				BuildingTypes eBuilding = (BuildingTypes)m_pPlayer->getCivilizationInfo().getCivilizationBuildings((BuildingClassTypes)jJ);
-				if (eBuilding == NO_BUILDING)
-					continue;
+				iAvailabilityModifier = 10;
+			}
+			else if (pCity && pCity->canConstruct(eBuilding))
+			{
+				iAvailabilityModifier = 8;
+			}
+			else 
+			{
+				if ((pkBuildingInfo->IsCapital() || pkBuildingInfo->IsCapitalOnly()) && !bIsCapital)
+				{
+					iAvailabilityModifier = 0;
+				}
+				else if (pkBuildingInfo->GetLocalResourceOrSize() > 0)
+				{
+					// we need a local resource to build this? assume the building will be very rare
+					iAvailabilityModifier = 1;
+				}
+				else
+				{
+					TechTypes ePrereqTech = (TechTypes)pkBuildingInfo->GetPrereqAndTech();
 
-				CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
-				if (pCity && pCity->GetCityBuildings()->HasBuildingClass((BuildingClassTypes)jJ))
-				{
-					iAvailabilityModifier = 10;
-				}
-				else if (pCity && pCity->canConstruct(eBuilding))
-				{
-					iAvailabilityModifier = 8;
-				}
-				else 
-				{
-					if ((pkBuildingInfo->IsCapital() || pkBuildingInfo->IsCapitalOnly()) && !bIsCapital)
+					if (ePrereqTech == NO_TECH || GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->HasTech(ePrereqTech))
 					{
-						iAvailabilityModifier = 0;
-					}
-					else if (pkBuildingInfo->GetLocalResourceOrSize() > 0)
-					{
-						// we need a local resource to build this? assume the building will be very rare
-						iAvailabilityModifier = 1;
+						iAvailabilityModifier = 6;
 					}
 					else
 					{
-						TechTypes ePrereqTech = (TechTypes)pkBuildingInfo->GetPrereqAndTech();
+						CvTechEntry* pkTechInfo = GC.getTechInfo(ePrereqTech);
+						if (!pkTechInfo)
+							continue;
 
+<<<<<<< HEAD
 						if (ePrereqTech == NO_TECH || GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->HasTech(ePrereqTech))
 						{
 							iAvailabilityModifier = 6;
@@ -8666,15 +8663,24 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 						{
 							iAvailabilityModifier--;
 						}
+=======
+						int iEraNeeded = pkTechInfo->GetEra();
+						int iCurrentEra = m_pPlayer->GetCurrentEra();
+						iAvailabilityModifier = iCurrentEra >= iEraNeeded ? 4 : 2;
+					}
+					if (!pCity)
+					{
+						iAvailabilityModifier--;
+>>>>>>> 576ea65df (Restore Religion System Optimizations from backup branch)
 					}
 				}
-				// unique building, assume we focus on getting it quickly
-				if (m_pPlayer->getCivilizationInfo().isCivilizationBuildingOverridden(pkBuildingInfo->GetBuildingClassType()))
-				{
-					iAvailabilityModifier = min(10, iAvailabilityModifier + 3);
-				}
-				iTempValue += iAvailabilityModifier * pEntry->GetBuildingClassYieldChange(jJ, iI);
 			}
+			// unique building, assume we focus on getting it quickly
+			if (m_pPlayer->getCivilizationInfo().isCivilizationBuildingOverridden(pkBuildingInfo->GetBuildingClassType()))
+			{
+				iAvailabilityModifier = min(10, iAvailabilityModifier + 3);
+			}
+			iTempValue += iAvailabilityModifier * iBuildingClassYieldChangeValue;
 		}
 
 		if (pEntry->GetYieldPerConstruction(iI) > 0)
