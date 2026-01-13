@@ -48,6 +48,7 @@ File creation safety
   - Prefer using the clang-based workflow (`build_vp_clang.ps1` / `clang-cl`) for local development and CI checks because it gives faster iteration. **However, all code and binaries must be written and verified to target Visual C++ 2008 SP1 (VC9) ABI and language constraints (C++03 with only TR1 where already available).** Do not assume modern MSVC toolsets (2015/2017/2019/2022) are compatible for release artifacts.
   - After making any change to C++ sources, run the clang-based build script to verify compilation before committing or opening a PR: `.\\build_vp_clang.ps1 -Config debug` (use `-Config release` for release-targeted changes). Confirm `clang-output/<config>/CvGameCore_Expansion2.dll` and `.pdb` are created and check `clang-output/<config>/build.log` for errors; if the build fails, fix locally and re-run until it succeeds. Additionally, when possible, validate the produced artifacts against a VC9 linker or perform an MSVC2008 build to confirm ABI/linkage compatibility. Add a short note in the commit/PR indicating the clang build passed (e.g., `clang-build: debug successful`) and note any VC9 verification performed.
   - **CRITICAL: Run the clang build blocking and wait for completion.** When invoking .\build_vp_clang.ps1 -Config debug, run it interactively in the foreground and stream its output until it finishes; do not start it in the background or detach it. The compilation of hundreds of .cpp files is CPU-intensive and can take 10-30 minutes. Do not interrupt the build once started — allow it to complete before performing follow-up checks or edits.
+  - **Clean build fallback:** The PowerShell script (`build_vp_clang.ps1`) performs incremental builds for speed. If you encounter repeated build errors, build interruptions, or unexplained failures after code changes, fall back to a full clean build using the Python script: `python build_vp_clang.py --config debug --clean` (or `--config release`). The Python script will perform a complete rebuild from scratch, which can resolve stale object file or dependency issues that incremental builds may miss.
   - Required environment note: `VS90COMNTOOLS` must point to a valid VS2008 installation for tooling and some scripts (e.g., `build_vp_clang.ps1`) to work.
 
   - **MSBuild fallback (when to use):** Prefer the clang-based workflow, but fall back to MSBuild/VS2008 when failures appear to be unrelated to C++ syntax (for example: linker issues, resource compiler errors, ToolsVersion/VS project compatibility, or VC9 ABI/linker behavior that clang can't reproduce). When using MSBuild as a fallback, set the VC2008 environment first and use the .NET 4 MSBuild executable to drive the solution. Example PowerShell commands:
@@ -58,7 +59,12 @@ File creation safety
     ```
 
   - **What to check after MSBuild:** ensure `BuildOutput\\Debug\\CvGameCore_Expansion2.dll` (or the Release path) is produced, and review the MSBuild log for linker/resource errors. Treat MSBuild as a verification step for platform/VC9-specific issues — keep clang as the primary fast/CI build.
-
+- **OS-aware command execution (CRITICAL):**
+  - ALWAYS check the current OS first before running commands. Refer to the `<environment_info>` to confirm whether the OS is Windows, macOS, or Linux.
+  - On Windows: prefer PowerShell cmdlets and Windows-native tools (e.g., `Get-ChildItem`, `Test-Path`, MSBuild, batch/PowerShell scripts). Use `\` path separators as appropriate.
+  - On non-Windows: use bash/sh equivalents (e.g., `ls`, `test -f`, Make, shell scripts) and forward-slash paths.
+  - Do NOT run Linux commands (bash, grep, ls, etc.) on Windows without an explicit tool like WSL, Git Bash, or MinGW; instead use PowerShell equivalents.
+  - Example: Instead of `ls -la`, use `Get-ChildItem -Force` on Windows; instead of `mkdir -p`, use `New-Item -ItemType Directory -Force` or PowerShell paths.
  **Build and log verification (for agents):**
    - **Run build:** start the clang script and run it *in the foreground* (blocking) so the process completes before taking any further actions. Example (PowerShell):
        - `\.\build_vp_clang.ps1 -Config debug`
