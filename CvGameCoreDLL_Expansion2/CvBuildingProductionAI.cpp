@@ -173,9 +173,10 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 	int iBonus = 0;
 
 	const CvBuildingClassInfo& kBuildingClassInfo = pkBuildingInfo->GetBuildingClassInfo();
-	if (m_pCity->getPopulation() <= 6 && !m_pCity->isCapital())
+	// Block world wonders in very small cities (pop <= 4) unless it's the capital
+	if (m_pCity->getPopulation() <= 4 && !m_pCity->isCapital())
 	{
-		if(isWorldWonderClass(kBuildingClassInfo) || isTeamWonderClass(kBuildingClassInfo) || isNationalWonderClass(kBuildingClassInfo) || isLimitedWonderClass(kBuildingClassInfo))
+		if(isWorldWonderClass(kBuildingClassInfo))
 		{
 			return SR_STRATEGY;
 		}
@@ -284,13 +285,16 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 					iNumOthersConstructing++;
 				}
 			}
-			iBonus -= iNumOthersConstructing * 150;
+			// Cap competition penalty to prevent excessive negative values (max -500)
+			int iCompetitionPenalty = iNumOthersConstructing * 150;
 
 			//probably early game, so if we haven't started yet, we're probably not going to win this one.
 			if (kPlayer.getNumCities() == 1)
 			{
-				iBonus -= iNumOthersConstructing * 100;
+				iCompetitionPenalty += iNumOthersConstructing * 100;
 			}
+
+			iBonus -= min(500, iCompetitionPenalty);
 		}
 	}
 

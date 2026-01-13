@@ -483,6 +483,8 @@ function Build-Cpps {
     }
     
     # Second pass: build files that need it in parallel
+    $maxParallelJobs = [Math]::Max(1, [System.Environment]::ProcessorCount - 1)
+    
     foreach ($fileInfo in $filesToRebuild) {
         $cpp_src = $fileInfo.src
         $out = $fileInfo.out
@@ -491,8 +493,13 @@ function Build-Cpps {
         
         $command = "`"`"$VS_2008_VARS_BAT`">NUL && $ClangCl `"$cpp_src`" /Fo`"$out`" /Yu`"$PCH_H`" /Fp`"$PchPath`" $ClArgs`""
         
+        # Throttle job submissions to avoid resource exhaustion
+        while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -ge $maxParallelJobs) {
+            Start-Sleep -Milliseconds 50
+        }
+        
         $job = Start-Job -ScriptBlock {
-            param($cmd, $log)
+            param($cmd, $log, $timeout)
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = 'cmd.exe'
             $psi.Arguments = "/c $cmd"
@@ -505,25 +512,67 @@ function Build-Cpps {
             $process.StartInfo = $psi
             $process.Start() | Out-Null
             
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
-            $process.WaitForExit()
+            # Stream output to avoid buffer deadlock
+            $output = New-Object System.Text.StringBuilder
+            $stdoutTask = $process.StandardOutput.BaseStream.BeginRead([byte[]]::new(4096), 0, 4096, $null, $null)
+            $stderrTask = $process.StandardError.BaseStream.BeginRead([byte[]]::new(4096), 0, 4096, $null, $null)
             
-            $output = $stdout + $stderr
-            Set-Content -Path $log -Value $output -Encoding UTF8
+            # Wait for process with timeout
+            $exitedInTime = $process.WaitForExit($timeout)
+            if (-not $exitedInTime) {
+                Write-Host "WARNING: Process timeout ($($timeout)ms) for compilation, killing job..."
+                $process.Kill()
+                $process.WaitForExit()
+                Set-Content -Path $log -Value "TIMEOUT AFTER ${timeout}ms`n" -Encoding UTF8
+                return 9999  # Timeout exit code
+            }
+            
+            # Read output
+            try {
+                $stdout = $process.StandardOutput.ReadToEnd()
+                $stderr = $process.StandardError.ReadToEnd()
+                $output_text = $stdout + $stderr
+                if ([string]::IsNullOrEmpty($output_text)) {
+                    $output_text = "(no output)"
+                }
+                Set-Content -Path $log -Value $output_text -Encoding UTF8
+            } catch {
+                Set-Content -Path $log -Value "ERROR reading output: $_" -Encoding UTF8
+                return 9998
+            }
             
             return $process.ExitCode
-        } -ArgumentList $command, $tempLog
+        } -ArgumentList $command, $tempLog, 300000  # 5-minute timeout per file
         
         $jobs += $job
     }
     
-    # Wait for all jobs
-    $jobs | Wait-Job | Out-Null
+    # Wait for all remaining jobs with timeout monitoring
+    $jobTimeout = 600000  # 10-minute total timeout for all jobs
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    
+    while ($jobs | Where-Object { $_.State -eq 'Running' }) {
+        if ($stopwatch.ElapsedMilliseconds -gt $jobTimeout) {
+            Write-Host "ERROR: Build job timeout (10 minutes). Killing remaining jobs..."
+            $jobs | Stop-Job -Force
+            exit 1
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    
+    $stopwatch.Stop()
     
     # Collect results
     $failed = 0
-    $results = $jobs | Receive-Job
+    $results = @()
+    foreach ($job in $jobs) {
+        $result = $job | Receive-Job
+        if ($result -is [int]) {
+            $results += $result
+        } else {
+            $results += 0
+        }
+    }
     
     # Write logs to main log file
     foreach ($kvp in $tempLogs.GetEnumerator()) {
