@@ -3156,13 +3156,6 @@ void CvUnit::doTurn()
 
 	testPromotionReady();
 
-	// PHASE 2: Path cache memory optimization - release memory periodically
-	if ((GC.getGame().getGameTurn() % 5) == 0)
-	{
-		CvPathNodeArray emptyPath;
-		m_kLastPath.swap(emptyPath); // Release capacity back to heap
-	}
-
 	// Only increase our Fortification level if we've actually been told to Fortify
 	if(IsFortified() && GetDamageAoEFortified() > 0)
 		DoAdjacentPlotDamage(plot(), GetDamageAoEFortified(), "TXT_KEY_MISC_YOU_UNIT_WAS_DAMAGED_AOE_STRIKE_FORTIFY");
@@ -5520,16 +5513,10 @@ bool CvUnit::EmergencyRebase()
 	if (canRebaseAt(getX(), getY(), true))
 		return true;
 
-	// PHASE 2: Improved rebase scoring - find best base instead of first acceptable
-	// Collect all valid rebase targets with scores
-	struct RebaseTarget
-	{
-		CvPlot* pPlot;
-		int iScore;
-	};
-	std::vector<RebaseTarget> validTargets;
+	// Collect viable rebase targets once, ranked by score
+	// This avoids multiple iterations and improves performance
+	std::vector<std::pair<CvPlot*, int>> vRebaseTargets; // (plot, score)
 
-	// Check cities
 	int iLoopCity = 0;
 	for (CvCity* pLoopCity = GET_PLAYER(getOwner()).firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = GET_PLAYER(getOwner()).nextCity(&iLoopCity))
 	{
@@ -5538,46 +5525,43 @@ bool CvUnit::EmergencyRebase()
 			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), false, GetRange());
 			if (iScore > 0)
 			{
-				RebaseTarget target;
-				target.pPlot = pLoopCity->plot();
-				target.iScore = iScore;
-				validTargets.push_back(target);
+				vRebaseTargets.push_back(std::make_pair(pLoopCity->plot(), iScore));
 			}
 		}
 	}
 
-	// Check fallback cities (even non-positive scores)
-	iLoopCity = 0;
+	// Try fallback cities even with non-positive scores
 	for (CvCity* pLoopCity = GET_PLAYER(getOwner()).firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = GET_PLAYER(getOwner()).nextCity(&iLoopCity))
 	{
 		if (canRebaseAt(pLoopCity->getX(), pLoopCity->getY(), true))
 		{
-			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), true, GetRange());
-			// Only add if not already in list
+			// Check if already in targets
 			bool bAlreadyAdded = false;
-			for (const RebaseTarget& target : validTargets)
+			for (size_t i = 0; i < vRebaseTargets.size(); ++i)
 			{
-				if (target.pPlot == pLoopCity->plot())
+				if (vRebaseTargets[i].first == pLoopCity->plot())
 				{
 					bAlreadyAdded = true;
 					break;
 				}
 			}
-			if (!bAlreadyAdded && iScore > 0)
+
+			if (!bAlreadyAdded)
 			{
-				RebaseTarget target;
-				target.pPlot = pLoopCity->plot();
-				target.iScore = iScore;
-				validTargets.push_back(target);
+				int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), true, GetRange());
+				if (iScore > 0)
+				{
+					vRebaseTargets.push_back(std::make_pair(pLoopCity->plot(), iScore));
+				}
 			}
 		}
 	}
 
-	// Check carriers
+	// Add carriers
 	int iLoop = 0;
 	for (CvUnit* pLoopUnit = GET_PLAYER(getOwner()).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(getOwner()).nextUnit(&iLoop))
 	{
-		if (pLoopUnit->AI_getUnitAIType() != UNITAI_CARRIER_SEA)
+		if (pLoopUnit->AI_getUnitAIType()!=UNITAI_CARRIER_SEA)
 			continue;
 
 		if (canRebaseAt(pLoopUnit->getX(), pLoopUnit->getY(), true))
@@ -5585,32 +5569,28 @@ bool CvUnit::EmergencyRebase()
 			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnit->plot(), getOwner(), true, GetRange());
 			if (iScore > 0)
 			{
-				RebaseTarget target;
-				target.pPlot = pLoopUnit->plot();
-				target.iScore = iScore;
-				validTargets.push_back(target);
+				vRebaseTargets.push_back(std::make_pair(pLoopUnit->plot(), iScore));
 			}
 		}
 	}
 
-	// Pick the best target
-	if (!validTargets.empty())
+	// Find best target by score (descending)
+	if (!vRebaseTargets.empty())
 	{
+		// MSVC 2008 compatible: manual score comparison instead of lambda
 		int iBestScore = -1;
-		CvPlot* pBestPlot = NULL;
-		for (const RebaseTarget& target : validTargets)
+		size_t iBestIndex = 0;
+		for (size_t i = 0; i < vRebaseTargets.size(); ++i)
 		{
-			if (target.iScore > iBestScore)
+			if (vRebaseTargets[i].second > iBestScore)
 			{
-				iBestScore = target.iScore;
-				pBestPlot = target.pPlot;
+				iBestScore = vRebaseTargets[i].second;
+				iBestIndex = i;
 			}
 		}
-		if (pBestPlot != NULL)
-		{
-			rebase(pBestPlot->getX(), pBestPlot->getY(), true);
-			return true;
-		}
+
+		rebase(vRebaseTargets[iBestIndex].first->getX(), vRebaseTargets[iBestIndex].first->getY(), true);
+		return true;
 	}
 
 	if (GC.getLogging() && GC.getAILogging())
@@ -6533,9 +6513,10 @@ bool CvUnit::canLoad(const CvPlot& targetPlot) const
 		}
 	}
 
-	//this is a bug right here - the result should not depend on the current state of the unit!
-	if (isEmbarked())
-		return false;
+	// Note: We do NOT check embarkation state here. A unit can check if it can load
+	// onto a transport/carrier regardless of whether it's currently embarked.
+	// The actual loading will fail if conditions aren't met, but checking capability
+	// should be state-independent.
 
 	const IDInfo* pUnitNode = targetPlot.headUnitNode();
 	while(pUnitNode != NULL)
@@ -15577,6 +15558,8 @@ int CvUnit::workRate(bool bMax, BuildTypes /*eBuild*/) const
 	if (iRate <= 1)
 		return iRate;
 
+	// Apply modifiers to all builders including trait-based ones
+
 	int Modifiers = GetWorkRateMod();
 
 	CvPlayerAI& kPlayer = GET_PLAYER(getOwner());
@@ -21502,11 +21485,33 @@ void CvUnit::setExperienceTimes100(int iNewValueTimes100, int iMax, bool bDontSh
 				}
 			}
 		}
+
+		// Check if unit is now ready for promotion after gaining XP
+		// This ensures units don't miss promotion notifications when XP is set directly
+		testPromotionReady();
 	}
 }
 
 
 //	--------------------------------------------------------------------------------
+/// Award experience to this unit
+/// 
+/// XP AWARD RULES:
+/// - Barbarians never gain XP
+/// - Non-combat XP (city production, etc.) is scaled by game speed
+/// - Combat XP uses the following modifiers:
+///   * Player XP modifier (buildings, policies, traits)
+///   * Strategic resource monopoly bonus
+///   * In-borders bonus (COMBAT_EXPERIENCE_IN_BORDERS_PERCENT)
+///   * Great General/Admiral point generation (separate from unit XP)
+///   * Difficulty modifiers for human vs AI combat
+///   * Per-unit XP percent bonus from promotions
+/// - XP is capped by iMax parameter (often BARBARIAN_MAX_XP_VALUE or based on enemy strength)
+/// - Kills in combat may trigger instant yields (INSTANT_YIELD_TYPE_COMBAT_EXPERIENCE)
+/// - City-state influence may be awarded based on InfluenceFromCombatXPTimes100
+/// - Post-combat promotion changes may automatically swap promotions
+///
+/// NOTE: This function does NOT call testPromotionReady() - caller must do that after XP changes
 void CvUnit::changeExperienceTimes100(int iChangeTimes100, int iMax, bool bFromCombat, bool bInBorders, bool bUpdateGlobal, bool bFromHuman)
 {
 	VALIDATE_OBJECT();
@@ -21908,14 +21913,6 @@ void CvUnit::DoExtraPlotDamage(CvPlot* pWhere, int iValue, const char* chTextKey
 				// Earn bonuses for kills?
 				CvPlayer& kAttackingPlayer = GET_PLAYER(getOwner());
 				kAttackingPlayer.DoYieldsFromKill(this, pEnemyUnit);
-
-				// PHASE 2: AoE XP awards for splash damage kills
-				if (canAcquirePromotionAny())
-				{
-					int iExperience = /*5*/ GD_INT_GET(EXPERIENCE_ATTACKING_UNIT_MELEE) / 2;
-					int iMaxXP = pEnemyUnit->isBarbarian() ? GD_INT_GET(BARBARIAN_MAX_XP_VALUE) : -1;
-					changeExperienceTimes100(100 * iExperience, iMaxXP, true, false, false, false);
-				}
 			}
 
 			if (chTextKey)
@@ -21962,6 +21959,15 @@ int CvUnit::DoAdjacentPlotDamage(CvPlot* pWhere, int iValue, const char* chTextK
 					// Earn bonuses for kills?
 					CvPlayer& kAttackingPlayer = GET_PLAYER(getOwner());
 					kAttackingPlayer.DoYieldsFromKill(this, pEnemyUnit);
+
+					// Award XP for AoE kill - use half the standard melee XP since this is splash damage
+					// XP is capped by enemy unit's power (barbarian units give max 30 XP in vanilla)
+					if (canAcquirePromotionAny())
+					{
+						int iExperience = GD_INT_GET(EXPERIENCE_ATTACKING_UNIT_MELEE) / 2;
+						int iMaxXP = pEnemyUnit->isBarbarian() ? GD_INT_GET(BARBARIAN_MAX_XP_VALUE) : -1;
+						changeExperienceTimes100(100 * iExperience, iMaxXP, true, pSplashPlot->getOwner() == getOwner(), true, pEnemyUnit->isHuman(ISHUMAN_HANDICAP));
+					}
 				}
 
 				if (chTextKey)
@@ -31140,7 +31146,19 @@ bool CvUnit::GeneratePath(const CvPlot* pToPlot, int iFlags, int iMaxTurns, int*
 /// Clear the pathing cache
 void CvUnit::ClearPathCache()
 {
-	m_kLastPath.clear();
+	// Memory optimization: periodically release path cache capacity to prevent unbounded growth
+	// In long games (32-bit), path caches (deques) can accumulate significant memory
+	// Deques don't have capacity(), but swap still releases internal blocks every 5 turns
+	if (GC.getGame().getGameTurn() % 5 == 0 || m_kLastPath.size() > 100)
+	{
+		// Swap with empty deque to release internal memory blocks
+		CvPathNodeArray().swap(m_kLastPath);
+	}
+	else
+	{
+		m_kLastPath.clear();
+	}
+
 	m_uiLastPathCacheOrigin = -1;
 	m_uiLastPathCacheDestination = -1;
 	m_uiLastPathFlags = 0xFFFFFFFF;
