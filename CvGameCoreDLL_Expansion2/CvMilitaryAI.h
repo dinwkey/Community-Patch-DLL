@@ -11,6 +11,7 @@
 #define CIV5_MILITARY_AI_H
 
 #include "CvEnumMap.h"
+struct TradeConnection;
 
 enum DefenseState
 {
@@ -298,12 +299,42 @@ private:
 	void UpdateDefenseState();
 	void UpdateMilitaryStrategies();
 	void UpdateOperations();
-
+	
 	// Issue 4.1 helper functions for enhanced threat assessment
 	int CalculateProximityWeightedThreat(DomainTypes eDomain);
 	bool AreEnemiesMovingTowardUs(DomainTypes eDomain);
 	int GetAlliedThreatMultiplier();
+	
+	// Issue 7.2: Urgent flavor propagation for immediate threat response
+	void PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues);
 
+	// Issue 7.2: Trade route escort evaluation
+	enum EscortRecommendation
+	{
+		ESCORT_RECOMMENDED,
+		ESCORT_NOT_WORTH,
+		ESCORT_REROUTE
+	};
+	EscortRecommendation EvaluateTradeUnitEscortMission(int iTradeConnectionID, int* piEscortValue = NULL) const;
+	CvUnit* AssignEscortToReturningTradeUnit(int iTradeConnectionID);
+	int GetTradeUnitReturnValue(int iTradeConnectionID) const;
+
+	// Terrain-aware grouping helpers (Issue: Terrain-aware grouping)
+	int GetLocalTerrainRoughness(const CvPlot* pCenter, int iRadius) const;
+	void ApplyTerrainAwareTempFlavors(const CvPlot* pCenter);
+
+	// Diplomatic Considerations: trade-route-aware grouping
+	void ApplyTradeRouteDefenseFlavors();
+	int GetTradeRouteEconomicValue(const TradeConnection& kConnection) const;
+
+	// Dynamic Rebalancing: Units regroup based on combat losses (Issue: Dynamic Rebalancing)
+	void DetectCombatLosses();
+	int EvaluateArmyBalance() const;
+	void TriggerFormationRebalance();
+	void ApplyLossAdaptationFlavors();
+	void EvaluateTacticalRetreat();
+	int GetUnitCountByType() const;
+	
 	void DoNuke(PlayerTypes ePlayer);
 	void CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity);
 	void CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity);
@@ -328,6 +359,11 @@ private:
 	int* m_paiTurnStrategyAdopted;
 	CvEnumMap<FlavorTypes, int> m_aiTempFlavors;
 	int m_aiWarFocus[MAX_MAJOR_CIVS];
+
+	// Dynamic Rebalancing: Unit composition tracking for loss detection (Issue: Dynamic Rebalancing)
+	CvEnumMap<UnitCombatTypes, int> m_previousUnitComposition;  // last known composition
+	int m_iLastRebalanceTurn;  // track when rebalancing last occurred
+	int m_iArmyBalanceScore;  // 0-100 score of army health
 
 	// Internal calculated values - must be serialized
 	int m_iNumberOfTimesOpsBuildSkippedOver;
