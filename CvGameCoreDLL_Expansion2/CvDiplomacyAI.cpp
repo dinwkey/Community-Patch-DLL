@@ -3046,11 +3046,14 @@ void CvDiplomacyAI::SetWonderSpammer(PlayerTypes ePlayer, bool bValue)
 // Victory Progress
 // ------------------------------------
 
-/// How close are we to achieving a Time victory?
-/// FIXME: Needs a "is time victory disabled?" check before this function can be of much use
+/// How close are we to achieving a Score victory?
 int CvDiplomacyAI::GetScoreVictoryProgress() const
 {
 	if (!m_pPlayer->isAlive() || GC.getGame().getWinner() != NO_TEAM)
+		return 0;
+
+	VictoryTypes eVictoryType = (VictoryTypes)GC.getInfoTypeForString("VICTORY_SCORE");
+	if (eVictoryType == NO_VICTORY || !GC.getGame().isVictoryValid(eVictoryType))
 		return 0;
 
 	int iProgress = 0;
@@ -27853,7 +27856,45 @@ void CvDiplomacyAI::DoMakeWarOnPlayer(PlayerTypes eTargetPlayer)
 			// The IsArmyInPlaceForAttack/SetArmyInPlaceForAttack loop is ugly and should probably be done better.
 			if (GET_PLAYER(eTargetPlayer).isMinorCiv() || GetGlobalCoopWarAgainstState(eTargetPlayer) != COOP_WAR_STATE_PREPARING)
 			{
-				// FIXME: Okay, so we're ready to declare war...but, can we exploit Defensive Pacts to do so with fewer diplomatic penalties?
+				// Check if declaring war on this target would trigger defensive pacts that create unfavorable matchups
+				int iAlliedAgainstUs = 0;
+				int iTargetAllyStrength = 0;
+
+				// Count defensive pact allies of the target that are hostile to us
+				for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+				{
+					PlayerTypes eLoopPlayer = (PlayerTypes)i;
+					if (i == GetPlayer()->GetID() || !GET_PLAYER(eLoopPlayer).isAlive())
+						continue;
+
+					// Check if they have a defensive pact with the target
+					if (GET_TEAM(GET_PLAYER(eLoopPlayer).getTeam()).IsHasDefensivePact(GET_PLAYER(eTargetPlayer).getTeam()))
+					{
+						iAlliedAgainstUs++;
+						iTargetAllyStrength += GetMilitaryStrengthComparedToUs(eLoopPlayer);
+					}
+				}
+
+				// If multiple hostile allies could join via defensive pacts, reassess the war decision
+				if (iAlliedAgainstUs > 0)
+				{
+					int iOurStrengthVsTarget = GetMilitaryStrengthComparedToUs(eTargetPlayer);
+					if (iOurStrengthVsTarget > 0)
+					{
+						int iThreshold = (iOurStrengthVsTarget * 3) / 4;
+						if (iTargetAllyStrength > iThreshold)
+						{
+							CvString strLogName = "DiplomacyWarDecisions.log";
+							FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
+							CvString strLogMsg;
+							strLogMsg.Format("CvDiplomacyAI::DoUpdateWarTargets - War against %s aborted: defensive pacts create unfavorable odds", GET_PLAYER(eTargetPlayer).getName());
+							if (pLog)
+								pLog->Msg(strLogMsg);
+							return;
+						}
+					}
+				}
+
 				DeclareWar(eTargetPlayer);
 			}
 		}
