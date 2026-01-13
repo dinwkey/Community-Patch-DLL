@@ -8703,16 +8703,19 @@ int CvReligionAI::ScoreBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity) const
 	}
 	iRtnValue += iTempValue;
 
-	// Building class happiness
-	for(int jJ = 0; jJ < GC.getNumBuildingClassInfos(); jJ++)
+	// Building class happiness - cache building count and city population to avoid repeated calls
+	int iCityPopulation = pCity->getPopulation();
+	int iNumBuildingClasses = GC.getNumBuildingClassInfos();
+	for(int jJ = 0; jJ < iNumBuildingClasses; jJ++)
 	{
-		iTempValue = pEntry->GetBuildingClassHappiness(jJ) * iHappinessMultiplier;
-		if(iMinFollowers > 0)
+		int iBuildingClassHappiness = pEntry->GetBuildingClassHappiness(jJ);
+		if(iBuildingClassHappiness == 0)
+			continue;
+
+		iTempValue = iBuildingClassHappiness * iHappinessMultiplier;
+		if(iMinFollowers > 0 && iCityPopulation >= iMinFollowers)
 		{
-			if(pCity->getPopulation() >= iMinFollowers)
-			{
-				iTempValue *= 2;
-			}
+			iTempValue *= 2;
 		}
 		iRtnValue += iTempValue;
 	}
@@ -8746,7 +8749,8 @@ int CvReligionAI::ScoreBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity) const
 	}
 
 	int iNumLuxuries = 0;
-	for (int iResourceLoop = 0; iResourceLoop < GC.getNumResourceInfos(); iResourceLoop++)
+	int iNumResourceInfos = GC.getNumResourceInfos();
+	for (int iResourceLoop = 0; iResourceLoop < iNumResourceInfos; iResourceLoop++)
 	{
 		ResourceTypes eResource = static_cast<ResourceTypes>(iResourceLoop);
 		CvResourceInfo* pkResource = GC.getResourceInfo(eResource);
@@ -9010,13 +9014,18 @@ int CvReligionAI::ScoreBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity) const
 		}
 		iRtnValue += iTempValue;
 
-		// Building class yield change
-		for (int iJ = 0; iJ < GC.getNumBuildingClassInfos(); iJ++)
+		// Building class yield change - cache building class count and early exit for zero values
+		int iNumBuildingClassesInner = GC.getNumBuildingClassInfos();
+		for (int iJ = 0; iJ < iNumBuildingClassesInner; iJ++)
 		{
+			int iBuildingYieldChange = pEntry->GetBuildingClassYieldChange(iJ, iI);
+			if (iBuildingYieldChange == 0)
+				continue;
+
 			BuildingClassTypes eBuildingClass = static_cast<BuildingClassTypes>(iJ);
 			const CvBuildingClassInfo* pkBuildingClassInfo = GC.getBuildingClassInfo(eBuildingClass);
 
-			iTempValue = pEntry->GetBuildingClassYieldChange(iJ, iI) * iEraBonus;
+			iTempValue = iBuildingYieldChange * iEraBonus;
 			if (iMinFollowers > 0 && pCity->getPopulation() < iMinFollowers)
 			{
 				iTempValue /= 2;
