@@ -3156,6 +3156,13 @@ void CvUnit::doTurn()
 
 	testPromotionReady();
 
+	// PHASE 2: Path cache memory optimization - release memory periodically
+	if ((GC.getGame().getGameTurn() % 5) == 0)
+	{
+		CvPathNodeArray emptyPath;
+		m_kLastPath.swap(emptyPath); // Release capacity back to heap
+	}
+
 	// Only increase our Fortification level if we've actually been told to Fortify
 	if(IsFortified() && GetDamageAoEFortified() > 0)
 		DoAdjacentPlotDamage(plot(), GetDamageAoEFortified(), "TXT_KEY_MISC_YOU_UNIT_WAS_DAMAGED_AOE_STRIKE_FORTIFY");
@@ -5513,34 +5520,95 @@ bool CvUnit::EmergencyRebase()
 	if (canRebaseAt(getX(), getY(), true))
 		return true;
 
+	// PHASE 2: Improved rebase scoring - find best base instead of first acceptable
+	// Collect all valid rebase targets with scores
+	struct RebaseTarget
+	{
+		CvPlot* pPlot;
+		int iScore;
+	};
+	std::vector<RebaseTarget> validTargets;
+
+	// Check cities
 	int iLoopCity = 0;
 	for (CvCity* pLoopCity = GET_PLAYER(getOwner()).firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = GET_PLAYER(getOwner()).nextCity(&iLoopCity))
 	{
-		if (canRebaseAt(pLoopCity->getX(), pLoopCity->getY(), true) && HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), false, GetRange()) > 0)
+		if (canRebaseAt(pLoopCity->getX(), pLoopCity->getY(), true))
 		{
-			rebase(pLoopCity->getX(), pLoopCity->getY(), true);
-			return true;
+			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), false, GetRange());
+			if (iScore > 0)
+			{
+				RebaseTarget target;
+				target.pPlot = pLoopCity->plot();
+				target.iScore = iScore;
+				validTargets.push_back(target);
+			}
 		}
 	}
 
+	// Check fallback cities (even non-positive scores)
+	iLoopCity = 0;
 	for (CvCity* pLoopCity = GET_PLAYER(getOwner()).firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = GET_PLAYER(getOwner()).nextCity(&iLoopCity))
 	{
-		if (canRebaseAt(pLoopCity->getX(), pLoopCity->getY(), true) && HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), true, GetRange()) > 0)
+		if (canRebaseAt(pLoopCity->getX(), pLoopCity->getY(), true))
 		{
-			rebase(pLoopCity->getX(), pLoopCity->getY(), true);
-			return true;
+			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), true, GetRange());
+			// Only add if not already in list
+			bool bAlreadyAdded = false;
+			for (const RebaseTarget& target : validTargets)
+			{
+				if (target.pPlot == pLoopCity->plot())
+				{
+					bAlreadyAdded = true;
+					break;
+				}
+			}
+			if (!bAlreadyAdded && iScore > 0)
+			{
+				RebaseTarget target;
+				target.pPlot = pLoopCity->plot();
+				target.iScore = iScore;
+				validTargets.push_back(target);
+			}
 		}
 	}
 
+	// Check carriers
 	int iLoop = 0;
 	for (CvUnit* pLoopUnit = GET_PLAYER(getOwner()).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(getOwner()).nextUnit(&iLoop))
 	{
-		if (pLoopUnit->AI_getUnitAIType()!=UNITAI_CARRIER_SEA)
+		if (pLoopUnit->AI_getUnitAIType() != UNITAI_CARRIER_SEA)
 			continue;
 
-		if (canRebaseAt(pLoopUnit->getX(), pLoopUnit->getY(), true) && HomelandAIHelpers::ScoreAirBase(pLoopUnit->plot(), getOwner(), true, GetRange()) > 0)
+		if (canRebaseAt(pLoopUnit->getX(), pLoopUnit->getY(), true))
 		{
-			rebase(pLoopUnit->getX(), pLoopUnit->getY(), true);
+			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnit->plot(), getOwner(), true, GetRange());
+			if (iScore > 0)
+			{
+				RebaseTarget target;
+				target.pPlot = pLoopUnit->plot();
+				target.iScore = iScore;
+				validTargets.push_back(target);
+			}
+		}
+	}
+
+	// Pick the best target
+	if (!validTargets.empty())
+	{
+		int iBestScore = -1;
+		CvPlot* pBestPlot = NULL;
+		for (const RebaseTarget& target : validTargets)
+		{
+			if (target.iScore > iBestScore)
+			{
+				iBestScore = target.iScore;
+				pBestPlot = target.pPlot;
+			}
+		}
+		if (pBestPlot != NULL)
+		{
+			rebase(pBestPlot->getX(), pBestPlot->getY(), true);
 			return true;
 		}
 	}
@@ -21840,6 +21908,14 @@ void CvUnit::DoExtraPlotDamage(CvPlot* pWhere, int iValue, const char* chTextKey
 				// Earn bonuses for kills?
 				CvPlayer& kAttackingPlayer = GET_PLAYER(getOwner());
 				kAttackingPlayer.DoYieldsFromKill(this, pEnemyUnit);
+
+				// PHASE 2: AoE XP awards for splash damage kills
+				if (canAcquirePromotionAny())
+				{
+					int iExperience = /*5*/ GD_INT_GET(EXPERIENCE_ATTACKING_UNIT_MELEE) / 2;
+					int iMaxXP = pEnemyUnit->isBarbarian() ? GD_INT_GET(BARBARIAN_MAX_XP_VALUE) : -1;
+					changeExperienceTimes100(100 * iExperience, iMaxXP, true, false, false, false);
+				}
 			}
 
 			if (chTextKey)

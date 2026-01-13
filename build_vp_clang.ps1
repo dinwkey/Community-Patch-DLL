@@ -300,6 +300,23 @@ function Prepare-Dirs {
     }
 }
 
+# Check if a file needs rebuilding (target older than source)
+function Test-NeedsRebuild {
+    param(
+        [string]$Target,
+        [string]$Source
+    )
+    
+    if (-not (Test-Path $Target)) {
+        return $true  # Target doesn't exist, needs rebuild
+    }
+    
+    $targetTime = (Get-Item $Target).LastWriteTime
+    $sourceTime = (Get-Item $Source).LastWriteTime
+    
+    return $sourceTime -gt $targetTime  # Source newer than target, needs rebuild
+}
+
 # Execute command with VS2008 environment
 function Invoke-VsCommand {
     param(
@@ -399,10 +416,18 @@ function Build-Pch {
         [string]$LogFile
     )
     
+    $pch_src = Join-Path $PROJECT_DIR $PCH_CPP
+    $pch_header = Join-Path $PROJECT_DIR $PCH_H
+    
+    # Check if PCH needs rebuilding
+    if (-not (Test-NeedsRebuild -Target $PchPath -Source $pch_src) -and (Test-Path $pch_header) -and -not (Test-NeedsRebuild -Target $PchPath -Source $pch_header)) {
+        Write-Host "Precompiled header is up-to-date, skipping rebuild"
+        return
+    }
+    
     Write-Host "Building precompiled header..."
     $startTime = Get-Date
     
-    $pch_src = Join-Path $PROJECT_DIR $PCH_CPP
     $out = Join-Path $BUILD_DIR ($PCH_CPP -replace '\.cpp$', '.obj')
     $command = "$ClangCl `"$pch_src`" /Fo`"$out`" /Yc`"$PCH_H`" /Fp`"$PchPath`" $ClArgs"
     
@@ -431,12 +456,36 @@ function Build-Cpps {
     Write-Host "Building cpps..."
     $startTime = Get-Date
     
+    # Count total files and files to rebuild
+    $totalFiles = $CPP.Count
+    $filesToBuild = 0
+    $skippedFiles = 0
+    
     $jobs = @()
     $tempLogs = @{}
+    $filesToRebuild = @()
     
+    # First pass: check which files need rebuilding
     foreach ($cpp in $CPP) {
         $cpp_src = Join-Path $PROJECT_DIR $cpp
         $out = Join-Path $BUILD_DIR ($cpp -replace '\.cpp$', '.obj')
+        
+        if (Test-NeedsRebuild -Target $out -Source $cpp_src) {
+            $filesToRebuild += @{cpp = $cpp; src = $cpp_src; out = $out}
+            $filesToBuild++
+        } else {
+            $skippedFiles++
+        }
+    }
+    
+    if ($skippedFiles -gt 0) {
+        Write-Host "Skipping $skippedFiles up-to-date files ($filesToBuild files to rebuild)"
+    }
+    
+    # Second pass: build files that need it in parallel
+    foreach ($fileInfo in $filesToRebuild) {
+        $cpp_src = $fileInfo.src
+        $out = $fileInfo.out
         $tempLog = [System.IO.Path]::GetTempFileName()
         $tempLogs[$cpp_src] = $tempLog
         
@@ -501,7 +550,11 @@ function Build-Cpps {
     }
     
     $elapsed = (Get-Date) - $startTime
-    Write-Host "cpps build finished after $($elapsed.TotalSeconds) seconds"
+    if ($skippedFiles -gt 0) {
+        Write-Host "cpps build finished after $($elapsed.TotalSeconds) seconds ($skippedFiles files were up-to-date)"
+    } else {
+        Write-Host "cpps build finished after $($elapsed.TotalSeconds) seconds"
+    }
 }
 
 # Link DLL

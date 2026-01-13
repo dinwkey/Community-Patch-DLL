@@ -28312,6 +28312,26 @@ int CvCity::GetBuyPlotCost(int iPlotX, int iPlotY) const
 	iCost = iCost * (105 - pPlot->countMatchingAdjacentPlots(NO_DOMAIN, getOwner(), NO_PLAYER, NO_PLAYER) * 5); //we know that one is always owned
 	iCost /= 100;
 
+	// PHASE 2: Defensive terrain bonuses for strategic plot selection
+	// Hills provide natural defense - reduce cost
+	if (pPlot->isHills())
+	{
+		iCost -= 30; // Defensive terrain bonus
+	}
+
+	// Rivers provide barriers - slight cost reduction
+	if (pPlot->isRiver())
+	{
+		iCost -= 20; // River barrier bonus
+	}
+
+	// Adjacency expansion chain bonus - reduce cost for plots claimable by neighbors
+	int iAdjacentClaimable = pPlot->countMatchingAdjacentPlots(NO_DOMAIN, getOwner(), NO_PLAYER, NO_PLAYER) - 1;
+	if (iAdjacentClaimable > 0)
+	{
+		iCost -= (15 * iAdjacentClaimable); // Expansion chain bonus per adjacent claimable plot
+	}
+
 	// Game Speed Mod
 	iCost *= GC.getGame().getGameSpeedInfo().getGoldPercent();
 	iCost /= 100;
