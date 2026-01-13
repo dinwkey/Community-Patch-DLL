@@ -278,6 +278,24 @@ void CvTacticalAI::CleanUp()
 {
 	m_AllTargets.clear();
 	m_ZoneTargets.clear();
+
+	// Memory optimization: clear global tactical simulation caches to prevent unbounded growth
+	// These are rebuilt for each simulation and don't need to persist between turns
+	gReachablePlotsLookup.clear();
+	gRangeAttackPlotsLookup.clear();
+	gSafePlotCount.clear();
+	gBadUnitsCount.clear();
+	gDistanceToTargetPlots.clear();
+
+	// Every 10 turns, force capacity release on hash maps to prevent memory fragmentation in long games (32-bit)
+	if (GC.getGame().getGameTurn() % 10 == 0)
+	{
+		TCachedMovePlots().swap(gReachablePlotsLookup);
+		TCachedRangeAttackPlots().swap(gRangeAttackPlotsLookup);
+		map<int, int>().swap(gBadUnitsCount);
+		TUnitFlagLookup().swap(gSafePlotCount);
+		TCachedDistanceToTargetPlots().swap(gDistanceToTargetPlots);
+	}
 }
 
 /// Add a temporary focus of attention around a short-term target
@@ -698,12 +716,12 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 {
 	if(vUnits.empty())
 		return false;
-
+	
 	const int RETREAT_DAMAGE_THRESHOLD = 20; // Retreat if losing > 20% of army
-
+	
 	int iTotalHealth = 0;
 	int iTotalMaxHealth = 0;
-
+	
 	for(size_t i = 0; i < vUnits.size(); i++)
 	{
 		const CvUnit* pUnit = vUnits[i];
@@ -711,12 +729,12 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 		iTotalHealth += pUnit->GetCurrHitPoints();
 		iTotalMaxHealth += pUnit->GetMaxHitPoints();
 	}
-
+	
 	if(iTotalMaxHealth == 0)
 		return false;
-
+	
 	int iHealthPercent = (iTotalHealth * 100) / iTotalMaxHealth;
-
+	
 	// If army has lost > 20% health and no allies nearby, retreat (Issue 4.2)
 	if(iHealthPercent < (100 - RETREAT_DAMAGE_THRESHOLD))
 	{
@@ -728,13 +746,13 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 			if(!pUnit) continue;
 			iAlliedSupport += FindNearbyAlliedUnits(const_cast<CvUnit*>(pUnit), 5, pUnit->getDomainType());
 		}
-
+		
 		if(iAlliedSupport == 0)
 		{
 			return true; // Retreat
 		}
 	}
-
+	
 	return false;
 }
 
@@ -742,16 +760,16 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain)
 {
 	if(!pUnit) return 0;
-
+	
 	int iAlliedCount = 0;
 	CvPlot* pPlot = pUnit->plot();
 	if(!pPlot) return 0;
-
+	
 	TeamTypes eTeam = pUnit->getTeam();
-
+	
 	int iPlotX = pPlot->getX();
 	int iPlotY = pPlot->getY();
-
+	
 	// Search nearby plots for allied units (Issue 4.2: army coordination)
 	for(int iDX = -iMaxDistance; iDX <= iMaxDistance; iDX++)
 	{
@@ -759,10 +777,10 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
 		{
 			CvPlot* pLoopPlot = GC.getMap().plot(iPlotX + iDX, iPlotY + iDY);
 			if(!pLoopPlot) continue;
-
+			
 			if(plotDistance(iPlotX, iPlotY, pLoopPlot->getX(), pLoopPlot->getY()) > iMaxDistance)
 				continue;
-
+			
 			for(int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 			{
 				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -797,16 +815,16 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
 
 				if(!bAllied)
 					continue;
-
+				
 				// Count units that can fight (not civilians)
 				if(!pLoopUnit->IsCombatUnit())
 					continue;
-
+				
 				iAlliedCount++;
 			}
 		}
 	}
-
+	
 	return iAlliedCount;
 }
 
@@ -815,23 +833,23 @@ bool CvTacticalAI::FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const v
 {
 	if(!pTargetPlot || vAlliedUnits.empty())
 		return false;
-
+	
 	const int COORDINATION_RANGE = 6; // Units within 6 tiles can coordinate
-
+	
 	// Count friendly units that can reach target
 	int iFriendlyNearby = 0;
 	for(size_t i = 0; i < vAlliedUnits.size(); i++)
 	{
 		const CvUnit* pUnit = vAlliedUnits[i];
 		if(!pUnit) continue;
-
+		
 		int iDistance = plotDistance(pUnit->getX(), pUnit->getY(), pTargetPlot->getX(), pTargetPlot->getY());
 		if(iDistance <= COORDINATION_RANGE && pUnit->canMoveInto(*pTargetPlot))
 		{
 			iFriendlyNearby++;
 		}
 	}
-
+	
 	// If multiple units can coordinate, proceed with attack (Issue 4.2: multi-unit planning)
 	return (iFriendlyNearby >= 2);
 }
@@ -860,6 +878,28 @@ void CvTacticalAI::ProcessDominanceZones()
 			int iTargets = ExtractTargetsForZone(pZone);
 			if (iTargets==0)
 				continue;
+
+			// If our presence in this zone has taken heavy damage and no nearby support exists, fall back early
+			if (pZone->GetPosture() != TACTICAL_POSTURE_WITHDRAW)
+			{
+				vector<CvUnit*> vZoneUnits;
+				for(list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+				{
+					CvUnit* pZoneUnit = m_pPlayer->getUnit(*it);
+					if(!pZoneUnit || !pZoneUnit->canUseForTacticalAI())
+						continue;
+
+					CvTacticalDominanceZone* pUnitZone = GetTacticalAnalysisMap()->GetZoneByPlot(pZoneUnit->plot());
+					if (pUnitZone == pZone)
+						vZoneUnits.push_back(pZoneUnit);
+				}
+
+				if (ShouldRetreatDueToLosses(vZoneUnits))
+				{
+					PlotWithdrawMoves(pZone);
+					continue;
+				}
+			}
 
 			if (GC.getLogging() && GC.getAILogging())
 			{
@@ -4385,15 +4425,20 @@ void CvTacticalAI::ExecuteWithdrawMoves()
 			if (pNextZone && pNextZone->GetZoneCity() && pNextZone->IsWater() == (pUnit->getDomainType() == DOMAIN_SEA))
 			{
 				CvPlot* pTestPlot = pNextZone->GetZoneCity()->plot();
+				if(!pTestPlot)
+					continue;
+
 				int iScore = pNextZone->getHospitalityScore();
 				int iTurns = pUnit->TurnsToReachTarget(pTestPlot, CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER, 12);
 				if (iTurns == INT_MAX)
+					continue;
+				if (!pUnit->canMoveInto(*pTestPlot))
 					continue;
 
 				iScore = (iScore * 100) / (iTurns + 1);
 				if (iScore > iBestScore)
 				{
-					pTargetPlot = GC.getMap().plot(pNextZone->GetCenterX(), pNextZone->GetCenterY());
+					pTargetPlot = pTestPlot;
 					iBestScore = iScore;
 				}
 			}
@@ -4406,7 +4451,7 @@ void CvTacticalAI::ExecuteWithdrawMoves()
 
 			//Note this might for naval units since pathlength is cross-domain, might give impossible target!
 			//But considering we have another fallback below this should be ok
-			if (pNearestCity)
+			if (pNearestCity && pUnit->canMoveInto(*pNearestCity->plot()))
 				pTargetPlot = pNearestCity->plot();
 		}
 
@@ -4753,6 +4798,25 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 	bool rtnValue = false;
 	bool bIsCityTarget = pTarget->isCity();
 	bool bAirUnitsAdded = false;
+
+	// Detect ready dedicated bombers so we only draft fighters for strikes when needed
+	bool bBomberAvailable = false;
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end() && !bBomberAvailable; ++it)
+	{
+		CvUnit* pLoopUnit = m_pPlayer->getUnit(*it);
+		if (!pLoopUnit)
+			continue;
+		if (pLoopUnit->getDomainType() != DOMAIN_AIR)
+			continue;
+		if (pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_DEFENSE_AIR)
+			continue; // fighters counted separately
+		if (!pLoopUnit->canUseForTacticalAI() || !pLoopUnit->canMove())
+			continue;
+		if (pLoopUnit->IsCanAttackRanged() && pLoopUnit->canRangeStrikeAt(pTarget->getX(), pTarget->getY()))
+			bBomberAvailable = true;
+	}
+
+	const int iInterceptorsOnTarget = pTarget->GetInterceptorCount(m_pPlayer->GetID(), NULL, false, true);
 	CvUnit* pDefender = pTarget->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, false, true);
 
 	//todo: check if defender can be damaged at all or if an attacker would die?
@@ -4775,9 +4839,24 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 		if (plotDistance(*pLoopUnit->plot(),*pTarget) > pLoopUnit->baseMoves(false)*4)
 			continue;
 
-		//if it's a fighter plane, don't use it here, we need it for interceptions / sweeps
+		// Allow fighters to strike only when it is safe or when no bombers are available
 		if (pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_DEFENSE_AIR)
-			continue;
+		{
+			// Keep fighters healthy so they can still intercept if needed
+			int iHPct = (pLoopUnit->GetCurrHitPoints() * 100) / pLoopUnit->GetMaxHitPoints();
+			bool bLowHealth = (iHPct < 65);
+			bool bHighInterceptRisk = (iInterceptorsOnTarget > 0 && iHPct < 90);
+
+			bool bAllowFighterAttack = !bBomberAvailable; // primary condition: no bombers ready
+			if (!bAllowFighterAttack && !bHighInterceptRisk && !bLowHealth)
+			{
+				// Secondary: allow if healthy and intercept risk is low for this target
+				bAllowFighterAttack = true;
+			}
+
+			if (!bAllowFighterAttack)
+				continue;
+		}
 
 		if (pLoopUnit->IsCoveringFriendlyCivilian())
 			continue;
@@ -6600,8 +6679,41 @@ bool TacticalAIHelpers::KillLoneEnemyIfPossible(CvUnit* pOurUnit, CvUnit* pEnemy
 
 bool TacticalAIHelpers::IsSuicideMeleeAttack(const CvUnit * pAttacker, CvPlot * pTarget)
 {
-	//todo: add special code for air attacks!
-	if (!pAttacker || !pTarget || pAttacker->IsCanAttackRanged() || pAttacker->getDomainType()==DOMAIN_AIR)
+	if (!pAttacker || !pTarget)
+		return false;
+
+	// Special handling for air attacks - they can't do melee but check if suicide via interception
+	if (pAttacker->getDomainType() == DOMAIN_AIR)
+	{
+		if (!pAttacker->IsCanAttackRanged())
+			return false; // Not an air strike
+
+		// Air units are suicide if they'd likely die to interception
+		if (pTarget->isCity())
+		{
+			int iInterceptionDamage = 0;
+			CvCity* pCity = pTarget->getPlotCity();
+			if (pCity && pCity->getOwner() != pAttacker->getOwner())
+			{
+				iInterceptionDamage = pCity->GetAirStrikeDefenseDamage(pAttacker, false);
+				if (iInterceptionDamage >= pAttacker->GetCurrHitPoints())
+					return true; // Would be killed by interception
+			}
+		}
+		else
+		{
+			CvUnit* pDefender = pTarget->getBestDefender(pAttacker->getOwner());
+			if (pDefender && pDefender->canIntercept())
+			{
+				int iInterceptionDamage = pDefender->GetAirStrikeDefenseDamage(pAttacker, false);
+				if (iInterceptionDamage >= pAttacker->GetCurrHitPoints())
+					return true; // Would be killed by interception
+			}
+		}
+		return false; // Air unit can safely attack
+	}
+
+	if (pAttacker->IsCanAttackRanged())
 		return false;
 
 	int iDamageReceived = 0;
@@ -6827,7 +6939,17 @@ CvTacticalPlot::eTactPlotDomain DomainForUnit(const CvUnit* pUnit)
 
 void CDangerCache::clear()
 {
-	dangerStats.clear();
+	// Memory optimization: periodically release capacity to prevent unbounded growth
+	// In long games (32-bit), these caches can accumulate significant memory
+	if (GC.getGame().getGameTurn() % 10 == 0 || dangerStats.capacity() > dangerStats.size() * 2)
+	{
+		// Force capacity release using swap idiom
+		vector<pair<int, vector<SDefendStats>>>().swap(dangerStats);
+	}
+	else
+	{
+		dangerStats.clear();
+	}
 }
 
 void CDangerCache::storeDanger(int iDefenderId, int iDefenderPlot, int iPrevDamage, const UnitIdContainer& killedEnemies, int iDanger)
@@ -6875,7 +6997,17 @@ bool CDangerCache::findDanger(int iDefenderId, int iDefenderPlot, int iPrevDamag
 
 void CAttackCache::clear()
 {
-	attackStats.clear();
+	// Memory optimization: periodically release capacity to prevent unbounded growth
+	// In long games (32-bit), these caches can accumulate significant memory
+	if (GC.getGame().getGameTurn() % 10 == 0 || attackStats.capacity() > attackStats.size() * 2)
+	{
+		// Force capacity release using swap idiom
+		vector<pair<int, vector<SAttackStats>>>().swap(attackStats);
+	}
+	else
+	{
+		attackStats.clear();
+	}
 }
 
 void CAttackCache::storeAttack(int iAttackerId, int iAttackerPlot, int iDefenderId, int iPrevDamage, int iDamageDealt, int iDamageTaken)
@@ -10924,7 +11056,9 @@ vector<STacticalAssignment> TacticalAIHelpers::FindBestUnitAssignments(
 #endif
 
 	//clean up from the last run, more if the player changed to limit memory usage
-	storage.reset(eLastTactSimPlayer!=ePlayer);
+	//Memory optimization: trigger hard reset every 10 turns to prevent STL container capacity bloat
+	bool bHardReset = (eLastTactSimPlayer != ePlayer) || (GC.getGame().getGameTurn() % 10 == 0);
+	storage.reset(bHardReset);
 	eLastTactSimPlayer = ePlayer;
 
 	gReachablePlotsLookup.clear();
