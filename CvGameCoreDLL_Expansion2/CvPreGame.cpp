@@ -2857,6 +2857,86 @@ vector<MinorCivTypes> GetAvailableMinorCivTypes(vector<MinorCivTypes>& vCultured
 			vChosenMinors.push_back(eMinorCiv);
 	}
 
+	// Try to read a custom ordered minor-civ selection from GameOptions set by the setup UI.
+	// Keys: YN_MinorSlot_1 .. YN_MinorSlot_N (N = max minor slots). If any valid entries
+	// exist, honor that ordering instead of the default pool.
+	std::vector<MinorCivTypes> vGameOptionSelection;
+	const int maxSlots = (MAX_CIV_PLAYERS - MAX_MAJOR_CIVS);
+	for (int slot = 1; slot <= maxSlots; ++slot)
+	{
+		char szKey[64];
+		sprintf(szKey, "YN_MinorSlot_%d", slot);
+		int iVal = -1;
+		if (GetGameOption(szKey, iVal))
+		{
+			if (iVal >= 0 && iVal < GC.getNumMinorCivInfos())
+			{
+				MinorCivTypes eMinor = static_cast<MinorCivTypes>(iVal);
+				if (std::find(vGameOptionSelection.begin(), vGameOptionSelection.end(), eMinor) == vGameOptionSelection.end())
+					vGameOptionSelection.push_back(eMinor);
+			}
+		}
+	}
+	if (!vGameOptionSelection.empty())
+	{
+		for (std::vector<MinorCivTypes>::const_iterator it = vGameOptionSelection.begin(); it != vGameOptionSelection.end(); ++it)
+		{
+			MinorCivTypes eAvailability = *it;
+			if (eAvailability == NO_MINORCIV)
+				continue;
+			if (std::find(vChosenMinors.begin(), vChosenMinors.end(), eAvailability) != vChosenMinors.end())
+				continue;
+			CvMinorCivInfo* pkCityState = GC.getMinorCivInfo(eAvailability);
+			if (pkCityState == NULL)
+				continue;
+			// Turned off in XML?
+			if (!pkCityState->IsPlayable())
+				continue;
+			MinorCivTraitTypes eTrait = (MinorCivTraitTypes)pkCityState->GetMinorCivTrait();
+			if (eTrait == MINOR_CIV_TRAIT_RELIGIOUS && bNoReligion)
+				continue;
+			if (eTrait == MINOR_CIV_TRAIT_CULTURED && bNoPolicies)
+				continue;
+			// Check to see if this City-State is blocked from appearing due to an ingame major civ.
+			{
+				bool bBlocked = false;
+				for (std::vector<CivilizationTypes>::iterator itMaj = vChosenMajors.begin(); itMaj != vChosenMajors.end(); ++itMaj)
+				{
+					CvCivilizationInfo* pkCivilization = GC.getCivilizationInfo(*itMaj);
+					if (pkCivilization != NULL && pkCivilization->IsBlocksMinor((int)eAvailability))
+					{
+						bBlocked = true;
+						break;
+					}
+				}
+				if (bBlocked)
+					continue;
+			}
+			vAvailable.push_back(eAvailability);
+			switch (eTrait)
+			{
+			case MINOR_CIV_TRAIT_CULTURED:
+				vCultured.push_back(eAvailability);
+				break;
+			case MINOR_CIV_TRAIT_MILITARISTIC:
+				vMilitaristic.push_back(eAvailability);
+				break;
+			case MINOR_CIV_TRAIT_MARITIME:
+				vMaritime.push_back(eAvailability);
+				break;
+			case MINOR_CIV_TRAIT_MERCANTILE:
+				vMercantile.push_back(eAvailability);
+				break;
+			case MINOR_CIV_TRAIT_RELIGIOUS:
+				vReligious.push_back(eAvailability);
+				break;
+			default:
+				UNREACHABLE();
+			}
+		}
+		return vAvailable;
+	}
+
 	for (int i = 0; i < GC.getNumMinorCivInfos(); i++)
 	{
 		MinorCivTypes eAvailability = static_cast<MinorCivTypes>(i);
