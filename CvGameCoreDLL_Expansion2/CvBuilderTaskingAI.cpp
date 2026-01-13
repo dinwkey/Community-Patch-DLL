@@ -1278,7 +1278,7 @@ int CvBuilderTaskingAI::GetTurnsToBuild(const CvUnit* pUnit, BuildTypes eBuild, 
 	if (iBuildLeft == 0)
 		return 0;
 
-	int iBuildRate = pUnit ? pUnit->workRate(true) : 1; // If no unit, return total build time
+	int iBuildRate = pUnit ? pUnit->workRate(false) : 1; // If no unit, return total build time
 
 	if (iBuildRate == 0)
 	{
@@ -2865,21 +2865,34 @@ bool CvBuilderTaskingAI::ShouldBuilderConsiderPlot(CvUnit* pUnit, CvPlot* pPlot)
 	}
 
 	//if there is fallout, try to scrub it in spite of the danger
-	if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage() && (pUnit->GetCurrHitPoints() < (pUnit->GetMaxHitPoints() / 2)))
+	if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage())
 	{
-		if(GC.getLogging() && GC.getAILogging() && m_bLogging)
+		// Check if unit can survive fallout damage considering healing
+		int iFalloutDamage = 0;
+		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(FEATURE_FALLOUT);
+		if (pkFeatureInfo)
+			iFalloutDamage = pkFeatureInfo->getTurnDamage();
+
+		int iHealRate = pUnit->healRate(pPlot);
+		int iNetDamagePerTurn = iFalloutDamage - iHealRate;
+
+		// Only work on fallout if unit can heal faster than damage or has enough HP buffer
+		if (iNetDamagePerTurn > 0 && pUnit->GetCurrHitPoints() < (iNetDamagePerTurn * 3))
 		{
-			CvString strLog;
-			strLog.Format(
-				"%i,Bailing due to fallout,%d,%d,%d", 
-				pUnit->GetID(),
-				pPlot->getX(),
-				pPlot->getY(),
-				m_pPlayer->GetPlotDanger(*pPlot, true)
-			);
-			m_pPlayer->GetHomelandAI()->LogHomelandMessage(strLog);
+			if(GC.getLogging() && GC.getAILogging() && m_bLogging)
+			{
+				CvString strLog;
+				strLog.Format(
+					"%i,Bailing due to fallout,%d,%d,%d", 
+					pUnit->GetID(),
+					pPlot->getX(),
+					pPlot->getY(),
+					m_pPlayer->GetPlotDanger(*pPlot, true)
+				);
+				m_pPlayer->GetHomelandAI()->LogHomelandMessage(strLog);
+			}
+			return false;
 		}
-		return false;
 	}
 
 	if (!pUnit->canEndTurnAtPlot(pPlot))
@@ -3689,8 +3702,37 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 		if (iNewYieldTimes100 != 0 || iFutureYieldTimes100 != 0)
 		{
 			int iCityYieldModifier = pOwningCity ? GetYieldCityModifierTimes100(pOwningCity, m_pPlayer, eYield) : 100;
-			iYieldScore += (iNewYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
-			iPotentialScore += (iFutureYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
+
+			// ISSUE 1 FIX: For YIELD_GOLD, subtract maintenance cost to get net gold value
+			int iAdjustedNewYieldTimes100 = iNewYieldTimes100;
+			int iAdjustedFutureYieldTimes100 = iFutureYieldTimes100;
+
+			if (eYield == YIELD_GOLD && eImprovement != NO_IMPROVEMENT && pkImprovementInfo)
+			{
+				// Get maintenance cost from improvement entry
+				int iMaintenanceCost = pkImprovementInfo->GetGoldMaintenance();
+				if (iMaintenanceCost > 0)
+				{
+					// Convert maintenance to times100 for consistency
+					int iMaintenanceTimes100 = iMaintenanceCost * 100;
+					iAdjustedNewYieldTimes100 -= iMaintenanceTimes100;
+					iAdjustedFutureYieldTimes100 -= iMaintenanceTimes100;
+
+					// Penalize negative gold improvements to 50% weight
+					if (iAdjustedNewYieldTimes100 < 0)
+					{
+						iAdjustedNewYieldTimes100 = (iAdjustedNewYieldTimes100 * 50) / 100;
+					}
+
+					if (iAdjustedFutureYieldTimes100 < 0)
+					{
+						iAdjustedFutureYieldTimes100 = (iAdjustedFutureYieldTimes100 * 50) / 100;
+					}
+				}
+			}
+
+			iYieldScore += (iAdjustedNewYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
+			iPotentialScore += (iAdjustedFutureYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
 		}
 
 		// Extra adjacency bonuses from potential adjacent same improvements
@@ -4213,7 +4255,21 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 		}
 	}
 
-	return make_pair(iYieldScore + iSecondaryScore, iPotentialScore);
+	int iTotalScore = iYieldScore + iSecondaryScore;
+	int iFinalScore = iTotalScore;
+
+	// Factor in build time for ROI calculation - longer builds are less valuable
+	if (bIsBuild && eBuild != NO_BUILD)
+	{
+		int iBuildTime = pPlot->getBuildTime(eBuild, m_pPlayer->GetID());
+		if (iBuildTime > 0)
+		{
+			// Scale score by build time - divide by (turns + 1) to avoid divide by zero and reduce impact
+			iFinalScore = (iTotalScore * 100) / (iBuildTime / 100 + 1);
+		}
+	}
+
+	return make_pair(iFinalScore, iPotentialScore);
 }
 
 int CvBuilderTaskingAI::GetResourceSpawnWorkableChance(CvPlot* pPlot, int& iTileClaimChance)

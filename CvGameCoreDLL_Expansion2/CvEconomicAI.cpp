@@ -2794,7 +2794,18 @@ void CvEconomicAI::DisbandUnitsToFreeSpaceshipResources()
 					}
 					if (eBestBuilding != NO_BUILDING)
 					{
-						pLoopCity->isBuildingInQueue(eBestBuilding) ? pLoopCity->clearOrderQueue() : pLoopCity->GetCityBuildings()->DoSellBuilding(eBestBuilding);
+						if (pLoopCity->isBuildingInQueue(eBestBuilding))
+						{
+							int iOrderIndex = pLoopCity->getFirstBuildingOrder(eBestBuilding);
+							if (iOrderIndex >= 0)
+							{
+								pLoopCity->popOrder(iOrderIndex, false, true);
+							}
+						}
+						else
+						{
+							pLoopCity->GetCityBuildings()->DoSellBuilding(eBestBuilding);
+						}
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
