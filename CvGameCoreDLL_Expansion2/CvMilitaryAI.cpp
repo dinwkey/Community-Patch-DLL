@@ -2219,6 +2219,128 @@ void CvMilitaryAI::UpdateMilitaryStrategies()
 	}
 }
 
+/// Issue 4.1: Calculate proximity-weighted enemy threat (accounts for unit position & type)
+int CvMilitaryAI::CalculateProximityWeightedThreat(DomainTypes eDomain)
+{
+	int iProximityThreat = 0;
+	const int PROXIMITY_MULTIPLIER_CLOSE = 2; // Double-count units within 5 tiles
+	const int PROXIMITY_CLOSE_RANGE = 5;
+	const int RANGED_UNIT_MULTIPLIER = 150; // Ranged units worth 1.5x (150%)
+
+	TeamTypes eTeam = m_pPlayer->getTeam();
+
+	// Loop through all enemy civs and count weighted threat
+	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+
+		// Skip invalid/non-threatening players
+		if(!kLoopPlayer.isAlive()) continue;
+		if(GET_TEAM(kLoopPlayer.getTeam()).isMinorCiv()) continue;
+		if(!GET_TEAM(eTeam).isAtWar(kLoopPlayer.getTeam())) continue;
+
+		int iNumUnits = 0;
+		int iCloseUnits = 0;
+
+		// Scan all units from this player
+		for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
+			if(!pLoopUnit) continue;
+
+			// Only count units in specified domain
+			if(pLoopUnit->getDomainType() != eDomain) continue;
+			if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
+
+			int iUnitStrength = pLoopUnit->GetPower();
+
+			// Adjust threat based on unit type: ranged units more dangerous
+			if(pLoopUnit->IsCanAttackRanged())
+				iUnitStrength = (iUnitStrength * RANGED_UNIT_MULTIPLIER) / 100;
+
+			iNumUnits += iUnitStrength;
+
+			// Check proximity to our cities (double-count if close)
+			int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
+			if(iClosestCityDistance >= 0 && iClosestCityDistance <= PROXIMITY_CLOSE_RANGE)
+			{
+				iCloseUnits += iUnitStrength * PROXIMITY_MULTIPLIER_CLOSE;
+			}
+		}
+
+		// Use whichever is higher: dispersed units or concentrated threat
+		iProximityThreat += max(iNumUnits, iCloseUnits);
+	}
+
+	return iProximityThreat;
+}
+
+/// Issue 4.1: Check if enemy armies are moving toward our territory (predictive threat)
+bool CvMilitaryAI::AreEnemiesMovingTowardUs(DomainTypes eDomain)
+{
+	TeamTypes eTeam = m_pPlayer->getTeam();
+	const int THREAT_RANGE = 8;  // Predictive range: consider threats within 8 tiles
+
+	// Scan all enemy players
+	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+
+		if(!kLoopPlayer.isAlive()) continue;
+		if(GET_TEAM(kLoopPlayer.getTeam()).isMinorCiv()) continue;
+		if(!GET_TEAM(eTeam).isAtWar(kLoopPlayer.getTeam())) continue;
+
+		// Scan all units from this enemy player
+		for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
+			if(!pLoopUnit) continue;
+			
+			if(pLoopUnit->getDomainType() != eDomain) continue;
+			if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
+
+			// Check if unit is moving toward our territory
+			int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
+			if(iClosestCityDistance >= 0 && iClosestCityDistance <= THREAT_RANGE)
+			{
+				return true;  // Found advancing enemy threat
+			}
+		}
+	}
+
+	return false;
+}
+
+/// Issue 4.1: Get allied threat multiplier (boost defense if allies are under attack)
+int CvMilitaryAI::GetAlliedThreatMultiplier()
+{
+	int iMultiplier = 100;
+	TeamTypes eTeam = m_pPlayer->getTeam();
+
+	// Check if any allies are under attack and boost our defense priority accordingly
+	for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+		if(eLoopPlayer == m_pPlayer->GetID()) continue;
+
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+		if(!kLoopPlayer.isAlive()) continue;
+
+		TeamTypes eLoopTeam = kLoopPlayer.getTeam();
+		if(!GET_TEAM(eTeam).isHasMet(eLoopTeam)) continue;
+
+		// If ally is under attack, slightly boost our defense priority
+		if(GET_TEAM(eLoopTeam).getAtWarCount(false) > 0)
+		{
+			iMultiplier += 10; // Boost by 10% per ally at war
+		}
+	}
+
+	return min(150, iMultiplier); // Cap at 150% max
+}
+
 void CvMilitaryAI::DoNuke(PlayerTypes ePlayer)
 {
 	// if we need to nuke the Barbarians, we've already lost this game 10x over
