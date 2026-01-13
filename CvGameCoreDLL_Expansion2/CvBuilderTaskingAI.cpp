@@ -1615,6 +1615,88 @@ void CvBuilderTaskingAI::UpdateImprovementPlots()
 		m_directives.push_back(it->option);
 }
 
+/// Calculate strategic location value for route (OPTION A: Location-based weighting)
+/// Returns percentage bonus (0-100) to apply to movement speed bonus
+/// Higher values for strategically important locations (near enemies, choke points, etc.)
+int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair)
+{
+	int iStrategicBonus = 0;
+
+	// Evaluate endpoints of the route
+	CvPlot* pStartPlot = GC.getMap().plotByIndexUnchecked(plotPair.first);
+	CvPlot* pEndPlot = GC.getMap().plotByIndexUnchecked(plotPair.second);
+
+	if (!pStartPlot || !pEndPlot)
+		return 0;  // Can't evaluate; use base value
+
+	// Check distance to nearest enemy unit or controlled territory
+	// Closer to enemies = more strategic for military movement
+	int iMinDistanceToEnemy = INT_MAX;
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
+		if (eLoopPlayer == m_pPlayer->GetID() || !GET_PLAYER(eLoopPlayer).isAlive())
+			continue;
+
+		// Get distance from start to enemy territory
+		int iDistStart = plotDistance(pStartPlot->getX(), pStartPlot->getY(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getX(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getY());
+		int iDistEnd = plotDistance(pEndPlot->getX(), pEndPlot->getY(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getX(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getY());
+		int iDistToEnemy = min(iDistStart, iDistEnd);
+
+		if (iDistToEnemy < iMinDistanceToEnemy)
+			iMinDistanceToEnemy = iDistToEnemy;
+	}
+
+	// Bonus for proximity to enemy territory
+	// <5 tiles from enemy = high priority (50 bonus points)
+	// 5-10 tiles = moderate priority (25 bonus points)
+	// >10 tiles = safe (0 bonus points)
+	if (iMinDistanceToEnemy < 5)
+		iStrategicBonus += 50;  // Critical defensive location
+	else if (iMinDistanceToEnemy < 10)
+		iStrategicBonus += 25;  // Moderate threat distance
+
+	// Check if route connects to or passes through threatened cities
+	int iThreatenedCitiesNearby = 0;
+	int iLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iLoop))
+	{
+		// Check if city is threatened by barbarians or enemies
+		if (pCity->IsRazing())
+			continue;
+
+		int iCityDistance = plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY());
+		if (iCityDistance <= 5)  // City is near route
+		{
+			// Check if threatened (surrounded by enemies, low defense, etc.)
+			int iCityThreatLevel = 0;
+			// Simple threat check: count nearby enemies
+			for (int iEnemyLoop = 0; iEnemyLoop < MAX_MAJOR_CIVS; iEnemyLoop++)
+			{
+				PlayerTypes eEnemy = (PlayerTypes)iEnemyLoop;
+				if (eEnemy == m_pPlayer->GetID() || !GET_PLAYER(eEnemy).isAlive())
+					continue;
+
+				int iEnemyDist = plotDistance(pCity->getX(), pCity->getY(), GET_PLAYER(eEnemy).getCapitalCity()->getX(), GET_PLAYER(eEnemy).getCapitalCity()->getY());
+				if (iEnemyDist < 15)
+					iCityThreatLevel++;
+			}
+
+			if (iCityThreatLevel > 0)
+				iThreatenedCitiesNearby++;
+		}
+	}
+
+	// Bonus for defending threatened cities
+	// Each nearby threatened city adds 15 bonus points (capped at 45 for 3+ cities)
+	iStrategicBonus += min(iThreatenedCitiesNearby * 15, 45);
+
+	// Cap total bonus at 100 (max 2x multiplier)
+	iStrategicBonus = min(iStrategicBonus, 100);
+
+	return iStrategicBonus;
+}
+
 vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives()
 {
 	vector<OptionWithScore<BuilderDirective>> aDirectives;
@@ -1715,13 +1797,76 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 			int iRailroadMaintenance = GC.getRouteInfo(ROUTE_RAILROAD)->GetGoldMaintenance() * (100 + m_pPlayer->GetImprovementGoldMaintenanceMod());
 			iRailroadTotalMaintenance = m_plannedRoutePlots[plannedRouteRailroad].size() * iRailroadMaintenance;
 			iRailroadValue -= iRailroadTotalMaintenance;
+
+		// ISSUE 3 FIX: Add movement speed bonus for railroads (military strategic value)
+		// Railroads provide 2x faster movement, which has significant strategic value even if unprofitable economically
+		int iMovementSpeedBonus = 500;  // Base movement bonus value for 2x faster unit movement
+
+		// Reduce bonus if empire is wealthy (can afford unprofitable routes for other reasons)
+		// Use CalculateBaseNetGoldTimes100 for consistent net gold calculation
+		int iNetGoldTimes100 = m_pPlayer->GetTreasury()->CalculateBaseNetGoldTimes100();
+		if (iNetGoldTimes100 > 5000)  // 50+ GPT means very wealthy
+		{
+			iMovementSpeedBonus = (iMovementSpeedBonus * 40) / 100;  // Only 200 value if very wealthy
+		}
+		else if (iNetGoldTimes100 > 2500)  // 25+ GPT means reasonably wealthy
+		{
+			iMovementSpeedBonus = (iMovementSpeedBonus * 70) / 100;  // Only 350 value if reasonably wealthy
 		}
 
-		if (iRoadValueNoRivers > 0 || iRoadValueWithRivers > 0 || iRailroadValue > 0)
+		// Check treasury constraint: don't build negative-gold routes if empire is going bankrupt
+		// Use CalculateBaseNetGoldTimes100 / 100 to get the int value
+		bool bCanAffordNegativeRoute = (iNetGoldTimes100 > 0);  // Only build negative routes if currently profitable
+		if (!bCanAffordNegativeRoute && iRailroadValue < 0)
 		{
-			if (iRoadValueNoRivers > iRailroadValue || iRoadValueWithRivers > iRailroadValue)
+			// Treasury constraint: cut the value in half to heavily discourage it
+			iRailroadValue = (iRailroadValue * 50) / 100;
+		}
+
+		// Weight by war situation: movement speed matters more during military pressure
+		// Use military aggressive posture as proxy for overall military pressure
+		int iMilitaryPressure = 0;
+		for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+		{
+			PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
+			if (eLoopPlayer != m_pPlayer->GetID() && GET_PLAYER(eLoopPlayer).isAlive())
 			{
-				bool bUseRivers = iRoadValueWithRivers >= iRoadValueNoRivers;
+				AggressivePostureTypes ePosture = m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eLoopPlayer);
+				// Assign numeric values to posture types for weighting
+				if (ePosture == AGGRESSIVE_POSTURE_HIGH)
+					iMilitaryPressure += 100;
+				else if (ePosture == AGGRESSIVE_POSTURE_MEDIUM)
+					iMilitaryPressure += 50;
+				else if (ePosture == AGGRESSIVE_POSTURE_LOW)
+					iMilitaryPressure += 25;
+			}
+		}
+
+		// If high total military pressure from any civ, weight movement bonus higher
+		if (iMilitaryPressure > 50)  // Significant military threat
+		{
+			// During war preparation, speed bonuses are more valuable
+			iMovementSpeedBonus = (iMovementSpeedBonus * 150) / 100;  // 750 value during war
+		}
+		else if (iMilitaryPressure > 0)  // Minor military threat
+		{
+			// During some military pressure, speed is moderately valuable
+			iMovementSpeedBonus = (iMovementSpeedBonus * 110) / 100;  // 550 value with threat
+		}
+
+		// OPTION A ENHANCEMENT: Add location-based strategic weighting
+		// Prioritize railroads in strategically important locations
+		int iStrategicLocationMultiplier = CalculateStrategicLocationValue(plotPair);
+		iMovementSpeedBonus = (iMovementSpeedBonus * (100 + iStrategicLocationMultiplier)) / 100;
+
+		iRailroadValue += iMovementSpeedBonus;
+	}
+
+	if (iRoadValueNoRivers > 0 || iRoadValueWithRivers > 0 || iRailroadValue > 0)
+	{
+		if (iRoadValueNoRivers > iRailroadValue || iRoadValueWithRivers > iRailroadValue)
+		{
+			bool bUseRivers = iRoadValueWithRivers >= iRoadValueNoRivers;
 				bestRouteType[plotPair] = make_pair(ROUTE_ROAD, bUseRivers);
 				bestRouteValues[plotPair] = plannedRouteTypeValues[plotPair][make_pair(ROUTE_ROAD, bUseRivers)];
 			}

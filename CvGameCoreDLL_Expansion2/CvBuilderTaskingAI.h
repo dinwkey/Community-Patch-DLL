@@ -175,6 +175,7 @@ protected:
 	void ShortcutConnectionHelper(CvCity* pCity1, CvCity* pCity2, BuildTypes eBuild, RouteTypes eRoute, int iPlotDistance, bool bUseRivers);
 
 	vector<OptionWithScore<BuilderDirective>> GetRouteDirectives();
+	int CalculateStrategicLocationValue(const PlotPair& plotPair);
 	vector<OptionWithScore<BuilderDirective>> GetImprovementDirectives();
 	void UpdateFutureYields(const vector<BuildTypes>& aPossibleBuilds);
 	int GetFutureYields(ImprovementTypes eImprovement, YieldTypes eYield);
