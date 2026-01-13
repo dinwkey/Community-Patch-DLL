@@ -112,10 +112,33 @@ Core fixes addressing fundamental economic AI issues:
 4. Fallout logic - Original 50% HP threshold too conservative, blocks efficient cleanup
 5. Order removal - Clearing entire queue (settlers, workers, etc.) too aggressive
 
-**PHASE 2: OPTIONAL** (Strategic Enhancements)
-- Movement speed bonuses for railroads (war-situation weighting)
-- Strategic location value calculations (requires performance testing)
-- Reference: docs/builder-economic-ai/BUILDER_ECONOMIC_PHASE_ANALYSIS.md
+**PHASE 2: OPTIONAL** ✅ (COMPLETE)
+- \CvBuilderTaskingAI.h\ - Added method declaration (DONE)
+  - CalculateStrategicLocationValue() strategic location evaluator
+  
+- \CvBuilderTaskingAI.cpp\ - ~160 lines of strategic enhancements (DONE)
+  - CalculateStrategicLocationValue(): Enemy proximity + threatened city detection (~80 lines)
+    * <5 tiles from enemy = 50 points (critical)
+    * 5-10 tiles = 25 points (moderate)
+    * Threatened cities nearby = 15 points each (capped at 45)
+    * Total bonus capped at 100 (2x multiplier)
+  - GetRouteDirectives(): Movement speed bonus weighting (~70 lines)
+    * Base movement bonus: 500 points for 2x faster movement
+    * Wealth scaling: 40% (very wealthy) to 70% (reasonably wealthy)
+    * Treasury constraint: penalize routes if going bankrupt
+    * War pressure weighting: 110-150% based on military threat level
+    * Location-based integration: multiplies bonus by strategic value
+  - Build verified: clang-build debug successful
+  - Commit: b664d525a
+
+**PHASE 2 RATIONALE:**
+Strategic enhancements for wartime railroad prioritization:
+1. Strategic location detection helps defend against enemies
+2. Movement speed bonus valuation (500 points) reflects military value
+3. Wealth-based scaling prevents wasteful spending by wealthy empires
+4. Treasury constraint prevents bankruptcy from unprofitable routes
+5. War pressure weighting makes railroads critical during military conflicts
+6. Location-based prioritization ensures railroads built where needed most
 
 #### Core Game Systems (15 files)
 - \CvPlayer.cpp\ / \.h\ - Player state/logic
