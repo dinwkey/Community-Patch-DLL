@@ -32,6 +32,9 @@
 		<Row Tag="TXT_KEY_EO_REL_MOD_RESOURCES">
 			<Text>From Religious Resource Modifier</Text>
 		</Row>
+		<Row Tag="TXT_KEY_EO_EVENT_RESOURCES">
+			<Text>From Events</Text>
+		</Row>
 		<Row Tag="TXT_KEY_CP_DIPLO_DP">
 			<Text>Defensive Pact</Text>
 		</Row>
