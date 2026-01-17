@@ -502,45 +502,28 @@ function Build-Cpps {
             param($cmd, $log, $timeout)
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = 'cmd.exe'
-            $psi.Arguments = "/c $cmd"
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
+            # Redirect output within cmd invocation to avoid PS stream deadlocks
+            $psi.Arguments = "/c $cmd >`"$log`" 2>&1"
+            $psi.RedirectStandardOutput = $false
+            $psi.RedirectStandardError = $false
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
-            
+
             $process = New-Object System.Diagnostics.Process
             $process.StartInfo = $psi
+
             $process.Start() | Out-Null
-            
-            # Stream output to avoid buffer deadlock
-            $output = New-Object System.Text.StringBuilder
-            $stdoutTask = $process.StandardOutput.BaseStream.BeginRead([byte[]]::new(4096), 0, 4096, $null, $null)
-            $stderrTask = $process.StandardError.BaseStream.BeginRead([byte[]]::new(4096), 0, 4096, $null, $null)
-            
+
             # Wait for process with timeout
             $exitedInTime = $process.WaitForExit($timeout)
             if (-not $exitedInTime) {
                 Write-Host "WARNING: Process timeout ($($timeout)ms) for compilation, killing job..."
-                $process.Kill()
+                try { $process.Kill() } catch {}
                 $process.WaitForExit()
                 Set-Content -Path $log -Value "TIMEOUT AFTER ${timeout}ms`n" -Encoding UTF8
                 return 9999  # Timeout exit code
             }
-            
-            # Read output
-            try {
-                $stdout = $process.StandardOutput.ReadToEnd()
-                $stderr = $process.StandardError.ReadToEnd()
-                $output_text = $stdout + $stderr
-                if ([string]::IsNullOrEmpty($output_text)) {
-                    $output_text = "(no output)"
-                }
-                Set-Content -Path $log -Value $output_text -Encoding UTF8
-            } catch {
-                Set-Content -Path $log -Value "ERROR reading output: $_" -Encoding UTF8
-                return 9998
-            }
-            
+
             return $process.ExitCode
         } -ArgumentList $command, $tempLog, 300000  # 5-minute timeout per file
         

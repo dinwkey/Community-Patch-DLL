@@ -5077,6 +5077,41 @@ bool CvPlayerTrade::PlunderTradeRoute(int iTradeConnectionID, CvUnit* pUnit)
 			{
 				GET_PLAYER(eDestPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 1);
 			}
+
+			// Morocco UA: Additional diplomatic penalty for plundering allied/vassal trade routes
+			TeamTypes eMoroccoTeam = m_pPlayer->getTeam();
+			TeamTypes eOwnerTeam = eOwningTeam;
+			
+			// Check if plundering an allied trade route (defensive pact)
+			if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
+			{
+				// Major relationship penalty for plundering allies
+				GET_PLAYER(eOwningPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 5);
+				
+				// Also penalty destination if different and allied
+				if (eOwningPlayer != eDestPlayer && GET_PLAYER(eDestPlayer).isMajorCiv())
+				{
+					if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eDestTeam))
+					{
+						GET_PLAYER(eDestPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 5);
+					}
+				}
+			}
+			// Check if plundering a vassal trade route
+			else if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) || GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
+			{
+				// Major relationship penalty for plundering vassals
+				GET_PLAYER(eOwningPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 5);
+				
+				// Also penalty destination if different and vassal
+				if (eOwningPlayer != eDestPlayer && GET_PLAYER(eDestPlayer).isMajorCiv())
+				{
+					if (GET_TEAM(eMoroccoTeam).IsVassal(eDestTeam) || GET_TEAM(eDestTeam).IsVassal(eMoroccoTeam))
+					{
+						GET_PLAYER(eDestPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 5);
+					}
+				}
+			}
 		}
 	}
 
