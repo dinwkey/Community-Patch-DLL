@@ -1320,10 +1320,33 @@ void CvTacticalAI::PlotPlunderTradeUnitMoves(DomainTypes eDomain)
 
 	AITacticalTargetType eTargetType = (eDomain == DOMAIN_LAND) ? AI_TACTICAL_TARGET_TRADE_UNIT_LAND : AI_TACTICAL_TARGET_TRADE_UNIT_SEA;
 
+	// Morocco UA: Check if we're in dire economic straits
+	bool bDesperatForGold = false;
+	if (m_pPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
+	{
+		// Consider desperate if we have less than 50 gold (economic desperation)
+		int iGold = m_pPlayer->GetTreasury()->GetGold();
+		
+		// Low gold: less than 50
+		if (iGold < 50)
+		{
+			bDesperatForGold = true;
+		}
+	}
+
 	for (CvTacticalTarget* pTarget = GetFirstZoneTarget(eTargetType); pTarget!=NULL; pTarget = GetNextZoneTarget())
 	{
 		// See what units we have who can reach target this turn
 		CvPlot* pPlot = GC.getMap().plot(pTarget->GetTargetX(), pTarget->GetTargetY());
+
+		// Morocco UA: Skip plundering allies/vassals unless desperate
+		if (m_pPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar() && !bDesperatForGold)
+		{
+			if (!ShouldPlunderTradeRouteAtPlot(pPlot))
+			{
+				continue;  // Skip this trade route
+			}
+		}
 
 		if (FindUnitsForHarassing(pPlot,0,GD_INT_GET(MAX_HIT_POINTS)/2,-1,eDomain,true,false,5,true))
 		{
@@ -3196,6 +3219,53 @@ bool CvTacticalAI::ExecutePillage(CvPlot* pTargetPlot)
 }
 
 /// Pillage an undefended improvement
+
+/// Check if Morocco should plunder a trade route at this plot (respects diplomatic relationships)
+bool CvTacticalAI::ShouldPlunderTradeRouteAtPlot(CvPlot* pPlot)
+{
+	if (!pPlot || !m_pPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
+		return true;  // Not Morocco, allow all plundering
+
+	// Find the trade unit at this plot
+	CvGameTrade* pTrade = GC.getGame().GetGameTrade();
+	std::vector<int> aiTradeUnitsAtPlot = GET_PLAYER(m_pPlayer->GetID()).GetTrade()->GetOpposingTradeUnitsAtPlot(pPlot, true);
+
+	if (aiTradeUnitsAtPlot.empty())
+	{
+		return true;  // No trade unit, allow
+	}
+
+	// Check the first (or any) trade unit at this plot
+	PlayerTypes eTradeUnitOwner = pTrade->GetOwnerFromID(aiTradeUnitsAtPlot[0]);
+	if (eTradeUnitOwner == NO_PLAYER)
+		return true;  // Invalid owner, allow
+
+	TeamTypes eMoroccoTeam = m_pPlayer->getTeam();
+	TeamTypes eOwnerTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
+
+	// Allow plundering enemies and neutrals
+	if (GET_TEAM(eMoroccoTeam).isAtWar(eOwnerTeam))
+		return true;  // At war, always allow
+
+	// Check if it's an allied trade route (defensive pact)
+	if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
+	{
+		// Don't plunder allies unless desperate
+		return false;
+	}
+
+	// Check if it's a vassal trade route
+	if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) || GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
+	{
+		// Don't plunder vassals unless desperate
+		return false;
+	}
+
+	// Neutral or rival - allow
+	return true;
+}
+
+/// Plunder a specific trade unit
 void CvTacticalAI::ExecutePlunderTradeUnit(CvPlot* pTargetPlot)
 {
 	// Move first one to target
