@@ -2119,8 +2119,7 @@ local function ResourcesToolTip( control )
 			local numResourceExport = g_activePlayer:GetResourceExport( resourceID )
 			local numResourceImport = g_activePlayer:GetResourceImport( resourceID )
 			local numResourceMisc = g_activePlayer:GetResourcesMisc(resourceID)
-			local numResourceLocal = g_activePlayer:GetNumResourceTotal( resourceID, false ) + numResourceExport - numResourceMisc
-
+				local numResourceEvents = g_activePlayer:GetNumResourceFromEvents(resourceID)
 			tips:insert( ColorizeAbs(numResourceAvailable) .. resource.IconString .. " " .. Locale.ToUpper(resource.Description) )
 			tips:insert( "----------------" )
 
@@ -2226,7 +2225,7 @@ local function ResourcesToolTip( control )
 				local numResourceCSAlly = g_activePlayer:GetResourceFromCSAlliances(resourceID)
 
 				--want the total, but before GetStrategicResourceMod and GetResourceModFromReligion are applied, so have to remove Misc then add back in parts of it
-				local totalBeforeMod =  g_activePlayer:GetNumResourceTotal( resourceID, false ) - numResourceMisc + numResourceGP + numResourceCorp + numResourceFranchises + numResourceCSAlly
+				local totalBeforeMod =  g_activePlayer:GetNumResourceTotal( resourceID, false ) - numResourceMisc + numResourceGP + numResourceCorp + numResourceFranchises + numResourceCSAlly + numResourceEvents
 
 				local stratResMod = g_activePlayer:GetStrategicResourceMod()
 				local resourceModRel = g_activePlayer:GetResourceModFromReligion(resourceID)
@@ -2242,6 +2241,9 @@ local function ResourcesToolTip( control )
 				end
 				if numResourceCSAlly > 0 then
 					tips:insert( "[ICON_BULLET]" .. Colorize(numResourceCSAlly) .. resource.IconString .. " " .. L"TXT_KEY_EO_CS_ALLY_RESOURCES" )
+				end
+				if numResourceEvents > 0 then
+					tips:insert( "[ICON_BULLET]" .. Colorize(numResourceEvents) .. resource.IconString .. " " .. L"TXT_KEY_EO_EVENT_RESOURCES" )
 				end
 				if stratResMod > 0 and Game.GetResourceUsageType(resource.ID) == ResourceUsageTypes.RESOURCEUSAGE_STRATEGIC then
 					local change = math_floor(((totalBeforeMod * (100 + stratResMod)) / 100) - totalBeforeMod)
