@@ -448,6 +448,7 @@ private:
 	void ExecuteBarbarianCampMove(CvPlot* pTargetPlot);
 	void ExecuteBarbarianTheft();
 	bool ExecutePillage(CvPlot* pTargetPlot);
+	bool ShouldPlunderTradeRouteAtPlot(CvPlot* pPlot);
 	void ExecutePlunderTradeUnit(CvPlot* pTargetPlot);
 	void ExecuteParadropPillage(CvPlot* pTargetPlot);
 	void ExecuteLandingOperation(CvPlot* pTargetPlot);
