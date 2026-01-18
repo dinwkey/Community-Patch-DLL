@@ -1788,16 +1788,10 @@ bool CvCityCitizens::DoRemoveWorstCitizen(CvCity::eUpdateMode updateMode, bool b
 		}
 		if (GetNumDefaultSpecialists() > iCurrentCityPopulation)
 		{
-			if (bRemoveForcedStatus)
-			{
-				ChangeNumForcedDefaultSpecialists(-1);
-				ChangeNumDefaultSpecialists(-1, updateMode);
-				return true;
-			}
-			else
-			{
-				return false;
-			}
+			// Safety clamp: if default specialists exceed population, reduce even if forced removal isn't allowed
+			ChangeNumForcedDefaultSpecialists(-1);
+			ChangeNumDefaultSpecialists(-1, updateMode);
+			return true;
 		}
 	}
 

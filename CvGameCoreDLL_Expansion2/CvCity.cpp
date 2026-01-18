@@ -2635,6 +2635,9 @@ void CvCity::doTurn()
 		bGrowthProcessed = true;
 	}
 
+	// Update citizen assignments after growth processing
+	GetCityCitizens()->DoTurn();
+
 	// sending notifications on when routes are connected to the capital
 	if (!isCapital())
 		{

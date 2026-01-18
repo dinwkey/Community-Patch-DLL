@@ -2646,12 +2646,53 @@ void onGameStarted()
 	{
 		// Fifth loop: Go through all City-States in the database and exclude ones which are already chosen or blocked by MajorBlocksMinor
 		vector<MinorCivTypes> vCultured, vMilitaristic, vMaritime, vMercantile, vReligious;
-		vector<MinorCivTypes> vAvailableCityStates = GetAvailableMinorCivTypes(vCultured, vMilitaristic, vMaritime, vMercantile, vReligious);
+		vector<MinorCivTypes> vCustomOrder;
+		vector<MinorCivTypes> vAvailableCityStates = GetAvailableMinorCivTypes(vCultured, vMilitaristic, vMaritime, vMercantile, vReligious, &vCustomOrder);
 
 		// Sixth loop: Loop through all City-State slots and fill them with random valid City-States
 		int iCounter = 1;
+		size_t iCustomIndex = 0;
 		for (std::vector<PlayerTypes>::iterator it = vMinorsToChoose.begin(); it != vMinorsToChoose.end(); it++)
 		{
+			if (iCustomIndex < vCustomOrder.size())
+			{
+				MinorCivTypes eChoice = vCustomOrder[iCustomIndex++];
+				setMinorCivType(*it, eChoice);
+				vAvailableCityStates.erase(std::remove(vAvailableCityStates.begin(), vAvailableCityStates.end(), eChoice), vAvailableCityStates.end());
+
+				CvMinorCivInfo* pkCityState = GC.getMinorCivInfo(eChoice);
+				if (pkCityState && MOD_BALANCE_CITY_STATE_TRAITS)
+				{
+					MinorCivTraitTypes eTrait = (MinorCivTraitTypes)pkCityState->GetMinorCivTrait();
+					switch (eTrait)
+					{
+					case MINOR_CIV_TRAIT_CULTURED:
+						vCultured.erase(std::remove(vCultured.begin(), vCultured.end(), eChoice), vCultured.end());
+						iCultured++;
+						break;
+					case MINOR_CIV_TRAIT_MILITARISTIC:
+						vMilitaristic.erase(std::remove(vMilitaristic.begin(), vMilitaristic.end(), eChoice), vMilitaristic.end());
+						iMilitaristic++;
+						break;
+					case MINOR_CIV_TRAIT_MARITIME:
+						vMaritime.erase(std::remove(vMaritime.begin(), vMaritime.end(), eChoice), vMaritime.end());
+						iMaritime++;
+						break;
+					case MINOR_CIV_TRAIT_MERCANTILE:
+						vMercantile.erase(std::remove(vMercantile.begin(), vMercantile.end(), eChoice), vMercantile.end());
+						iMercantile++;
+						break;
+					case MINOR_CIV_TRAIT_RELIGIOUS:
+						vReligious.erase(std::remove(vReligious.begin(), vReligious.end(), eChoice), vReligious.end());
+						iReligious++;
+						break;
+					default:
+						UNREACHABLE();
+					}
+				}
+				continue;
+			}
+
 			if (!MOD_BALANCE_CITY_STATE_TRAITS && !MOD_BALANCE_VP)
 			{
 				// Not enough City-States in the database.
@@ -2830,7 +2871,7 @@ void onGameStarted()
 	}
 }
 
-vector<MinorCivTypes> GetAvailableMinorCivTypes(vector<MinorCivTypes>& vCultured, vector<MinorCivTypes>& vMilitaristic, vector<MinorCivTypes>& vMaritime, vector<MinorCivTypes>& vMercantile, vector<MinorCivTypes>& vReligious)
+vector<MinorCivTypes> GetAvailableMinorCivTypes(vector<MinorCivTypes>& vCultured, vector<MinorCivTypes>& vMilitaristic, vector<MinorCivTypes>& vMaritime, vector<MinorCivTypes>& vMercantile, vector<MinorCivTypes>& vReligious, vector<MinorCivTypes>* pvCustomOrder)
 {
 	vector<MinorCivTypes> vAvailable;
 	vector<CivilizationTypes> vChosenMajors;
@@ -2934,12 +2975,17 @@ vector<MinorCivTypes> GetAvailableMinorCivTypes(vector<MinorCivTypes>& vCultured
 				UNREACHABLE();
 			}
 		}
-		return vAvailable;
+		if (pvCustomOrder != NULL)
+		{
+			*pvCustomOrder = vAvailable;
+		}
 	}
 
 	for (int i = 0; i < GC.getNumMinorCivInfos(); i++)
 	{
 		MinorCivTypes eAvailability = static_cast<MinorCivTypes>(i);
+		if (std::find(vAvailable.begin(), vAvailable.end(), eAvailability) != vAvailable.end())
+			continue;
 		CvMinorCivInfo* pkCityState = GC.getMinorCivInfo(eAvailability);
 		if (pkCityState == NULL)
 			continue;
