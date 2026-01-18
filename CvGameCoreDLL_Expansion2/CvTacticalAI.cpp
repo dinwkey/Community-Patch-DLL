@@ -7125,6 +7125,8 @@ bool CAttackCache::findAttack(int iAttackerId, int iAttackerPlot, int iDefenderI
 	return false;
 }
 
+static bool IsSubmarineUnit(const CvUnit* pUnit);
+
 //note that the score returned from this function is not multiplied by 10 yet
 bool ScoreAttackDamage(const CvTacticalPlot& tactPlot, const CvUnit* pUnit, const CvTacticalPlot& assumedPlot, const CvTacticalPosition& assumedPosition, CAttackCache& cache, STacticalAssignment& result)
 {
@@ -7234,6 +7236,15 @@ bool ScoreAttackDamage(const CvTacticalPlot& tactPlot, const CvUnit* pUnit, cons
 		iExtraScore = pUnit->GetRangeCombatSplashDamage(pTestPlot);
 		iExtraScore += pUnit->EstimatePlagueDamage(pEnemy);
 		iPrevHitPoints = pEnemy->GetCurrHitPoints() - iPrevDamage;
+
+		if (IsSubmarineUnit(pUnit))
+		{
+			int iEnemySupport = tactPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_BOTH);
+			if (iEnemySupport <= 1)
+				iExtraScore += 20;
+			else if (iEnemySupport >= 3)
+				iExtraScore -= 15;
+		}
 
 		//problem is flanking bonus affects combat strength, not damage, so the effect is nonlinear. anyway just assume 10% per adjacent unit
 		if (!pUnit->IsCanAttackRanged()) //only for melee
@@ -7634,11 +7645,61 @@ bool isKillAssignment(eUnitAssignmentType eAssignmentType)
 		eAssignmentType == A_RANGEKILL;
 }
 
+static bool IsSubmarineUnit(const CvUnit* pUnit)
+{
+	if (!pUnit)
+		return false;
+
+	if (pUnit->AI_getUnitAIType() == UNITAI_SUBMARINE)
+		return true;
+
+	static const UnitCombatTypes eSubCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_SUBMARINE");
+	return (pUnit->getUnitCombatType() == eSubCombat);
+}
+
+static int CountEnemySubDetectUnitsAroundPlot(const CvPlot* pPlot, const CvUnit* pUnit, int iRange)
+{
+	if (!pPlot || !pUnit)
+		return 0;
+
+	static const InvisibleTypes eSubInvisible = (InvisibleTypes)GC.getInfoTypeForString("INVISIBLE_SUBMARINE");
+	if (eSubInvisible == NO_INVISIBLE)
+		return 0;
+
+	TeamTypes eOurTeam = pUnit->getTeam();
+	int iCount = 0;
+
+	for (int i = RING0_PLOTS; i < RING_PLOTS[iRange]; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pPlot, i);
+		if (!pLoopPlot)
+			continue;
+
+		if (!pLoopPlot->isVisible(eOurTeam))
+			continue;
+
+		CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), pUnit, true);
+		if (!pEnemy)
+			continue;
+
+		if (!pEnemy->isEnemy(eOurTeam, pLoopPlot))
+			continue;
+
+		if (pEnemy->getSeeInvisibleType() == eSubInvisible)
+			iCount++;
+	}
+
+	return iCount;
+}
+
 int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignment, const CvTacticalPlot& testPlot, int iDanger,
 							CvTacticalPlot::eTactPlotDomain eRelevantDomain, int iSelfDamage, int iAssumedExtraKill, bool bHasMoved,
 							const CvTacticalPosition& assumedPosition, eUnitMoveEvalMode evalMode, bool bRelaxedCheck)
 {
 	int iResult = 0;
+	const bool bIsSubmarine = IsSubmarineUnit(pUnit);
+	const bool bDidAttack = (eLastAssignment == A_MELEEATTACK || eLastAssignment == A_MELEEKILL || eLastAssignment == A_MELEEKILL_NO_ADVANCE ||
+		eLastAssignment == A_RANGEATTACK || eLastAssignment == A_RANGEKILL);
 
 	gEnemiesToIgnore = assumedPosition.getKilledEnemies();
 	if (iAssumedExtraKill != -1)
@@ -7702,6 +7763,8 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			bool isForKill = (eLastAssignment == A_MELEEKILL || eLastAssignment == A_MELEEKILL_NO_ADVANCE || eLastAssignment == A_RANGEKILL);
 			bool couldFlee = (gSafePlotCount[pUnit->GetID()] > 0);
 			int iMagicNumber = (isForKill || !couldFlee)  ? 23 : 42;
+			if (bIsSubmarine && couldFlee)
+				iMagicNumber += 18;
 
 			//if this is the only enemy ...
 			if (assumedPosition.getNumEnemies() == 1 && isForKill)
@@ -7723,6 +7786,17 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 
 		//make it relative to current hitpoints
 		int iScaledDanger = (iDanger * /*100*/ GD_INT_GET(COMBAT_AI_OFFENSE_DANGERWEIGHT)) / max(1, pUnit->GetCurrHitPoints());
+		if (bIsSubmarine)
+		{
+			iScaledDanger = (iScaledDanger * 3) / 2;
+			if (testPlot.getPlot()->IsKnownVisibleToEnemy(pUnit->getOwner()))
+				iScaledDanger += 25;
+			if (gSafePlotCount[pUnit->GetID()] == 0)
+				iScaledDanger += 50;
+			int iDetectCount = CountEnemySubDetectUnitsAroundPlot(testPlot.getPlot(), pUnit, 2);
+			if (iDetectCount > 0)
+				iScaledDanger += iDetectCount * 20;
+		}
 
 		//danger values can get very high if there are many enemy units around, so try to normalize this a bit
 		//this maps 225 to 225, higher values get flattened
@@ -7765,6 +7839,17 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 	//when in doubt, hide from the enemy
 	if (!testPlot.getPlot()->IsKnownVisibleToEnemy(pUnit->getOwner()))
 		iResult++;
+	if (bIsSubmarine && !bDidAttack)
+	{
+		if (testPlot.getPlot()->IsKnownVisibleToEnemy(pUnit->getOwner()))
+			iResult -= 8;
+		else
+			iResult += 8;
+		if (testPlot.isEdgePlot() && iDanger < pUnit->GetCurrHitPoints() / 3)
+			iResult += 4;
+		if (iDanger > pUnit->GetCurrHitPoints() / 2 && iNumAdjFriendlies == 0)
+			iResult -= 6;
+	}
 
 	//try to occupy enemy citadels!
 	if (TacticalAIHelpers::IsOtherPlayerCitadel(testPlot.getPlot(), assumedPosition.getPlayer(), true))
@@ -7947,6 +8032,13 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 			else
 				iDangerScore += TACTICAL_COMBAT_CITADEL_BONUS;
 		}
+	}
+
+	if (IsSubmarineUnit(pUnit))
+	{
+		int iDetectCount = CountEnemySubDetectUnitsAroundPlot(testPlot.getPlot(), pUnit, 2);
+		if (iDetectCount > 0)
+			iDangerScore -= iDetectCount * 15;
 	}
 
 	// Check if we are moving into an improvement that restores our moves
@@ -8170,6 +8262,49 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 
 		//a bonus the further we can disengage after attacking
 		newAssignment.iBonusScore += (newAssignment.iRemainingMoves * 2) / GD_INT_GET(MOVE_DENOMINATOR);
+	}
+
+	if (IsSubmarineUnit(unit.pUnit))
+	{
+		int iTargetHP = 0;
+		if (enemyPlot.isEnemyCity())
+		{
+			CvCity* pCity = enemyPlot.getPlot()->getPlotCity();
+			if (pCity)
+				iTargetHP = pCity->GetMaxHitPoints() - pCity->getDamage();
+		}
+		else
+		{
+			CvUnit* pEnemy = enemyPlot.getEnemyUnit();
+			if (pEnemy)
+				iTargetHP = pEnemy->GetCurrHitPoints();
+		}
+
+		bool bTargetVulnerable = bIsKill || newAssignment.iKillOrNearKillId != -1;
+		if (!bTargetVulnerable && iTargetHP > 0 && newAssignment.iDamage * 2 >= iTargetHP)
+			bTargetVulnerable = true;
+
+		int iDanger = unit.pUnit->GetDanger(assumedUnitPlot.getPlot(), assumedPosition.getKilledEnemies(), newAssignment.iSelfDamage);
+		if (iDanger == INT_MAX)
+			iDanger = 10 * unit.pUnit->GetMaxHitPoints();
+
+		int iDangerRatio = (100 * iDanger) / max(1, unit.pUnit->GetCurrHitPoints());
+		bool bCanDisengage = unit.pUnit->canMoveAfterAttacking() && newAssignment.iRemainingMoves > 0;
+		bool bHasSafePlot = (gSafePlotCount[unit.iUnitID] > 0);
+
+		if (!bTargetVulnerable && iDangerRatio > 60 && (!bCanDisengage || !bHasSafePlot))
+		{
+			newAssignment.iBonusScore = TACTICAL_COMBAT_IMPOSSIBLE_SCORE;
+			return newAssignment;
+		}
+
+		int iRiskPenalty = (iDangerRatio * 3) / 2;
+		if (assumedUnitPlot.getPlot()->IsKnownVisibleToEnemy(unit.pUnit->getOwner()))
+			iRiskPenalty += 25;
+		int iDetectCount = CountEnemySubDetectUnitsAroundPlot(assumedUnitPlot.getPlot(), unit.pUnit, 2);
+		if (iDetectCount > 0)
+			iRiskPenalty += iDetectCount * 20;
+		newAssignment.iBonusScore -= iRiskPenalty;
 	}
 
 	//flat bonus for a kill
