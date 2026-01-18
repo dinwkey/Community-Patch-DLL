@@ -665,6 +665,7 @@ void CvTacticalAnalysisMap::CreateDominanceZones()
 	{
 		CvPlot* pPlot = GC.getMap().plotByIndexUnchecked(iI);
 		ASSERT(pPlot != NULL, "plotByIndexUnchecked returned null - invalid plot index");
+		const uint32 plotFlags = pPlot->GetPlotCacheFlags();
 
 		//some plot will be part of the "unknown zone"
 		if (!pPlot->isRevealed(eOurTeam))
@@ -686,7 +687,7 @@ void CvTacticalAnalysisMap::CreateDominanceZones()
 		//now it gets interesting. a city can have 2 zones, one land one water.
 		//water zone has the same id as the land zone but negative
 		int iZoneID = pZoneCity->GetID();
-		if (pPlot->isWater())
+		if (plotFlags & CvPlot::PLOT_CACHE_WATER)
 			iZoneID *= -1;
 
 		//chances are it's the same zone as before
@@ -733,7 +734,7 @@ void CvTacticalAnalysisMap::CreateDominanceZones()
 		nonCityZonePlots.erase(nonCityZonePlots.begin());
 
 		int newId = iNonCityBaseId++;
-		if (stack.back()->isWater())
+		if (stack.back()->GetPlotCacheFlags() & CvPlot::PLOT_CACHE_WATER)
 			newId *= -1;
 
 		CvTacticalDominanceZone newZone;
@@ -920,7 +921,7 @@ void CvTacticalAnalysisMap::CalculateMilitaryStrengths()
 					}
 					else if (pLoopUnit->getDomainType() == DOMAIN_AIR)
 					{
-						if ( pPlot->isWater() )
+						if ( pPlot->GetPlotCacheFlags() & CvPlot::PLOT_CACHE_WATER )
 							pZone->AddEnemyNavalRangedStrength(iRangedStrength);
 						else
 							pZone->AddEnemyRangedStrength(iRangedStrength);
@@ -943,7 +944,7 @@ void CvTacticalAnalysisMap::CalculateMilitaryStrengths()
 					}
 					else if (pLoopUnit->getDomainType() == DOMAIN_AIR)
 					{
-						if ( pPlot->isWater() )
+						if ( pPlot->GetPlotCacheFlags() & CvPlot::PLOT_CACHE_WATER )
 							pZone->AddFriendlyNavalRangedStrength(iRangedStrength);
 						else
 							pZone->AddFriendlyRangedStrength(iRangedStrength);

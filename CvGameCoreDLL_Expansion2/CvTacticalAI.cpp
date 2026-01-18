@@ -3734,6 +3734,8 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 			ASSERT(pEvalPlot != NULL, "plotByIndexUnchecked returned null - invalid plot index");
 			if (!pEvalPlot->isCoastalLand())
 				continue;
+
+			const uint32 plotFlags = pEvalPlot->GetPlotCacheFlags();
 			
 			int iBonus = plotDistance(*pEvalPlot,*pTargetPlot) * (-10);
 			if (pUnit->IsCanAttackRanged())
@@ -3741,7 +3743,7 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 				if (pEvalPlot->getArea()!=pTargetPlot->getArea() && plotDistance(*pEvalPlot,*pTargetPlot)>pUnit->GetRange())
 					continue;
 
-				if (pEvalPlot->isHills())
+				if (plotFlags & CvPlot::PLOT_CACHE_HILLS)
 					iBonus += 20;
 			}
 			else
@@ -8131,6 +8133,7 @@ static STacticalAssignment* ScorePlotForPillageMove(const SUnitStats& unit, cons
 	//the plot we're checking right now
 	const CvPlot* pTestPlot = testPlot->getPlot();
 	const CvUnit* pUnit = unit.pUnit;
+	const uint32 plotFlags = pTestPlot->GetPlotCacheFlags();
 
 	int iDamageDelta = 0;
 	int iSelfDamage = 0;
@@ -8149,7 +8152,7 @@ static STacticalAssignment* ScorePlotForPillageMove(const SUnitStats& unit, cons
 			iBonusScore += iImprovementDamage;
 		if (iImprovementDamage < 15 && pTestPlot->getResourceType(pUnit->getTeam()) != NO_RESOURCE && GC.getResourceInfo(pTestPlot->getResourceType(pUnit->getTeam()))->getResourceUsage() == RESOURCEUSAGE_STRATEGIC)
 			iBonusScore += 15;
-		else if (iImprovementDamage < 10 && pTestPlot->getOwner() != NO_PLAYER && pTestPlot->getRouteType() != NO_ROUTE && (pTestPlot->isHills() || pTestPlot->IsTerrainDesert() || pTestPlot->IsFeatureMarsh() || pTestPlot->IsFeatureForest() || pTestPlot->isRiver()))
+		else if (iImprovementDamage < 10 && pTestPlot->getOwner() != NO_PLAYER && pTestPlot->getRouteType() != NO_ROUTE && (plotFlags & (CvPlot::PLOT_CACHE_HILLS | CvPlot::PLOT_CACHE_DESERT | CvPlot::PLOT_CACHE_MARSH | CvPlot::PLOT_CACHE_FOREST | CvPlot::PLOT_CACHE_RIVER)))
 		{
 			// route in rough terrain?
 			iBonusScore += 10;
@@ -8643,6 +8646,102 @@ static STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& un
 		//can be treacherous with impassable terrain in between but everything else is much more complex
 		int iPlotDistance = plotDistance(*assumedPosition.getTarget(),*pTestPlot);
 		iScore += 3 - iPlotDistance;
+	}
+
+	//generals and admirals
+	if (unit.eMoveStrategy == MS_SUPPORT)
+	{
+		//check distance to enemy in any case
+		switch (testPlot->getEnemyDistance())
+		{
+		case 0:
+			return result; //don't ever go there, wouldn't work anyway
+			break;
+		case 1:
+			iScore = pTestPlot->isCity() ? 13 : 2; //dangerous to end the turn, avoid
+			break;
+		case 2:
+			iScore = 23; //good for defense support, good for attack support, but risky
+			break;
+		case 3:
+			iScore = 17; //good for defense support, not so good for attack support
+			break;
+		default:
+			iScore = 5; //usual case for gathering moves, otherwise not really interesting
+			break;
+		}
+
+		bool bHaveSimCover = false;
+		const vector<STacticalUnit>& units = testPlot->getUnitsAtPlot();
+		for (size_t i = 0; i < units.size(); i++)
+		{
+			if (isCombatUnit(units[i].eMoveType))
+			{
+				//we have to make sure our protector will stay ...
+				CvUnit* pDefender = GET_PLAYER(assumedPosition.getPlayer()).getUnit(units[i].iUnitID);
+				if (!assumedPosition.lastAssignmentIsAfterRestart(units[i].iUnitID) && !pDefender->shouldHeal(false))
+				{
+					bHaveSimCover = true;
+					break;
+				}
+			}
+		}
+
+		bool bHaveRealCover = false;
+		if (!bHaveSimCover)
+		{
+			//this check is stronger than pure IsCombatUnitEndTurn
+			CvUnit* pBestDefender = pTestPlot->getBestDefender(assumedPosition.getPlayer());
+			bool bDefenderIsGood = pBestDefender && pBestDefender->TurnProcessed() && !pBestDefender->isProjectedToDieNextTurn() && pBestDefender->GetDanger() < pBestDefender->GetCurrHitPoints();
+			if (pTestPlot->isFriendlyCity(*pUnit) || bDefenderIsGood)
+				bHaveRealCover = true;
+		}
+
+		if (evalMode == EM_INTERMEDIATE)
+		{
+			//don't do it if we don't have enough movement to move to a safe plot later
+			if ((unit.iMovesLeft<=GD_INT_GET(MOVE_DENOMINATOR) && !pUnit->IsFreeAttackMoves()) && !bHaveSimCover && !bHaveRealCover)
+				return result;
+		}
+		else
+		{
+			if (testPlot->isNicePlotForCitadel() && pUnit->IsGreatGeneral() && unit.iMovesLeft > 0)
+			{
+				result->eAssignmentType = A_USE_POWER;
+				result->iRemainingMoves = 0;
+				iScore += 100;
+			}
+			//we want one of our own combat units covering us (either sim or non sim). cities are also considered safe
+			else if (!pTestPlot->isFriendlyCity(*pUnit) && !bHaveSimCover && !bHaveRealCover) 
+				return result;
+
+			//surrounding cover is also good
+			int iFriends = (evalMode==EM_FINAL) ? testPlot->getNumAdjacentFriendliesEndTurn(CvTacticalPlot::TD_BOTH) : testPlot->getNumAdjacentFriendlies(CvTacticalPlot::TD_BOTH, -1);
+			iScore += iFriends;
+
+			//when in doubt prefer the high ground - looks cooler
+			const uint32 plotFlags = pTestPlot->GetPlotCacheFlags();
+			if (plotFlags & (CvPlot::PLOT_CACHE_HILLS | CvPlot::PLOT_CACHE_MOUNTAIN))
+				iScore++;
+
+			//try not to be a sitting duck (faster than isNativeDomain but not entirely accurate)
+			if (pUnit->getDomainType() != pTestPlot->getDomain())
+				iScore -= 3;
+		}
+
+		//points for supported units (count only the first ring for performance ...)
+		int iFriends = testPlot->getNumAdjacentFriendlies(CvTacticalPlot::TD_BOTH, -1);
+		if (testPlot->hasFriendlyCombatUnit())
+			iFriends++;
+
+		//supported units count double plus one extra if we have covered
+		iScore += iFriends*2;
+		if (testPlot->hasFriendlyCombatUnit())
+			iScore++;
+
+		//avoid overlap. this works only because we ignore our own aura when calling this function!
+		if (testPlot->hasSupportBonus(unit.iPlotIndex) && testPlot->getPlotIndex()!=unit.iPlotIndex)
+			iScore /= 2;
 	}
 
 	//plain embarked units
