@@ -3744,6 +3744,8 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 			ASSERT(pEvalPlot != NULL, "plotByIndexUnchecked returned null - invalid plot index");
 			if (!pEvalPlot->isCoastalLand())
 				continue;
+
+			const uint32 plotFlags = pEvalPlot->GetPlotCacheFlags();
 			
 			int iBonus = plotDistance(*pEvalPlot,*pTargetPlot) * (-10);
 			if (pUnit->IsCanAttackRanged())
@@ -3751,7 +3753,7 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 				if (pEvalPlot->getArea()!=pTargetPlot->getArea() && plotDistance(*pEvalPlot,*pTargetPlot)>pUnit->GetRange())
 					continue;
 
-				if (pEvalPlot->isHills())
+				if (plotFlags & CvPlot::PLOT_CACHE_HILLS)
 					iBonus += 20;
 			}
 			else
@@ -7524,6 +7526,7 @@ STacticalAssignment ScorePlotForPillageMove(const SUnitStats& unit, const CvTact
 	//the plot we're checking right now
 	const CvPlot* pTestPlot = testPlot.getPlot();
 	const CvUnit* pUnit = unit.pUnit;
+	const uint32 plotFlags = pTestPlot->GetPlotCacheFlags();
 
 	if (pUnit->shouldPillage(pTestPlot, true) && !assumedPosition.unitHasAssignmentOfType(unit.iUnitID, A_PILLAGE) && !assumedPosition.plotHasAssignmentOfType(testPlot.getPlotIndex(), A_PILLAGE))
 	{
@@ -7543,7 +7546,7 @@ STacticalAssignment ScorePlotForPillageMove(const SUnitStats& unit, const CvTact
 			if (iHealAmount > 0)
 				result.iSelfDamage = max(result.iSelfDamage - iHealAmount, -pUnit->getDamage() + unit.iSelfDamage); //may turn negative, but can't heal more than current damage
 		}
-		else if (pTestPlot->getOwner() != NO_PLAYER && pTestPlot->getRouteType() != NO_ROUTE && (pTestPlot->isHills() || pTestPlot->IsTerrainDesert() || pTestPlot->IsFeatureMarsh() || pTestPlot->IsFeatureForest() || pTestPlot->isRiver()))
+		else if (pTestPlot->getOwner() != NO_PLAYER && pTestPlot->getRouteType() != NO_ROUTE && (plotFlags & (CvPlot::PLOT_CACHE_HILLS | CvPlot::PLOT_CACHE_DESERT | CvPlot::PLOT_CACHE_MARSH | CvPlot::PLOT_CACHE_FOREST | CvPlot::PLOT_CACHE_RIVER)))
 		{
 			// route in rough terrain?
 			result.iBonusScore = 50;
@@ -8166,7 +8169,8 @@ STacticalAssignment ScorePlotForNonFightingUnitMove(const SUnitStats& unit, cons
 			iScore += iFriends;
 
 			//when in doubt prefer the high ground - looks cooler
-			if (pTestPlot->isHills() || pTestPlot->isMountain())
+			const uint32 plotFlags = pTestPlot->GetPlotCacheFlags();
+			if (plotFlags & (CvPlot::PLOT_CACHE_HILLS | CvPlot::PLOT_CACHE_MOUNTAIN))
 				iScore++;
 
 			//try not to be a sitting duck (faster than isNativeDomain but not entirely accurate)

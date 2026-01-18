@@ -1343,20 +1343,22 @@ int MilitaryAIHelpers::EvaluateTargetApproach(const CvAttackTarget& target, Play
 		if (!pTargetCity->HasAccessToArea(pLoopPlot->getArea()))
 			continue;
 
+		const uint32 plotFlags = pLoopPlot->GetPlotCacheFlags();
+
 		if (eArmyType==ARMY_TYPE_LAND)
 			//siege weapons cannot set up here
-			if (pLoopPlot->isWater())
+			if (plotFlags & CvPlot::PLOT_CACHE_WATER)
 				continue;
 
 		if (eArmyType==ARMY_TYPE_NAVAL)
 			//ships cannot go here
-			if (!pLoopPlot->isWater())
+			if (!(plotFlags & CvPlot::PLOT_CACHE_WATER))
 				continue;
 
 		//for naval invasions we want coastal plots
 		//ignore inland plots, combined attacks tend to get higher scores than pure naval anyway)
 		if (eArmyType == ARMY_TYPE_COMBINED)
-			if (!pLoopPlot->isWater() && !pLoopPlot->isCoastalLand())
+			if (!(plotFlags & CvPlot::PLOT_CACHE_WATER) && !pLoopPlot->isCoastalLand())
 				continue;
 
 		//enemy citadels are dangerous, pretend we cannot use those plots
@@ -1364,8 +1366,8 @@ int MilitaryAIHelpers::EvaluateTargetApproach(const CvAttackTarget& target, Play
 			continue;
 
 		//rough terrain makes us slow
-		bool bWoodlandException = bForestJungleBonus && (pLoopPlot->getFeatureType() == FEATURE_FOREST || pLoopPlot->getFeatureType() == FEATURE_JUNGLE) && (MOD_BALANCE_VP || pLoopPlot->getTeam() == GET_PLAYER(ePlayer).getTeam());
-		if (bWoodlandException || (bMountainBonus && pLoopPlot->isMountain()) || (bHillBonus && pLoopPlot->isHills()) || (bRiverBonus && pLoopPlot->isRiver()) || !pLoopPlot->isRoughGround())
+		bool bWoodlandException = bForestJungleBonus && (plotFlags & (CvPlot::PLOT_CACHE_FOREST | CvPlot::PLOT_CACHE_JUNGLE)) && (MOD_BALANCE_VP || pLoopPlot->getTeam() == GET_PLAYER(ePlayer).getTeam());
+		if (bWoodlandException || (bMountainBonus && (plotFlags & CvPlot::PLOT_CACHE_MOUNTAIN)) || (bHillBonus && (plotFlags & CvPlot::PLOT_CACHE_HILLS)) || (bRiverBonus && (plotFlags & CvPlot::PLOT_CACHE_RIVER)) || !(plotFlags & CvPlot::PLOT_CACHE_ROUGH))
 			bIsGood = true;
 
 		// owned by us and has a road?

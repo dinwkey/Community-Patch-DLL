@@ -466,20 +466,21 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 		workablePlots.push_back( SPlotWithScore(pLoopPlot,iPlotValue) );
 
 		// some civ-specific checks
+		const uint32 plotFlags = pLoopPlot->GetPlotCacheFlags();
 		FeatureTypes ePlotFeature = pLoopPlot->getFeatureType();
 		ImprovementTypes ePlotImprovement = pLoopPlot->getImprovementType();
 
-		if (ePlotFeature == FEATURE_FOREST && iDistance>0)
+		if ((plotFlags & CvPlot::PLOT_CACHE_FOREST) && iDistance>0)
 		{
 			++iIroquoisForestCount;
 			if (iDistance == 1 && ePlotImprovement == NO_IMPROVEMENT)
 				++iCelticForestCount;
 		}
-		else if (ePlotFeature == FEATURE_JUNGLE && iDistance>0)
+		else if ((plotFlags & CvPlot::PLOT_CACHE_JUNGLE) && iDistance>0)
 		{
 			++iBrazilJungleCount;
 		}
-		else if (ePlotFeature == FEATURE_MARSH)
+		else if (plotFlags & CvPlot::PLOT_CACHE_MARSH)
 		{
 			++iWetlandsCount;
 		}
@@ -496,7 +497,7 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 		{
 			++iLakeCount;
 		}
-		if (pLoopPlot->isHills())
+		if (plotFlags & CvPlot::PLOT_CACHE_HILLS)
 		{
 			++iIncaHillsCount;
 		}
@@ -518,12 +519,12 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 			}
 		}
 
-		if (pLoopPlot->getTerrainType() == TERRAIN_DESERT && eResource == NO_RESOURCE)
+		if ((plotFlags & CvPlot::PLOT_CACHE_DESERT) && eResource == NO_RESOURCE)
 		{
 			++iDesertCount;
 		}
 
-		if (pLoopPlot->isMountain() && pPlayer && pPlayer->GetPlayerTraits()->IsMountainPass())
+		if ((plotFlags & CvPlot::PLOT_CACHE_MOUNTAIN) && pPlayer && pPlayer->GetPlayerTraits()->IsMountainPass())
 		{
 			int iAdjacentMountains = pLoopPlot->GetNumAdjacentMountains();
 			//give the bonus if it's hills, with additional if bordered by mountains
@@ -913,11 +914,12 @@ vector<int> CvCitySiteEvaluator::GetAllCitySiteValues(const CvPlayer* pPlayer)
 int CvCitySiteEvaluator::ComputeFoodValue(CvPlot* pPlot, const CvPlayer* pPlayer)
 {
 	TeamTypes eTeam = pPlayer ? pPlayer->getTeam() : NO_TEAM;
+	const uint32 plotFlags = pPlot->GetPlotCacheFlags();
 	// From tile yield
 	int rtnValue = pPlot->calculateNatureYield(YIELD_FOOD, pPlayer ? pPlayer->GetID() : NO_PLAYER, pPlot->getFeatureType(), pPlot->getResourceType(eTeam), pPlot->getImprovementType(), NULL);
 
 	// assume a farm or similar on suitable terrain ... should be build sooner or later. value averages out with other improvements
-	if (((pPlot->getTerrainType()==TERRAIN_GRASS || pPlot->getTerrainType()==TERRAIN_PLAINS) && pPlot->getFeatureType() == NO_FEATURE) || pPlot->getFeatureType() == FEATURE_FLOOD_PLAINS)
+	if ((((plotFlags & CvPlot::PLOT_CACHE_GRASS) || (plotFlags & CvPlot::PLOT_CACHE_PLAINS)) && pPlot->getFeatureType() == NO_FEATURE) || pPlot->getFeatureType() == FEATURE_FLOOD_PLAINS)
 		rtnValue += 1;
 
 	//Help with island settling - assume a lighthouse
@@ -944,10 +946,11 @@ int CvCitySiteEvaluator::ComputeFoodValue(CvPlot* pPlot, const CvPlayer* pPlayer
 int CvCitySiteEvaluator::ComputeProductionValue(CvPlot* pPlot, const CvPlayer* pPlayer)
 {
 	TeamTypes eTeam = pPlayer ? pPlayer->getTeam() : NO_TEAM;
+	const uint32 plotFlags = pPlot->GetPlotCacheFlags();
 	int rtnValue = pPlot->calculateNatureYield(YIELD_PRODUCTION, pPlayer ? pPlayer->GetID() : NO_PLAYER, pPlot->getFeatureType(), pPlot->getResourceType(eTeam), pPlot->getImprovementType(), NULL);
 
 	// assume a mine or similar in friendly climate. don't run off into the snow
-	if (pPlot->isHills() && (pPlot->getTerrainType()==TERRAIN_GRASS || pPlot->getTerrainType()==TERRAIN_PLAINS || pPlot->getTerrainType()==TERRAIN_TUNDRA) && pPlot->getFeatureType() == NO_FEATURE)
+	if ((plotFlags & CvPlot::PLOT_CACHE_HILLS) && ((plotFlags & CvPlot::PLOT_CACHE_GRASS) || (plotFlags & CvPlot::PLOT_CACHE_PLAINS) || (plotFlags & CvPlot::PLOT_CACHE_TUNDRA)) && pPlot->getFeatureType() == NO_FEATURE)
 		rtnValue += 1;
 
 	// From resource
@@ -1121,11 +1124,12 @@ int CvCitySiteEvaluator::ComputeStrategicValue(CvPlot* pPlot, int iPlotsFromCity
 {
 	int rtnValue = 0;
 	if (!pPlot) return rtnValue;
+	const uint32 plotFlags = pPlot->GetPlotCacheFlags();
 
 	//Some features and terrain types are useful strategically. (Or really bad)
 	if (pPlot->getOwner() == NO_PLAYER)
 	{
-		if (iPlotsFromCity <= 3 && (pPlot->getFeatureType() == FEATURE_ICE))
+		if (iPlotsFromCity <= 3 && (plotFlags & CvPlot::PLOT_CACHE_ICE))
 		{
 			rtnValue += /*-34*/ GD_INT_GET(BALANCE_BAD_TILES_STRATEGIC_VALUE);
 		}
@@ -1139,7 +1143,7 @@ int CvCitySiteEvaluator::ComputeStrategicValue(CvPlot* pPlot, int iPlotsFromCity
 		}
 	}
 
-	if (pPlot->isHills())
+	if (plotFlags & CvPlot::PLOT_CACHE_HILLS)
 	{
 		// Hills in first ring are useful for defense and production
 		if (iPlotsFromCity == 1)

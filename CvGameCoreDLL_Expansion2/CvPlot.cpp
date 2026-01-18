@@ -63,6 +63,7 @@ void SyncPlots()
 			}
 		}
 	}
+
 }
 
 // clears ALL deltas for ALL plots
@@ -197,6 +198,7 @@ void CvPlot::reset()
 	m_bIsAdjacentToLand = false;
 	m_bIsAdjacentToWater = false;
 	m_bIsLake = false;
+	m_uiPlotCacheFlags = 0;
 
 	m_eOwner = NO_PLAYER;
 	m_ePlotType = PLOT_OCEAN;
@@ -469,6 +471,8 @@ void CvPlot::doImprovementUpgrade()
 			}
 		}
 	}
+
+	updatePlotCacheFlags();
 }
 
 //	--------------------------------------------------------------------------------
@@ -1280,6 +1284,57 @@ void CvPlot::updateWaterFlags() const
 			}
 		}
 	}
+}
+
+//	--------------------------------------------------------------------------------
+void CvPlot::updatePlotCacheFlags() const
+{
+	uint32 uiFlags = 0;
+
+	if (isWater())
+		uiFlags |= PLOT_CACHE_WATER;
+	if (isHills())
+		uiFlags |= PLOT_CACHE_HILLS;
+	if (isMountain())
+		uiFlags |= PLOT_CACHE_MOUNTAIN;
+	if (isRoughGround())
+		uiFlags |= PLOT_CACHE_ROUGH;
+	if (isRiver())
+		uiFlags |= PLOT_CACHE_RIVER;
+
+	const FeatureTypes eFeature = getFeatureType();
+	if (eFeature == FEATURE_FOREST)
+		uiFlags |= PLOT_CACHE_FOREST;
+	else if (eFeature == FEATURE_JUNGLE)
+		uiFlags |= PLOT_CACHE_JUNGLE;
+	else if (eFeature == FEATURE_MARSH)
+		uiFlags |= PLOT_CACHE_MARSH;
+	else if (eFeature == FEATURE_ICE)
+		uiFlags |= PLOT_CACHE_ICE;
+
+	const TerrainTypes eTerrain = getTerrainType();
+	switch (eTerrain)
+	{
+	case TERRAIN_DESERT:
+		uiFlags |= PLOT_CACHE_DESERT;
+		break;
+	case TERRAIN_TUNDRA:
+		uiFlags |= PLOT_CACHE_TUNDRA;
+		break;
+	case TERRAIN_SNOW:
+		uiFlags |= PLOT_CACHE_SNOW;
+		break;
+	case TERRAIN_PLAINS:
+		uiFlags |= PLOT_CACHE_PLAINS;
+		break;
+	case TERRAIN_GRASS:
+		uiFlags |= PLOT_CACHE_GRASS;
+		break;
+	default:
+		break;
+	}
+
+	m_uiPlotCacheFlags = uiFlags;
 }
 
 //	--------------------------------------------------------------------------------
@@ -9779,6 +9834,7 @@ void CvPlot::changeRiverCrossingCount(int iChange)
 {
 	m_iRiverCrossingCount = (m_iRiverCrossingCount + iChange);
 	ASSERT(getRiverCrossingCount() >= 0);
+	updatePlotCacheFlags();
 }
 
 //	--------------------------------------------------------------------------------
@@ -9854,7 +9910,6 @@ int CvPlot::calculateNatureYield(YieldTypes eYield, PlayerTypes ePlayer, Feature
 	{
 		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(eFeature);
 		int iYieldChange = pkFeatureInfo->getYieldChange(eYield);
-
 		// Some Features REPLACE the Yield of the Plot instead of adding to it
 		if (pkFeatureInfo->isYieldNotAdditive())
 			iYield = iYieldChange;

@@ -453,6 +453,33 @@ public:
 		return m_iRiverCrossingCount > 0;
 	}
 
+	enum PlotCacheFlags
+	{
+		PLOT_CACHE_WATER   = (1 << 0),
+		PLOT_CACHE_HILLS   = (1 << 1),
+		PLOT_CACHE_MOUNTAIN= (1 << 2),
+		PLOT_CACHE_ROUGH   = (1 << 3),
+		PLOT_CACHE_RIVER   = (1 << 4),
+		PLOT_CACHE_FOREST  = (1 << 5),
+		PLOT_CACHE_JUNGLE  = (1 << 6),
+		PLOT_CACHE_MARSH   = (1 << 7),
+		PLOT_CACHE_ICE     = (1 << 8),
+		PLOT_CACHE_DESERT  = (1 << 9),
+		PLOT_CACHE_TUNDRA  = (1 << 10),
+		PLOT_CACHE_SNOW    = (1 << 11),
+		PLOT_CACHE_PLAINS  = (1 << 12),
+		PLOT_CACHE_GRASS   = (1 << 13)
+	};
+
+	inline uint32 GetPlotCacheFlags() const
+	{
+		return m_uiPlotCacheFlags;
+	}
+	inline bool HasPlotCacheFlag(PlotCacheFlags eFlag) const
+	{
+		return (m_uiPlotCacheFlags & eFlag) != 0;
+	}
+
 	//can a generic unit move through this plot (disregarding promotions, combat/civilian etc)
 	bool isValidMovePlot(PlayerTypes ePlayer, bool bCheckTerritory=true) const;
 
@@ -1026,11 +1053,13 @@ protected:
 	mutable bool m_bIsAdjacentToLand:1;					// Cached value, do not serialize
 	mutable bool m_bIsAdjacentToWater:1;				// Cached value, do not serialize
 	mutable bool m_bIsLake:1;							// Cached value, do not serialize
+	mutable uint32 m_uiPlotCacheFlags;              // Cached flags, do not serialize
 
 	CvArchaeologyData m_kArchaeologyData;
 
 	void processArea(CvArea* pArea, int iChange);
 	void doImprovementUpgrade();
+	void updatePlotCacheFlags() const;
 
 	// added so under cheat mode we can access protected stuff
 	friend class CvGameTextMgr;

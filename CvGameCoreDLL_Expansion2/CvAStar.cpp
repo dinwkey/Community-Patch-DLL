@@ -1881,10 +1881,11 @@ int StepHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, 
 int StepCost(const CvAStarNode*, const CvAStarNode* node, const SPathFinderUserData&, CvAStar*)
 {
 	CvPlot* pNewPlot = GC.getMap().plotUnchecked(node->m_iX, node->m_iY);
+	const uint32 plotFlags = pNewPlot->GetPlotCacheFlags();
 
 	//when in doubt, avoid rough plots
 	int iCost = PATH_BASE_COST;
-	if (pNewPlot->isRoughGround() && (!pNewPlot->isRoute() || pNewPlot->IsRoutePillaged())) 
+	if ((plotFlags & CvPlot::PLOT_CACHE_ROUGH) && (!pNewPlot->isRoute() || pNewPlot->IsRoutePillaged())) 
 		iCost += PATH_BASE_COST/10;
 		
 	return iCost;
@@ -3802,6 +3803,8 @@ int ArmyStepCost(const CvAStarNode* parent, const CvAStarNode* node, const SPath
 	CvMap& kMap = GC.getMap();
 	CvPlot* pFromPlot = GC.getMap().plotUnchecked(parent->m_iX, parent->m_iY);
 	CvPlot* pToPlot = kMap.plotUnchecked( node->m_iX,  node->m_iY);
+	const uint32 fromFlags = pFromPlot->GetPlotCacheFlags();
+	const uint32 toFlags = pToPlot->GetPlotCacheFlags();
 
 	//normal cost is 100
 	int iScale = 100;
@@ -3809,13 +3812,13 @@ int ArmyStepCost(const CvAStarNode* parent, const CvAStarNode* node, const SPath
 	if (pToPlot->isRoute())
 		//prefer to stay close to routes ... even if we cannot really use them
 		iScale = 54;
-	else if (pToPlot->isRoughGround())
+	else if (toFlags & CvPlot::PLOT_CACHE_ROUGH)
 		//try to avoid rough plots
 		iScale = 157;
-	else if (pFromPlot->isWater() != pToPlot->isWater() && !pFromPlot->isCity() && !pToPlot->isCity())
+	else if (((fromFlags ^ toFlags) & CvPlot::PLOT_CACHE_WATER) && !pFromPlot->isCity() && !pToPlot->isCity())
 		//embarkation change
 		iScale = 213; 
-	else if (pFromPlot->isWater() && pToPlot->isWater())
+	else if ((fromFlags & CvPlot::PLOT_CACHE_WATER) && (toFlags & CvPlot::PLOT_CACHE_WATER))
 		//movement on water is usually faster
 		iScale = 67; 
 	
