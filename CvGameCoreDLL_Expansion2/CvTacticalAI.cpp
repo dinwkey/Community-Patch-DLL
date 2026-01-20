@@ -9165,8 +9165,9 @@ void CvTacticalPosition::getPreferredAssignmentsForUnit(const SUnitStats& unit, 
 			//may not be able to end the turn ... but an admiral may want to go there anyway to perform a fleet repair
 			bool bCanMoveAfterAttack = moveToPlot.iRemainingMoves > GC.getMOVE_DENOMINATOR() && pUnit->canMoveAfterAttacking();
 			bool bCanRepairAfterMove = moveToPlot.iRemainingMoves > 0 && pUnit->canRepairFleet(testPlot.getPlot());
+			bool bCanProbablyEndTurn = canProbablyEndTurnAfterAssignment(moveToPlot, testPlot);
 
-			if (bCanMoveAfterAttack || bCanRepairAfterMove || canProbablyEndTurnAfterAssignment(moveToPlot, testPlot))
+			if (bCanMoveAfterAttack || bCanRepairAfterMove || bCanProbablyEndTurn)
 			{
 				if (pUnit->IsCanAttackRanged() && unit.iAttacksLeft > 0 && moveToPlot.iRemainingMoves > 0)
 				{
@@ -9175,6 +9176,15 @@ void CvTacticalPosition::getPreferredAssignmentsForUnit(const SUnitStats& unit, 
 					int iDummy = -1; //we may not be doing the attack after the move
 					int iDamageScore = ScorePlotForPotentialAttacks(pUnit, testPlot, eRelevantDomain, pUnit->IsFreeAttackMoves() ? unit.iAttacksLeft : min(unit.iAttacksLeft, moveToPlot.iRemainingMoves), *this, iDummy);
 					//note that "passive damage" ie covering our own units is implicit in the plot score for firstline units
+
+					//avoid suicidal reposition: if we can't threaten anything from this plot, only allow it when it is safe to end the turn
+					if (iDamageScore == 0)
+					{
+						int iUnitRange = pUnit->GetRange();
+						int iClosestEnemyRange = testPlot.getEnemyDistance(eRelevantDomain);
+						if (iClosestEnemyRange <= iUnitRange && !bCanProbablyEndTurn)
+							continue;
+					}
 
 					//score functions are biased so that only scores > 0 are interesting moves
 					//still allow mildly negative moves here, maybe we want to do combo moves later!
@@ -9201,7 +9211,7 @@ void CvTacticalPosition::getPreferredAssignmentsForUnit(const SUnitStats& unit, 
 					{
 						moveToPlot.iPlotScore += repairFleet.iBonusScore;
 					}
-					else if (!canProbablyEndTurnAfterAssignment(moveToPlot, testPlot))
+					else if (!bCanProbablyEndTurn)
 					{
 						continue;
 					}
@@ -11564,6 +11574,24 @@ bool TacticalAIHelpers::ExecuteUnitAssignments(PlayerTypes ePlayer, const std::v
 
 			//movement may indeed fail if we stumble upon an invisible unit!
 			bPostcondition = (pUnit->plot() == pToPlot);
+
+			//post-move safety for ranged units: if we couldn't attack and we're in danger, try to pull back
+			if (bPostcondition && pUnit->IsCanAttackRanged() && pUnit->canMove())
+			{
+				int iDanger = pUnit->GetDanger();
+				if (iDanger > pUnit->GetCurrHitPoints() / 2)
+				{
+					bool bAttacked = TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit, true);
+					if (!bAttacked)
+					{
+						CvPlot* pSafePlot = TacticalAIHelpers::FindSafestPlotInReach(pUnit, true, true);
+						if (pSafePlot && pSafePlot != pUnit->plot() && pUnit->canMoveInto(*pSafePlot, CvUnit::MOVEFLAG_DESTINATION))
+						{
+							pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pSafePlot->getX(), pSafePlot->getY(), CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER, false, false, MISSIONAI_OPMOVE);
+						}
+					}
+				}
+			}
 
 #ifdef TACTDEBUG
 			//check this only for moves, eg melee kills can fail this check because the pathfinder assumes attacks end the turn!
