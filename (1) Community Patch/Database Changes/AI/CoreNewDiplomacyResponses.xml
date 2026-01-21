@@ -317,6 +317,10 @@
 			<ResponseType>RESPONSE_DOF_BATTLE_BROTHERS</ResponseType>
 			<Response>TXT_KEY_DOF_BATTLE_BROTHERS%</Response>
 		</Row>
+		<Row LeaderType="GENERIC">
+			<ResponseType>RESPONSE_DOF_AI_DENOUNCE_REQUEST</ResponseType>
+			<Response>TXT_KEY_RESPONSE_DOF_AI_DENOUNCE_REQUEST%</Response>
+		</Row>
 
 		<!-- Denounce statements -->
 		<Row LeaderType="GENERIC">

@@ -1365,6 +1365,16 @@
 		<Row Tag="TXT_KEY_DOF_OLD_FRIENDS_4">
 			<Text>You are a great friend, and I cannot remember a time that we were at odds with each other. Shall we renew our Declaration of Friendship one more time?</Text>
 		</Row>
+		<!-- Ask friend to denounce a third party -->
+		<Row Tag="TXT_KEY_RESPONSE_DOF_AI_DENOUNCE_REQUEST_1">
+			<Text>Our friend {1_CivName} has proven untrustworthy. Will you join us in denouncing them?</Text>
+		</Row>
+		<Row Tag="TXT_KEY_RESPONSE_DOF_AI_DENOUNCE_REQUEST_2">
+			<Text>We can no longer tolerate {1_CivName}. Stand with us and issue a denouncement.</Text>
+		</Row>
+		<Row Tag="TXT_KEY_RESPONSE_DOF_AI_DENOUNCE_REQUEST_3">
+			<Text>{1_CivName} threatens the balance of power. Will you denounce them with us?</Text>
+		</Row>
 		<!-- Ask for Declaration of Friendship (we have been friends for at least three full terms) -->
 		<Row Tag="TXT_KEY_DOF_BATTLE_BROTHERS_1">
 			<Text>Once more into the breach, dear friend. Shall we renew our Declaration of Friendship?</Text>
