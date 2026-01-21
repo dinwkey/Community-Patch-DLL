@@ -528,8 +528,8 @@
     <File md5="2B718E3AF30F1128AFB822231609694B" import="0">Database Changes/AI/CoreLeaderFlavorChanges.sql</File>
     <File md5="042BFBDC576C7B8E89625FCC0AD686E7" import="0">Database Changes/AI/CoreLeaderPersonalityChanges.sql</File>
     <File md5="D90E9A6E3F9369E5957A6961E0E577C7" import="0">Database Changes/AI/CoreNewCitySpecializations.xml</File>
-    <File md5="1D7683387A6175487E1084179E356773" import="0">Database Changes/AI/CoreNewDiplomacyResponses.sql</File>
-    <File md5="7B2D35D0503AE31F74F494B870581C5E" import="0">Database Changes/AI/CoreNewDiplomacyResponses.xml</File>
+    <File md5="C9BA87CCD20929E1F36744B884339961" import="0">Database Changes/AI/CoreNewDiplomacyResponses.sql</File>
+    <File md5="E1FFFF6B6CEE747227AF25C4AC5ACAF7" import="0">Database Changes/AI/CoreNewDiplomacyResponses.xml</File>
     <File md5="9C92503FEA5317718CFE36553E478098" import="0">Database Changes/AI/CoreNewStrategies.xml</File>
     <File md5="3B14EEF8B19DBEB2F04B8E32FBAFF0E6" import="0">Database Changes/AI/CoreStrategyChanges.sql</File>
     <File md5="620B84C6CA1B160FEC6F80BE2BDAA32C" import="0">Database Changes/AI/FlavorChanges.sql</File>
@@ -593,7 +593,7 @@
     <File md5="C7C98A6854C566A3C532ED4234B2794E" import="0">Database Changes/Text/en_US/CoreNewGameOptionText.xml</File>
     <File md5="9B07290761EF50F6B18D3B3C163D3F07" import="0">Database Changes/Text/en_US/CoreNewReplayDataSetText.xml</File>
     <File md5="0FE6B115634BF464D3764753F238BEC9" import="0">Database Changes/Text/en_US/AI/CoreDiplomacyResponseTextChanges.sql</File>
-    <File md5="44072333AFC0E543652EBE9BC2C4548E" import="0">Database Changes/Text/en_US/AI/CoreNewDiplomacyResponseText.xml</File>
+    <File md5="99F66B9034653D8BD69A28E8D4A760CC" import="0">Database Changes/Text/en_US/AI/CoreNewDiplomacyResponseText.xml</File>
     <File md5="65C451A9D80617FA678FADA4BE928EC7" import="0">Database Changes/Text/en_US/AI/CoreStrategyTextChanges.sql</File>
     <File md5="A1C3C5A5CE29EC4F95904F737107A087" import="0">Database Changes/Text/en_US/City/CoreBuildingTextChanges.sql</File>
     <File md5="FB01A599C375DCF4223845744DB321FA" import="0">Database Changes/Text/en_US/City/CoreNewGreatWorkText.xml</File>
