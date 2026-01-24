@@ -1082,9 +1082,32 @@ void CvMap::updateAdjacency()
 //	--------------------------------------------------------------------------------
 void CvMap::verifyUnitValidPlot(PlayerTypes eForSpecificPlayer)
 {
-	for (int iI = 0; iI < numPlots(); iI++)
+	// Optimization: if checking for a specific player, only iterate their units' plots
+	// instead of all map plots. This is O(units) instead of O(map_size).
+	if (eForSpecificPlayer != NO_PLAYER)
 	{
-		plotByIndexUnchecked(iI)->verifyUnitValidPlot(eForSpecificPlayer);
+		CvPlayer& kPlayer = GET_PLAYER(eForSpecificPlayer);
+		// Collect unique plots with units first (a unit may move during verification)
+		std::set<int> plotsToCheck;
+		int iLoop = 0;
+		for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iLoop))
+		{
+			if (pLoopUnit->plot())
+				plotsToCheck.insert(pLoopUnit->plot()->GetPlotIndex());
+		}
+		
+		for (std::set<int>::iterator it = plotsToCheck.begin(); it != plotsToCheck.end(); ++it)
+		{
+			plotByIndexUnchecked(*it)->verifyUnitValidPlot(eForSpecificPlayer);
+		}
+	}
+	else
+	{
+		// Fallback: check all plots (original behavior)
+		for (int iI = 0; iI < numPlots(); iI++)
+		{
+			plotByIndexUnchecked(iI)->verifyUnitValidPlot(eForSpecificPlayer);
+		}
 	}
 }
 
