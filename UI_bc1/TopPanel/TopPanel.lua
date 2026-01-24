@@ -2126,6 +2126,7 @@ local function ResourcesToolTip( control )
 			----------------------------
 			-- Local Resources in Cities
 			----------------------------
+			local numResourceLocal = 0
 			tips:insert( "" )
 			tips:insert( Colorize(numResourceLocal) .. " " .. L"TXT_KEY_EO_LOCAL_RESOURCES_CBP" )
 
@@ -2143,6 +2144,7 @@ local function ResourcesToolTip( control )
 						end
 					end
 				end
+				numResourceLocal = numResourceLocal + numConnectedResource + numUnconnectedResource
 				local tip = ""
 				if numConnectedResource > 0 then
 					tip = " " .. ColorizeAbs( numConnectedResource ) .. resource.IconString
