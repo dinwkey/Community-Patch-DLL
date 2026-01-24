@@ -5601,28 +5601,24 @@ bool CvDealAI::IsMakeOfferForLuxuryResource(PlayerTypes eOtherPlayer, CvDeal* pD
 	{
 		ResourceTypes eResource = (ResourceTypes) iResourceLoop;
 
-		// Only look at Luxuries
+		// Only look at Luxuries - check this FIRST (cheap)
 		const CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eResource);
-
-		if (!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_RESOURCES, eResource))
-			continue;
-
 		if(pkResourceInfo == NULL || pkResourceInfo->getResourceUsage() != RESOURCEUSAGE_LUXURY)
 		{
 			continue;
 		}
 
-		//one copy is enough
+		// One copy is enough - check BEFORE expensive IsPossibleToTradeItem
 		if (m_pPlayer->getNumResourceAvailable(eResource, true) > 0)
 		{
 			continue;
 		}
 
-		// Don't ask if they have only one copy
+		// Don't ask if they have only one copy - check BEFORE expensive IsPossibleToTradeItem
 		if (GET_PLAYER(eOtherPlayer).getNumResourceAvailable(eResource, false) <= 1)
 			continue;
 
-		// Is it possible to trade that item?
+		// Is it possible to trade that item? (only call once with quantity=1)
 		if (!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_RESOURCES, eResource, 1))
 			continue;
 
@@ -5676,20 +5672,22 @@ bool CvDealAI::IsMakeOfferForStrategicResource(PlayerTypes eOtherPlayer, CvDeal*
 	{
 		ResourceTypes eResource = (ResourceTypes) iResourceLoop;
 
-		// Only look at strategic resources here
+		// Only look at strategic resources here - check FIRST (cheap)
 		const CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eResource);
 		if(pkResourceInfo == NULL || pkResourceInfo->getResourceUsage() != RESOURCEUSAGE_STRATEGIC)
 			continue;
 
-		if (!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_RESOURCES, eResource))
-			continue;
-
-		// If we have some to spare, don't get more
+		// If we have some to spare, don't get more - check BEFORE expensive IsPossibleToTradeItem
 		if (GetPlayer()->getNumResourceAvailable(eResource, true) > 2)
 			continue;
 
+		// Check they have any - check BEFORE expensive IsPossibleToTradeItem
 		int iNum = GET_PLAYER(eOtherPlayer).getNumResourceAvailable(eResource, false);
 		if (iNum <= 0)
+			continue;
+
+		// Is it possible to trade that item?
+		if (!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_RESOURCES, eResource))
 			continue;
 
 		// can't strike a deal with the other AI?
@@ -5903,17 +5901,18 @@ bool CvDealAI::IsMakeOfferForDefensivePact(PlayerTypes eOtherPlayer, CvDeal* pDe
 
 	// Logic for when THIS AI wants to make a RA is in the Diplo AI
 
-	// Can we actually complete this deal?
-	if(!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_DEFENSIVE_PACT))
-	{
-		return false;
-	}
-
+	// Check cheap "wants" conditions BEFORE expensive IsPossibleToTradeItem
 	if (!GetPlayer()->GetDiplomacyAI()->IsWantsDefensivePactWithPlayer(eOtherPlayer))
 	{
 		return false;
 	}
 	if (!GET_PLAYER(eOtherPlayer).isHuman(ISHUMAN_AI_DIPLOMACY) && !GET_PLAYER(eOtherPlayer).GetDiplomacyAI()->IsWantsDefensivePactWithPlayer(GetPlayer()->GetID()))
+	{
+		return false;
+	}
+
+	// Can we actually complete this deal?
+	if(!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_DEFENSIVE_PACT))
 	{
 		return false;
 	}
@@ -6085,11 +6084,20 @@ bool CvDealAI::IsMakeOfferForThirdPartyWar(PlayerTypes eOtherPlayer, CvDeal* pDe
 	int iBestValue = 0;
 	TeamTypes eBestTeam = NO_TEAM;
 
+	// Cache teams for cheap checks
+	TeamTypes eMyTeam = GetPlayer()->getTeam();
+	TeamTypes eTheirTeam = GET_PLAYER(eOtherPlayer).getTeam();
+
 	// find the first player associated with the team
 	for (int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
 	{
 		PlayerTypes eAgainstPlayer = (PlayerTypes)iI;
 		if (eAgainstPlayer == NO_PLAYER)
+		{
+			continue;
+		}
+		// Skip dead players early
+		if (!GET_PLAYER(eAgainstPlayer).isAlive())
 		{
 			continue;
 		}
@@ -6103,14 +6111,30 @@ bool CvDealAI::IsMakeOfferForThirdPartyWar(PlayerTypes eOtherPlayer, CvDeal* pDe
 		{
 			continue;
 		}
-		// Can we actually complete this deal?
-		if (!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_THIRD_PARTY_WAR, GET_PLAYER(eAgainstPlayer).getTeam()))
+
+		// Cheap early-exit checks BEFORE expensive IsPossibleToTradeItem
+		TeamTypes eTargetTeam = GET_PLAYER(eAgainstPlayer).getTeam();
+		// Can't target ourselves or the trade partner
+		if (eTargetTeam == eMyTeam || eTargetTeam == eTheirTeam)
+			continue;
+		// Already at war?
+		if (GET_TEAM(eTheirTeam).isAtWar(eTargetTeam))
+			continue;
+		// Must have met the target
+		if (!GET_TEAM(eTheirTeam).isHasMet(eTargetTeam) || !GET_TEAM(eMyTeam).isHasMet(eTargetTeam))
+			continue;
+		// Target can't be a vassal
+		if (GET_TEAM(eTargetTeam).IsVassalOfSomeone())
 			continue;
 
-		iWarValue = GetThirdPartyWarValue(false, eOtherPlayer, GET_PLAYER(eAgainstPlayer).getTeam());
+		// Can we actually complete this deal? (remaining expensive checks)
+		if (!pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_THIRD_PARTY_WAR, eTargetTeam))
+			continue;
+
+		iWarValue = GetThirdPartyWarValue(false, eOtherPlayer, eTargetTeam);
 		if(iWarValue != INT_MAX && iWarValue > iBestValue)
 		{
-			eBestTeam = GET_PLAYER(eAgainstPlayer).getTeam();
+			eBestTeam = eTargetTeam;
 			iBestValue = iWarValue;
 		}
 	}
@@ -6168,11 +6192,20 @@ bool CvDealAI::IsMakeOfferForThirdPartyPeace(PlayerTypes eOtherPlayer, CvDeal* p
 	int iBestValue = 0;
 	TeamTypes eBestTeam = NO_TEAM;
 
+	// Cache teams for cheap checks
+	TeamTypes eMyTeam = GetPlayer()->getTeam();
+	TeamTypes eTheirTeam = GET_PLAYER(eOtherPlayer).getTeam();
+
 	// find the first player associated with the team
 	for (int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
 	{
 		PlayerTypes eAgainstPlayer = (PlayerTypes)iI;
 		if (eAgainstPlayer == NO_PLAYER)
+		{
+			continue;
+		}
+		// Skip dead players early
+		if (!GET_PLAYER(eAgainstPlayer).isAlive())
 		{
 			continue;
 		}
@@ -6191,13 +6224,26 @@ bool CvDealAI::IsMakeOfferForThirdPartyPeace(PlayerTypes eOtherPlayer, CvDeal* p
 		{
 			continue;
 		}
-		// Can we actually complete this deal?
-		if(pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_THIRD_PARTY_PEACE, GET_PLAYER(eAgainstPlayer).getTeam()))
+
+		// Cheap early-exit checks BEFORE expensive IsPossibleToTradeItem
+		TeamTypes eTargetTeam = GET_PLAYER(eAgainstPlayer).getTeam();
+		// Can't target ourselves or the trade partner
+		if (eTargetTeam == eMyTeam || eTargetTeam == eTheirTeam)
+			continue;
+		// Must be at war with target (peace requires war)
+		if (!GET_TEAM(eTheirTeam).isAtWar(eTargetTeam))
+			continue;
+		// Must have met the target
+		if (!GET_TEAM(eTheirTeam).isHasMet(eTargetTeam) || !GET_TEAM(eMyTeam).isHasMet(eTargetTeam))
+			continue;
+
+		// Can we actually complete this deal? (remaining expensive checks)
+		if(pDeal->IsPossibleToTradeItem(eOtherPlayer, GetPlayer()->GetID(), TRADE_ITEM_THIRD_PARTY_PEACE, eTargetTeam))
 		{
-			iWarValue = GetThirdPartyPeaceValue(false, eOtherPlayer, GET_PLAYER(eAgainstPlayer).getTeam());
+			iWarValue = GetThirdPartyPeaceValue(false, eOtherPlayer, eTargetTeam);
 			if(iWarValue!=INT_MAX && iWarValue > iBestValue)
 			{
-				eBestTeam = GET_PLAYER(eAgainstPlayer).getTeam();
+				eBestTeam = eTargetTeam;
 				iBestValue = iWarValue;
 			}	
 		}
