@@ -9162,9 +9162,12 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 			if (!bCorporationInvulnerable)
 			{
 				TeamTypes eTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
+				
+				// At war = can always plunder (overrides Morocco UA restrictions)
 				if (GET_TEAM(GET_PLAYER(m_eOwner).getTeam()).isAtWar(eTeam))
 					return true;
 
+				// Morocco UA: can plunder without war (but with diplomatic restrictions)
 				if (GET_PLAYER(m_eOwner).GetPlayerTraits()->IsCanPlunderWithoutWar())
 				{
 					PlayerTypes eTradeUnitDest = GC.getGame().GetGameTrade()->GetDestFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
@@ -9189,14 +9192,19 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 							continue;  // Skip this trade route - cannot plunder
 						}
 						
-						// All checks passed - can plunder
+						// All checks passed - can plunder without war
 						return true;
 					}
 				}
+				
+				// Cannot plunder this trade route (not at war, not Morocco, or diplomatic restrictions)
+				bShowTooltip = true;
 			}
-
-			// this TR cannot be plundered because we're not at war with the player or because of their corporation. The action button should be displayed with a tooltip explaining why the TR can't be plundered (unless there's another trade route here that can be plundered)
-			bShowTooltip = true;
+			else
+			{
+				// Corporation makes trade routes invulnerable
+				bShowTooltip = true;
+			}
 		}
 		return bOnlyTestVisibility && bShowTooltip;
 	}
