@@ -4679,6 +4679,85 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 							iTargetValue += 30; // Target is near our main objective
 						}
 						
+						// COORDINATION WITH GROUND/NAVAL ATTACKS
+						// Missiles should support friendly units that are engaging this target
+						{
+							CvPlot* pTargetPlot = pDefender->plot();
+							int iFriendlyMeleeAdjacent = pTargetPlot->GetNumFriendlyUnitsAdjacent(m_pPlayer->getTeam(), NO_DOMAIN, false);
+							
+							// Friendly melee units adjacent to target - they're attacking!
+							if (iFriendlyMeleeAdjacent > 0)
+							{
+								iTargetValue += 50; // Help our troops finish the job
+								
+								// Extra bonus if multiple units engaging
+								if (iFriendlyMeleeAdjacent >= 2)
+									iTargetValue += 25;
+								
+								// Even more if target is wounded - coordinate for the kill
+								int iDefenderHPPct = (pDefender->GetCurrHitPoints() * 100) / pDefender->GetMaxHitPoints();
+								if (iDefenderHPPct <= 50)
+								{
+									iTargetValue += 40; // Wounded target with friendlies engaging - finish it!
+								}
+							}
+							
+							// Check if our ground forces are in range to follow up
+							int iFriendlyUnitsInRange = 0;
+							for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+							{
+								CvPlot* pAdjacentPlot = plotDirection(pTargetPlot->getX(), pTargetPlot->getY(), (DirectionTypes)iDir);
+								if (pAdjacentPlot)
+								{
+									// Check 2-ring for ranged that can follow up
+									for (int iRing = 0; iRing < RING2_PLOTS; iRing++)
+									{
+										CvPlot* pRingPlot = iterateRingPlots(pAdjacentPlot, iRing);
+										if (pRingPlot)
+										{
+											CvUnit* pFriendlyUnit = pRingPlot->getBestDefender(m_pPlayer->GetID());
+											if (pFriendlyUnit && pFriendlyUnit->IsCanAttackRanged() && pFriendlyUnit->canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+											{
+												iFriendlyUnitsInRange++;
+											}
+										}
+									}
+								}
+							}
+							
+							// Ranged units can follow up our missile strike
+							if (iFriendlyUnitsInRange >= 2)
+							{
+								iTargetValue += 35; // Good coordination opportunity
+							}
+							else if (iFriendlyUnitsInRange >= 1)
+							{
+								iTargetValue += 15;
+							}
+							
+							// SOFTENING FOR ASSAULT: If target is blocking advance toward objective
+							if (pApproximateTargetPlot)
+							{
+								// Is the enemy between us and our objective?
+								int iTargetToObjective = plotDistance(*pTargetPlot, *pApproximateTargetPlot);
+								if (iTargetToObjective <= 2)
+								{
+									iTargetValue += 30; // Target is blocking our path to objective
+									
+									// Check if city assault is imminent
+									if (pApproximateTargetPlot->isCity())
+									{
+										CvCity* pTargetCity = pApproximateTargetPlot->getPlotCity();
+										if (pTargetCity && pTargetCity->getDamage() >= pTargetCity->GetMaxHitPoints() / 2)
+										{
+											// City is wounded - we're close to capturing
+											iTargetValue += 50; // Clear defenders for the final push!
+										}
+									}
+								}
+							}
+						}
+						
 						// Apply value threshold: don't fire if target isn't worth the missile
 						int iMinValueThreshold = 50; // Baseline for "worth firing"
 						
