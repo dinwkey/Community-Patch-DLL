@@ -9977,6 +9977,67 @@ bool isKillAssignment(eUnitAssignmentType eAssignmentType)
 		eAssignmentType == A_RANGEKILL;
 }
 
+<<<<<<< HEAD
+static bool IsSubmarineUnit(const CvUnit* pUnit)
+{
+	if (!pUnit)
+		return false;
+
+	if (pUnit->AI_getUnitAIType() == UNITAI_SUBMARINE)
+		return true;
+
+	static const UnitCombatTypes eSubCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_SUBMARINE");
+	return (pUnit->getUnitCombatType() == eSubCombat);
+}
+
+// Check if a unit can detect submarines (destroyers, ASW aircraft, etc.)
+static bool IsAntiSubmarineUnit(const CvUnit* pUnit)
+{
+	if (!pUnit)
+		return false;
+
+	static const InvisibleTypes eSubInvisible = (InvisibleTypes)GC.getInfoTypeForString("INVISIBLE_SUBMARINE");
+	if (eSubInvisible == NO_INVISIBLE)
+		return false;
+
+	return (pUnit->getSeeInvisibleType() == eSubInvisible);
+}
+
+static int CountEnemySubDetectUnitsAroundPlot(const CvPlot* pPlot, const CvUnit* pUnit, int iRange)
+{
+	if (!pPlot || !pUnit)
+		return 0;
+
+	static const InvisibleTypes eSubInvisible = (InvisibleTypes)GC.getInfoTypeForString("INVISIBLE_SUBMARINE");
+	if (eSubInvisible == NO_INVISIBLE)
+		return 0;
+
+	TeamTypes eOurTeam = pUnit->getTeam();
+	int iCount = 0;
+
+	for (int i = RING0_PLOTS; i < RING_PLOTS[iRange]; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pPlot, i);
+		if (!pLoopPlot)
+			continue;
+
+		if (!pLoopPlot->isVisible(eOurTeam))
+			continue;
+
+		CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), pUnit, true);
+		if (!pEnemy)
+			continue;
+
+		if (!pEnemy->isEnemy(eOurTeam, pLoopPlot))
+			continue;
+
+		if (pEnemy->getSeeInvisibleType() == eSubInvisible)
+			iCount++;
+	}
+
+	return iCount;
+}
+
 int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignment, const CvTacticalPlot* testPlot, int iDanger,
 							CvTacticalPlot::eTactPlotDomain eRelevantDomain, int iSelfDamage,
 							const CvTacticalPosition& assumedPosition, eUnitMoveEvalMode evalMode, bool bRelaxedCheck, bool bOnlyCheckImpossible)
@@ -10100,6 +10161,60 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 	//when in doubt, hide from the enemy
 	if (!pTestPlot->IsKnownVisibleToEnemy(pUnit->getOwner()))
 		iResult++;
+
+	// DESTROYER ASW POSITIONING: Anti-submarine units should position to detect and screen
+	// This encourages destroyers to patrol ahead of valuable ships and near detected subs
+	if (IsAntiSubmarineUnit(pUnit) && pUnit->getDomainType() == DOMAIN_SEA)
+	{
+		// Check for nearby friendly high-value ships that need ASW screening
+		bool bNearCarrier = false;
+		bool bNearCapitalShip = false;
+		int iASWScreenBonus = 0;
+		
+		for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
+			if (!pLoopPlot)
+				continue;
+			
+			for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+			{
+				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+				if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
+					continue;
+				
+				if (pLoopUnit->getDomainType() != DOMAIN_SEA)
+					continue;
+				
+				// Carrier screening is highest priority
+				if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+				{
+					bNearCarrier = true;
+					iASWScreenBonus += 8;
+				}
+				// Other capital ships also benefit from ASW screening
+				else if (pLoopUnit->GetBaseCombatStrength() > pUnit->GetBaseCombatStrength() && 
+						 !IsAntiSubmarineUnit(pLoopUnit))
+				{
+					bNearCapitalShip = true;
+					iASWScreenBonus += 3;
+				}
+			}
+		}
+		
+		// Bonus for screening high-value assets
+		if (bNearCarrier)
+			iResult += min(iASWScreenBonus, 15);
+		else if (bNearCapitalShip)
+			iResult += min(iASWScreenBonus, 8);
+		
+		// Bonus for positioning ahead of the fleet (toward enemies)
+		// ASW ships should be between enemies and valuable ships
+		if ((bNearCarrier || bNearCapitalShip) && testPlot.getEnemyDistance(CvTacticalPlot::TD_SEA) < 3)
+		{
+			iResult += 5; // Forward screening position
+		}
+	}
 
 	//try to occupy enemy citadels!
 	int iImprovementDamage = TacticalAIHelpers::GetOtherPlayerImprovementDamage(pTestPlot, assumedPosition.getPlayer(), true);
@@ -10971,6 +11086,96 @@ static STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, cons
 				{
 					result.iBonusScore += 30;
 				}
+			}
+		}
+		
+		// DESTROYER SUB-HUNTING COORDINATION
+		// Anti-submarine warfare units (destroyers) should prioritize hunting submarines
+		// This creates proper hunter-killer tactics where ASW units seek out and destroy subs
+		CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+		if (pEnemyUnit && IsAntiSubmarineUnit(pUnit) && IsSubmarineUnit(pEnemyUnit))
+		{
+			// Major bonus for ASW units attacking submarines - this is their primary role
+			result.iBonusScore += 60;
+			
+			// Extra bonus if we can kill the sub
+			if (bIsKill)
+			{
+				result.iBonusScore += 50; // Eliminating subs is critical for fleet protection
+			}
+			
+			// Bonus based on sub threat level
+			// High-value targets: nuclear subs, attack subs with missiles
+			if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SUBMARINE)
+			{
+				// Check if sub can carry missiles/nukes (very dangerous)
+				if (pEnemyUnit->cargoSpace() > 0)
+				{
+					result.iBonusScore += 40; // Nuclear/missile sub - highest priority
+				}
+				else
+				{
+					result.iBonusScore += 20; // Regular attack sub
+				}
+			}
+			
+			// Check if we have friendly units that need protection from this sub
+			bool bSubThreatensFriendlies = false;
+			int iThreatenedValue = 0;
+			
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+			{
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (!pLoopUnit || pLoopUnit->getDomainType() != DOMAIN_SEA)
+					continue;
+				
+				// Check if this friendly unit is in danger from the submarine
+				int iDistToSub = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+				if (iDistToSub <= pEnemyUnit->GetRange() + 1) // Sub could attack next turn
+				{
+					bSubThreatensFriendlies = true;
+					
+					// Carriers are particularly vulnerable and valuable
+					if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+					{
+						iThreatenedValue += 100;
+					}
+					// Other capital ships
+					else if (pLoopUnit->GetBaseCombatStrength() > pUnit->GetBaseCombatStrength())
+					{
+						iThreatenedValue += 40;
+					}
+					// Other naval units
+					else
+					{
+						iThreatenedValue += 15;
+					}
+				}
+			}
+			
+			// Big bonus for protecting threatened friendlies
+			if (bSubThreatensFriendlies)
+			{
+				result.iBonusScore += min(iThreatenedValue, 150); // Cap at +150
+			}
+			
+			// Coordination bonus: if we have multiple ASW units, coordinate attack
+			int iASWCount = 0;
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+			{
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (pLoopUnit && IsAntiSubmarineUnit(pLoopUnit))
+				{
+					int iDistToTarget = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+					if (iDistToTarget <= 3) // Can engage or support
+						iASWCount++;
+				}
+			}
+			
+			// More ASW units nearby = coordinated hunt bonus
+			if (iASWCount >= 2)
+			{
+				result.iBonusScore += 20; // Pack hunting bonus
 			}
 		}
 	}
