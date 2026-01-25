@@ -7200,6 +7200,53 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						iDamage += 35;
 					}
 					// Regular melee further away - lowest priority (no bonus)
+					
+					// Embarked units are extremely vulnerable targets - prioritize them!
+					// Similar logic to city ranged strike in getBestRangedStrikeTarget()
+					if (pOtherUnit->isEmbarked())
+					{
+						// Embarked units have very low combat strength - easy kills
+						iDamage += 50; // Base bonus for targeting embarked
+						
+						// Kill bonus - embarked are often one-shot
+						if (iDamage >= pOtherUnit->GetCurrHitPoints())
+							iDamage += 60;
+						
+						// Adjacent embarked is a landing threat
+						if (pCity && plotDistance(*pLoopPlot, *pCity->plot()) == 1)
+							iDamage += 40;
+						
+						// Embarked siege/ranged are high value (kill before they land and bombard)
+						if (pOtherUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD || pOtherUnit->IsCanAttackRanged())
+							iDamage += 30;
+					}
+					
+					// Escort protection check - if a naval unit is protecting embarked units,
+					// bonus for killing the escort to expose the transports
+					if (pLoopPlot->isWater() && !pOtherUnit->isEmbarked() && pOtherUnit->IsCombatUnit())
+					{
+						int iEmbarkedOnPlot = 0;
+						for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+						{
+							CvUnit* pStackUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+							if (pStackUnit && pStackUnit != pOtherUnit && pStackUnit->isEmbarked() &&
+								GET_TEAM(pUnit->getTeam()).isAtWar(pStackUnit->getTeam()))
+							{
+								iEmbarkedOnPlot++;
+							}
+						}
+						
+						if (iEmbarkedOnPlot > 0)
+						{
+							// This naval unit is escorting embarked units - killing it exposes them!
+							// +40 base + 15 per embarked unit protected
+							iDamage += 40 + (iEmbarkedOnPlot * 15);
+							
+							// Extra bonus if we can kill the escort
+							if (iDamage >= pOtherUnit->GetCurrHitPoints())
+								iDamage += 30;
+						}
+					}
 				}
 
 				if (iDamage > iMaxDamage)
