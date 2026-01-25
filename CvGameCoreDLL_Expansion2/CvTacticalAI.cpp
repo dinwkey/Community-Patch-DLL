@@ -5597,13 +5597,25 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 			int iTargetHitpoints = pDefender ? pDefender->GetCurrHitPoints() : 0;
 			if(IsExpectedToDamageWithRangedAttack(pLoopUnit, pTarget, MIN(iTargetHitpoints/20, 3)))
 			{
-				//first-line ranged and air
+				//first-line ranged and air - ranged units should attack BEFORE melee to soften targets
 				CvTacticalUnit unit(pLoopUnit->GetID());
+				int iAttackStrength = 0;
 				if (bIsCityTarget)
-					unit.SetAttackStrength(pLoopUnit->GetMaxRangedCombatStrength(NULL, pTarget->getPlotCity(), true, NULL, NULL, true, true));
+					iAttackStrength = pLoopUnit->GetMaxRangedCombatStrength(NULL, pTarget->getPlotCity(), true, NULL, NULL, true, true);
 				else
-					unit.SetAttackStrength(pLoopUnit->GetMaxRangedCombatStrength(pDefender, NULL, true, NULL, NULL, true, true));
+					iAttackStrength = pLoopUnit->GetMaxRangedCombatStrength(pDefender, NULL, true, NULL, NULL, true, true);
 
+				// Ranged-before-melee coordination: boost ranged priority when attacking cities
+				// This ensures ranged units soften the city before melee units commit to the assault
+				// Melee units take damage from city counterattacks and garrison, so ranged should weaken first
+				if (bIsCityTarget)
+				{
+					// Give ranged units a significant priority boost vs cities
+					// This effectively doubles their priority in the sort order
+					iAttackStrength = iAttackStrength * 3 / 2;
+				}
+				
+				unit.SetAttackStrength(iAttackStrength);
 				unit.SetHealthPercent(pLoopUnit->GetCurrHitPoints(), pLoopUnit->GetMaxHitPoints());
 				m_CurrentMoveUnits.push_back(unit);
 				rtnValue = true;
