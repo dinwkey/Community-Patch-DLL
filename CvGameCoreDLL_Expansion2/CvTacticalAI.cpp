@@ -2603,7 +2603,7 @@ void CvTacticalAI::PlotAirPatrolMoves()
 /// Spend money to buy defenses
 void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 {
-	if(!pZone || pZone->IsWater())
+	if(!pZone)
 		return;
 
 	CvCity* pCity = pZone->GetZoneCity();
@@ -2619,6 +2619,76 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 	if (MOD_BALANCE_PURCHASED_UNIT_DAMAGE && pCity->getDamage() * 2 > pCity->GetMaxHitPoints())
 		bWantUnits = false;
 
+	// Handle water zones - proactive naval defense buildup
+	if (pZone->IsWater())
+	{
+		if (!pCity->isCoastal())
+			return;
+		
+		// Check for naval threats
+		bool bEnemyNavalPresence = (pZone->GetEnemyNavalUnitCount() > 0);
+		bool bEnemyDominated = (pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY);
+		bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+		
+		// PROACTIVE: Also check for aggressive naval neighbors
+		bool bNavalThreatDetected = false;
+		for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS && !bNavalThreatDetected; iPlayer++)
+		{
+			PlayerTypes eOther = (PlayerTypes)iPlayer;
+			if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive())
+				continue;
+			
+			// At war with them?
+			if (!m_pPlayer->IsAtWarWith(eOther))
+				continue;
+			
+			// Do they have naval strength nearby?
+			CvTacticalDominanceZone* pEnemyZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
+			if (pEnemyZone && pEnemyZone->GetEnemyNavalStrength() > pEnemyZone->GetFriendlyNavalStrength())
+				bNavalThreatDetected = true;
+		}
+		
+		// Count enemy naval units in wider area (proactive detection) - range 3-5 tiles out
+		int iNearbyEnemyNaval = 0;
+		CvPlot* pCityPlot = pCity->plot();
+		for (int i = RING3_PLOTS; i < RING5_PLOTS; i++)
+		{
+			CvPlot* pNearby = iterateRingPlots(pCityPlot, i);
+			if (pNearby && pNearby->isWater() && pNearby->isVisible(m_pPlayer->getTeam()))
+			{
+				CvUnit* pUnit = pNearby->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true);
+				if (pUnit && pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_SEA)
+					iNearbyEnemyNaval++;
+			}
+		}
+		bool bEnemyNavalBuildupNearby = (iNearbyEnemyNaval >= 2);
+		
+		// Buy naval defenders if threatened
+		if ((bEnemyNavalPresence || bEnemyDominated || bBlockaded || bNavalThreatDetected || bEnemyNavalBuildupNearby) && bWantUnits)
+		{
+			if (!MOD_BALANCE_UNIT_INVESTMENTS)
+			{
+				// Buy naval melee (can capture cities) if we don't have naval presence
+				if (pZone->GetFriendlyNavalUnitCount() < pZone->GetEnemyNavalUnitCount() + 1)
+				{
+					m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
+					
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						strLogString.Format("Proactive naval defense: Buying ATTACK_SEA for %s (enemy naval: %d, friendly: %d)%s%s%s",
+							pCity->getName().GetCString(), pZone->GetEnemyNavalUnitCount(), pZone->GetFriendlyNavalUnitCount(),
+							bBlockaded ? " [BLOCKADED]" : "", bEnemyNavalBuildupNearby ? " [BUILDUP]" : "",
+							bNavalThreatDetected ? " [THREAT]" : "");
+						LogTacticalMessage(strLogString);
+					}
+				}
+			}
+		}
+		return;
+	}
+
+	// Land zone handling (original code)
 	// If we need additional units - ignore the supply limit here, we're probably losing units anyway
 	if (pZone->GetOverallDominanceFlag()>TACTICAL_DOMINANCE_FRIENDLY || pCity->isUnderSiege())
 	{
@@ -2633,15 +2703,36 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 				m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_RANGED, pCity);
 			else if (bWantUnits)
 			{
-				//in water zones buy naval melee
-				if (pZone->IsWater() && pCity->isCoastal())
-					m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
-				else
-					//otherwise buy defensive land units
-					if (!MOD_AI_UNIT_PRODUCTION)
-						m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(GC.getGame().randRangeExclusive(0, 5, CvSeeder(pCity->plot()->GetPseudoRandomSeed())) < 2 ? UNITAI_COUNTER : UNITAI_DEFENSE, pCity);
-					else //AI Unit Production : Counter is AA only now
-						m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_DEFENSE, pCity);
+				//buy defensive land units
+				if (!MOD_AI_UNIT_PRODUCTION)
+					m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(GC.getGame().randRangeExclusive(0, 5, CvSeeder(pCity->plot()->GetPseudoRandomSeed())) < 2 ? UNITAI_COUNTER : UNITAI_DEFENSE, pCity);
+				else //AI Unit Production : Counter is AA only now
+					m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_DEFENSE, pCity);
+			}
+		}
+	}
+	
+	// ALSO check if this land zone city needs naval defense (coastal city with naval threat)
+	if (pCity->isCoastal() && bWantUnits && !MOD_BALANCE_UNIT_INVESTMENTS)
+	{
+		CvTacticalDominanceZone* pWaterZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
+		if (pWaterZone)
+		{
+			bool bNavalThreat = (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY) ||
+				(pWaterZone->GetEnemyNavalUnitCount() > pWaterZone->GetFriendlyNavalUnitCount());
+			bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+			
+			if ((bNavalThreat || bBlockaded) && pWaterZone->GetFriendlyNavalUnitCount() < 2)
+			{
+				m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
+				
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("Naval defense for land zone: Buying ATTACK_SEA for coastal city %s%s",
+						pCity->getName().GetCString(), bBlockaded ? " [BLOCKADED]" : "");
+					LogTacticalMessage(strLogString);
+				}
 			}
 		}
 	}
