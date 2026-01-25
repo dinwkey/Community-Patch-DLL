@@ -2571,6 +2571,61 @@ void CvPlayer::initFreeUnits()
 
 void CvPlayer::addFreeUnitAI(UnitAITypes eUnitAI, bool bGameStart, int iCount, bool bCompleteKills)
 {
+	// City-States: ensure at least one ranged defender if they have none
+	if (isMinorCiv() && eUnitAI == UNITAI_DEFENSE && iCount > 0)
+	{
+		bool bHasRanged = false;
+		int iLoop = 0;
+		for (CvUnit* pLoopUnit = firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = nextUnit(&iLoop))
+		{
+			if (!pLoopUnit->IsCivilianUnit() && pLoopUnit->IsCanAttackRanged())
+			{
+				bHasRanged = true;
+				break;
+			}
+		}
+
+		if (!bHasRanged)
+		{
+			UnitTypes eBestRangedUnit = NO_UNIT;
+			int iBestRangedValue = 0;
+
+			for (int iI = 0; iI < GC.getNumUnitClassInfos(); iI++)
+			{
+				const UnitClassTypes eUnitClass = static_cast<UnitClassTypes>(iI);
+				UnitTypes eLoopUnit = GetSpecificUnitType(eUnitClass);
+				if (eLoopUnit == NO_UNIT)
+					continue;
+
+				CvUnitEntry* pkUnitInfo = GC.getUnitInfo(eLoopUnit);
+				if (!pkUnitInfo)
+					continue;
+
+				if (!pkUnitInfo->GetUnitAIType(UNITAI_RANGED) && pkUnitInfo->GetDefaultUnitAIType() != UNITAI_RANGED)
+					continue;
+
+				if (!canTrainUnit(eLoopUnit))
+					continue;
+
+				// Prefer higher-cost (stronger) ranged unit
+				int iValue = pkUnitInfo->GetProductionCost();
+				if (iValue > iBestRangedValue)
+				{
+					eBestRangedUnit = eLoopUnit;
+					iBestRangedValue = iValue;
+				}
+			}
+
+			if (eBestRangedUnit != NO_UNIT)
+			{
+				addFreeUnit(eBestRangedUnit, bGameStart, UNITAI_RANGED, bCompleteKills);
+				iCount--;
+				if (iCount <= 0)
+					return;
+			}
+		}
+	}
+
 	UnitTypes eBestUnit = NO_UNIT;
 	int iBestUnitValue = 0;
 

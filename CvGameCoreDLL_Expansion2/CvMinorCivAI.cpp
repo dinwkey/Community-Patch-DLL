@@ -4502,6 +4502,21 @@ void CvMinorCivAI::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+
+	// Validate minor civ type after loading - if the type couldn't be resolved from the database
+	// (e.g., mod was removed), the player should not be considered a valid city-state.
+	// Log a warning so players know why their city-state disappeared.
+	MinorCivTypes eMinorCivType = GetMinorCivType();
+	if (eMinorCivType == NO_MINORCIV && m_pPlayer && m_pPlayer->isAlive())
+	{
+		CvString strLogMsg;
+		strLogMsg.Format("WARNING: Minor civ player %d (%s) has invalid minor civ type (NO_MINORCIV) after loading save. The city-state's mod may have been removed. Setting status to NO_MINOR_CIV_STATUS_TYPE.", 
+			m_pPlayer->GetID(), m_pPlayer->getName());
+		CUSTOMLOG(strLogMsg.c_str());
+		
+		// Mark this as an invalid city-state so game logic can handle it gracefully
+		m_eStatus = NO_MINOR_CIV_STATUS_TYPE;
+	}
 }
 
 /// Serialization write
@@ -10913,6 +10928,16 @@ UnitTypes CvMinorCivAI::GetBestUnitGiftFromPlayer(PlayerTypes ePlayer)
 {
 	CvWeightedVector<UnitTypes> veValidUnits;
 	bool bAllowNaval = GetPlayer()->getCapitalCity()->isCoastal(10) && GET_PLAYER(ePlayer).GetNumEffectiveCoastalCities() > 1;
+	bool bHasRanged = false;
+	int iUnitLoop = 0;
+	for (CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = m_pPlayer->nextUnit(&iUnitLoop))
+	{
+		if (!pLoopUnit->IsCivilianUnit() && pLoopUnit->IsCanAttackRanged())
+		{
+			bHasRanged = true;
+			break;
+		}
+	}
 
 	// Loop through all Unit Classes
 	for (int iUnitLoop = 0; iUnitLoop < GC.getNumUnitInfos(); iUnitLoop++)

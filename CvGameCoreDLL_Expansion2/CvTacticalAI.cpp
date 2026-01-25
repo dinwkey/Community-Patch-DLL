@@ -2813,6 +2813,10 @@ bool CvTacticalAI::CheckForEnemiesNearArmy(CvArmyAI* pArmy)
 		return false;
 
 	set<CvUnit*, PrSortByUnitId> ourUnitsInitial;
+	// Cache enemy attackers per plot to avoid redundant GetPossibleAttackers calls
+	map<int, vector<CvUnit*>> cachedEnemyAttackers;
+	set<CvPlot*, PrSortByPlotIndex> allEnemyPlots;
+
 	CvUnit* pUnit = pArmy->GetFirstUnit();
 	while (pUnit)
 	{
@@ -4773,16 +4777,36 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				if (TacticalAIHelpers::IsPlayerCitadel(pUnitPlot, m_pPlayer->GetID()) && pUnitPlot->IsBorderLand(m_pPlayer->GetID()) && pLoopUnit->getDomainType() == DOMAIN_LAND)
 					continue;
 
-				// Want to put ranged units in cities to give them a ranged attack (but siege units should be used for offense)
+				CvCity* pCity = pTarget->getPlotCity();
+				bool bCityInDanger = pCity && (pCity->isInDangerOfFalling() || pCity->getDamage() >= pCity->GetMaxHitPoints() / 2);
+
+				// Want to put ranged units in cities to give them a ranged attack
+				// Siege units can also attack but are better used for offense
+				// Melee units can't attack from inside - only their combat strength helps city defense
 				switch (pLoopUnit->AI_getUnitAIType())
 				{
 				case UNITAI_RANGED:
 					if (pLoopUnit->GetRange() > 1)
-						iExtraScore += 30 + pTarget->getPlotCity()->getGarrisonRangedAttackModifier();
+						iExtraScore += 30 + pCity->getGarrisonRangedAttackModifier();
 					break;
 				case UNITAI_DEFENSE_AIR:
-				case UNITAI_DEFENSE:
 					iExtraScore += 20;
+					break;
+				case UNITAI_CITY_BOMBARD:
+					// Siege units can attack from cities but are better used for offense
+					// Still preferred over melee since they CAN attack from inside
+					iExtraScore -= 10;
+					break;
+				case UNITAI_DEFENSE:
+				case UNITAI_ATTACK:
+				case UNITAI_FAST_ATTACK:
+				case UNITAI_COUNTER:
+					// All melee units can't attack from inside cities
+					// When city is in danger, higher combat strength helps prevent capture
+					if (bCityInDanger)
+						iExtraScore += pLoopUnit->GetBaseCombatStrength() / 5; // stronger units = better defense
+					else
+						iExtraScore -= 20; // not ideal garrison - can't attack
 					break;
 				default:
 					//nothing
@@ -4801,6 +4825,8 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 					continue;
 
 				// Don't put units with a defense boosted from promotions in cities, these boosts are ignored
+				// Exception: when city is in danger, defense bonus helps prevent capture
+				if (!bCityInDanger)
 				iExtraScore -= pLoopUnit->getDefenseModifier();
 			}
 			else if (eMove == AI_TACTICAL_GUARD)
