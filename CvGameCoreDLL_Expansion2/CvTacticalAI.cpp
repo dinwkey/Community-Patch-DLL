@@ -4316,8 +4316,31 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					else
 						iValue -= pDefender->GetAirStrikeDefenseDamage(pUnit, false);
 
-					if (pTestPlot->GetBestInterceptor(pUnit->getOwner(),NULL,false,true) != NULL)
-						iValue /= 2;
+					// Check interceptor threat - this is called AFTER air sweeps, so check current status
+					// GetInterceptorCount returns how many interceptors can still intercept us
+					int iInterceptorCount = pTestPlot->GetInterceptorCount(pUnit->getOwner(), pUnit, false, true);
+					if (iInterceptorCount > 0)
+					{
+						// Interceptors still active - penalize based on how many and our health
+						int iUnitHPct = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+						
+						if (iInterceptorCount >= 2)
+						{
+							// Multiple interceptors - very dangerous, heavy penalty
+							iValue /= 3;
+						}
+						else if (iUnitHPct < 70)
+						{
+							// Single interceptor but we're damaged - risky
+							iValue /= 2;
+						}
+						else
+						{
+							// Single interceptor and we're healthy - moderate risk
+							iValue = iValue * 2 / 3;
+						}
+					}
+					// No interceptors (sweeps cleared them or none existed) - full value!
 				}
 
 				// AIR-GROUND COORDINATION: Adjust value based on ground combat needs
@@ -4413,12 +4436,18 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 
 void CvTacticalAI::ExecuteAirSweep(CvPlot* pTargetPlot)
 {
-	//maybe there are no interceptors and we just had the fighter for air recon ...
-	if (!pTargetPlot && pTargetPlot->GetInterceptorCount(m_pPlayer->GetID(), NULL, false, true) == 0)
+	// Fix: use || not && - can't call methods on NULL pointer
+	if (!pTargetPlot || pTargetPlot->GetInterceptorCount(m_pPlayer->GetID(), NULL, false, true) == 0)
 		return;
 
+	// Sort sweep units by strength - send strongest fighters first to maximize interceptor kills
+	std::stable_sort(m_CurrentAirSweepUnits.begin(), m_CurrentAirSweepUnits.end());
+
+	// Track interceptors remaining - stop sweeping once they're cleared
+	int iInterceptorsRemaining = pTargetPlot->GetInterceptorCount(m_pPlayer->GetID(), NULL, false, true);
+
 	// Start by sending possible air sweeps
-	for (unsigned int iI = 0; iI < m_CurrentAirSweepUnits.size(); iI++)
+	for (unsigned int iI = 0; iI < m_CurrentAirSweepUnits.size() && iInterceptorsRemaining > 0; iI++)
 	{
 		CvUnit* pUnit = m_pPlayer->getUnit(m_CurrentAirSweepUnits[iI].GetID());
 
@@ -4426,16 +4455,28 @@ void CvTacticalAI::ExecuteAirSweep(CvPlot* pTargetPlot)
 		{
 			if (pUnit->canAirSweep())
 			{
+				// Check unit health - don't send damaged fighters on risky sweeps
+				int iHPct = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+				if (iHPct < 50 && iInterceptorsRemaining > 1)
+				{
+					// Damaged fighter vs multiple interceptors - skip, save for later
+					continue;
+				}
+
 				pUnit->PushMission(CvTypes::getMISSION_AIR_SWEEP(), pTargetPlot->getX(), pTargetPlot->getY());
 				if (pUnit->isOutOfAttacks())
 					UnitProcessed(m_CurrentAirSweepUnits[iI].GetID());
-			}
 
-			if (GC.getLogging() && GC.getAILogging())
-			{
-				CvString strMsg;
-				strMsg.Format("Starting air sweep with %s %d before attack on X: %d, Y: %d", pUnit->getName().c_str(), pUnit->GetID(), pTargetPlot->getX(), pTargetPlot->getY());
-				LogTacticalMessage(strMsg);
+				// Update interceptor count after sweep (interceptor may have been killed or used up)
+				iInterceptorsRemaining = pTargetPlot->GetInterceptorCount(m_pPlayer->GetID(), NULL, false, true);
+
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strMsg;
+					strMsg.Format("Air sweep with %s %d at X: %d, Y: %d - interceptors remaining: %d", 
+						pUnit->getName().c_str(), pUnit->GetID(), pTargetPlot->getX(), pTargetPlot->getY(), iInterceptorsRemaining);
+					LogTacticalMessage(strMsg);
+				}
 			}
 		}
 	}
