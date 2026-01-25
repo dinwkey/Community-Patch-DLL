@@ -16629,7 +16629,32 @@ bool CvCity::NeedsGarrison() const
 
 	//this allows the player to use the garrison for settler escorts
 	if (kPlayer.IsEarlyExpansionPhase())
-		return false;
+	{
+		bool bThreatened = false;
+		TeamTypes eTeam = kPlayer.getTeam();
+		for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; ++iPlayer)
+		{
+			PlayerTypes eOther = (PlayerTypes)iPlayer;
+			if (eOther == kPlayer.GetID())
+				continue;
+			CvPlayer& kOther = GET_PLAYER(eOther);
+			if (!kOther.isAlive() || kOther.isMinorCiv())
+				continue;
+			if (GET_TEAM(eTeam).isAtWar(kOther.getTeam()))
+			{
+				bThreatened = true;
+				break;
+			}
+			CivApproachTypes eApproach = kPlayer.GetDiplomacyAI()->GetCivApproach(eOther);
+			if (eApproach == CIV_APPROACH_WAR || eApproach == CIV_APPROACH_HOSTILE || eApproach == CIV_APPROACH_GUARDED)
+			{
+				bThreatened = true;
+				break;
+			}
+		}
+		if (!bThreatened)
+			return false;
+	}
 
 	return kPlayer.GetMilitaryAI()->IsExposedToEnemy(this, NO_PLAYER);
 }
@@ -28260,7 +28285,8 @@ int CvCity::GetBuyPlotCost(int iPlotX, int iPlotY) const
 	}
 
 	// Base cost
-	int iCost = GET_PLAYER(getOwner()).GetBuyPlotCost();
+	const int iBaseCost = GET_PLAYER(getOwner()).GetBuyPlotCost();
+	int iCost = iBaseCost;
 
 	const int iMaxRange = getBuyPlotDistance();
 	if (plotDistance(iPlotX, iPlotY, getX(), getY()) > iMaxRange)
@@ -28336,16 +28362,37 @@ int CvCity::GetBuyPlotCost(int iPlotX, int iPlotY) const
 	}
 
 	// Game Speed Mod
-	iCost *= GC.getGame().getGameSpeedInfo().getGoldPercent();
+	const int iGameSpeedPercent = GC.getGame().getGameSpeedInfo().getGoldPercent();
+	iCost *= iGameSpeedPercent;
 	iCost /= 100;
 
 	iCost *= (100 + getPlotBuyCostModifier());
 	iCost /= 100;
 
+	// Ensure plot-specific discounts never drop below the base plot cost (scaled by speed and city modifier)
+	int iBaseCostScaled = iBaseCost;
+	iBaseCostScaled *= iGameSpeedPercent;
+	iBaseCostScaled /= 100;
+	iBaseCostScaled *= (100 + getPlotBuyCostModifier());
+	iBaseCostScaled /= 100;
+
 	// Now round so the number looks neat
 	int iDivisor = /*5*/ max(1, GD_INT_GET(PLOT_COST_APPEARANCE_DIVISOR));
 	iCost = (iCost + iDivisor / 2) / iDivisor;
 	iCost *= iDivisor;
+
+	iBaseCostScaled = (iBaseCostScaled + iDivisor / 2) / iDivisor;
+	iBaseCostScaled *= iDivisor;
+
+	// Prevent plot costs from falling below the base cost or below 1 rounding step
+	if (iCost < iBaseCostScaled)
+	{
+		iCost = iBaseCostScaled;
+	}
+	if (iCost < iDivisor)
+	{
+		iCost = iDivisor;
+	}
 
 	return iCost;
 }
@@ -32740,10 +32787,53 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 			{
 				//a bit redundant with the internal of canRangeStrikeAt but that's life
 				CvUnit* pTarget = rangedStrikeTarget(pTargetPlot);
+				if (!pTarget)
+					continue;
+
 				int iDamage = rangeCombatDamage(pTarget, false, NULL);
-				if (iDamage > iBestScore)
+				int iScore = iDamage;
+
+				// Big bonus for kills - eliminating a unit is very valuable
+				int iTargetHP = pTarget->GetCurrHitPoints();
+				if (iDamage >= iTargetHP)
 				{
-					iBestScore = iDamage;
+					// Can kill this unit! High priority.
+					iScore += 200;
+				}
+				else if (iDamage >= iTargetHP * 2 / 3)
+				{
+					// Can heavily wound - good target
+					iScore += 50;
+				}
+
+				// Priority bonus for siege and ranged units - they threaten the city without taking damage
+				UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
+				if (eUnitAI == UNITAI_CITY_BOMBARD)
+				{
+					// Siege units are the biggest threat to cities - highest priority
+					iScore += 100;
+				}
+				else if (eUnitAI == UNITAI_RANGED || pTarget->IsCanAttackRanged())
+				{
+					// Ranged units can attack without taking damage - high priority
+					iScore += 75;
+				}
+				else if (eUnitAI == UNITAI_ATTACK_AIR || eUnitAI == UNITAI_MISSILE_AIR)
+				{
+					// Air units are dangerous
+					iScore += 60;
+				}
+				// Melee units are lower priority - they take damage when attacking the city
+
+				// Small bonus for wounded units we can't quite kill - finish them off later
+				if (iTargetHP < pTarget->GetMaxHitPoints() && iDamage < iTargetHP)
+				{
+					iScore += 25;
+				}
+
+				if (iScore > iBestScore)
+				{
+					iBestScore = iScore;
 					pBestTarget = pTarget;
 				}
 			}
