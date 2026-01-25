@@ -6425,6 +6425,15 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				// Units with defensive promotions are especially valuable
 				if(pLoopUnit->getDefenseModifier() > 0 || pLoopUnit->getExtraRangedDefenseModifier() > 0)
 					iExtraScore += 31;
+				
+				// WITHDRAWAL PENALTY: Units with withdrawal chance are unreliable guards
+				// They may retreat when attacked, exposing whatever they're guarding
+				int iWithdrawalChance = pLoopUnit->withdrawalProbability();
+				if (iWithdrawalChance > 0)
+				{
+					// Significant penalty - guards need to hold their ground
+					iExtraScore -= iWithdrawalChance / 2; // -25 to -37 for typical withdrawal
+				}
 			}
 			else if(eMove == AI_TACTICAL_GOODY)
 			{
@@ -11051,6 +11060,7 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 			if (!pUnit->IsCanAttackRanged())
 			{
 				int iAdjacentFriendlyRanged = 0;
+				int iAdjacentFriendlySiege = 0;
 				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
 				{
 					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
@@ -11058,11 +11068,27 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 					{
 						CvUnit* pAdjUnit = pAdj->getBestDefender(pUnit->getOwner());
 						if (pAdjUnit && pAdjUnit->IsCanAttackRanged() && pAdjUnit->GetRange() > 1)
+						{
 							iAdjacentFriendlyRanged++;
+							if (pAdjUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+								iAdjacentFriendlySiege++;
+						}
 					}
 				}
 				if (iAdjacentFriendlyRanged > 0 && testPlot->getEnemyDistance(eRelevantDomain) <= 2)
+				{
 					iPlotScore += iAdjacentFriendlyRanged * 3;
+
+					// WITHDRAWAL PENALTY FOR SCREENING: Units with withdrawal should NOT screen fragile units
+					int iWithdrawalChance = pUnit->withdrawalProbability();
+					if (iWithdrawalChance > 0)
+					{
+						int iWithdrawPenalty = (iWithdrawalChance / 10) * iAdjacentFriendlyRanged;
+						if (iAdjacentFriendlySiege > 0)
+							iWithdrawPenalty += (iWithdrawalChance / 10) * iAdjacentFriendlySiege;
+						iPlotScore -= iWithdrawPenalty;
+					}
+				}
 			}
 		}
 	}
