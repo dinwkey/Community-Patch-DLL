@@ -855,50 +855,158 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				// Base bonus reduced - missiles need to prove their worth
 				int iMissileBonus = 500;
 				
-				// Slot scarcity: if we're running low on slots, prefer reusable units
-				if (iExcessSlots <= 0)
+				// =====================================================
+				// EMERGENCY OVERRIDES: Missiles have unique tactical value
+				// They can't be intercepted and deal guaranteed damage
+				// =====================================================
+				
+				bool bEmergency = false;
+				
+				// Emergency 1: City under siege - need burst damage NOW
+				if (m_pCity->isUnderSiege())
 				{
-					// No excess capacity - heavily penalize missiles
-					// A bomber can fly many missions, a missile only one
-					iMissileBonus -= 400;
-				}
-				else if (iExcessSlots <= iTotalAirCapacity / 4)
-				{
-					// Less than 25% capacity free - prefer reusable
-					iMissileBonus -= 200;
-				}
-				else if (iExcessSlots >= iTotalAirCapacity / 2)
-				{
-					// Plenty of slots - missiles are more viable
-					iMissileBonus += 100;
+					bEmergency = true;
+					iMissileBonus += 400; // Urgent need for firepower
+					
+					if (m_pCity->isInDangerOfFalling())
+					{
+						iMissileBonus += 300; // Critical - city may fall
+					}
 				}
 				
-				// Ratio check: missiles shouldn't dominate our air force
-				// Ideal: missiles are ~20% of air force for burst damage
-				int iIdealMissileRatio = max(1, iTotalAirCapacity / 5);
-				if (ourMissiles >= iIdealMissileRatio * 2)
+				// Emergency 2: Enemy has strong AA - missiles bypass interception
+				// Check for enemy AA units that threaten our bombers
 				{
-					// Way too many missiles - we need reusable units
-					iMissileBonus -= 300;
-				}
-				else if (ourMissiles >= iIdealMissileRatio)
-				{
-					// At or above ideal - slight penalty
-					iMissileBonus -= 100;
-				}
-				else if (ourMissiles < iIdealMissileRatio / 2 && ourBombers >= 2)
-				{
-					// We have bombers but few missiles - a few could be useful
-					iMissileBonus += 50;
+					int iEnemyAANearby = 0;
+					int iRange = 6; // Check within reasonable distance
+					
+					for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+					{
+						PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+						if (eEnemy == kPlayer.GetID())
+							continue;
+						if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+							continue;
+						
+						int iUnitLoop = 0;
+						for (CvUnit* pEnemyUnit = GET_PLAYER(eEnemy).firstUnit(&iUnitLoop); pEnemyUnit != NULL; pEnemyUnit = GET_PLAYER(eEnemy).nextUnit(&iUnitLoop))
+						{
+							// Check for AA capability
+							if (pEnemyUnit->GetAirInterceptRange() > 0 || pEnemyUnit->canIntercept())
+							{
+								// Is it near any of our cities or near a target we care about?
+								int iDistToThisCity = plotDistance(*m_pCity->plot(), *pEnemyUnit->plot());
+								if (iDistToThisCity <= iRange)
+								{
+									iEnemyAANearby++;
+									
+									// Strong AA is a bigger threat
+									if (pEnemyUnit->interceptionProbability() >= 50)
+									{
+										iEnemyAANearby++; // Count twice
+									}
+								}
+							}
+						}
+					}
+					
+					if (iEnemyAANearby >= 3)
+					{
+						// Heavy AA presence - missiles are valuable for guaranteed damage
+						bEmergency = true;
+						iMissileBonus += 300;
+					}
+					else if (iEnemyAANearby >= 1)
+					{
+						// Some AA - missiles help bypass it
+						iMissileBonus += 100;
+					}
 				}
 				
-				// Reusable air force health check
-				// Don't build missiles if we lack a solid reusable air force
-				int iMinReusableForMissiles = max(4, iTotalAirCapacity / 3);
-				if (ourBombers + ourFighters < iMinReusableForMissiles)
+				// Emergency 3: We're attacking a well-defended city
+				// Check if we have an active operation targeting a nearby enemy city
+				if (bAtWar)
 				{
-					// Need more bombers/fighters first before missiles
-					iMissileBonus -= 200;
+					CvTacticalAnalysisMap* pTactMap = kPlayer.GetTacticalAI()->GetTacticalAnalysisMap();
+					if (pTactMap)
+					{
+						// Look for enemy cities we might be attacking
+						for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+						{
+							PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+							if (eEnemy == kPlayer.GetID())
+								continue;
+							if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+								continue;
+							
+							int iCityLoop = 0;
+							for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iCityLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iCityLoop))
+							{
+								int iDistToEnemyCity = plotDistance(*m_pCity->plot(), *pEnemyCity->plot());
+								if (iDistToEnemyCity <= 10) // Within operational range
+								{
+									// Check if city has garrison (can only hit with missiles)
+									CvPlot* pCityPlot = pEnemyCity->plot();
+									if (pCityPlot && pCityPlot->getNumDefenders(eEnemy) > 0)
+									{
+										// Garrisoned city - missiles can hit what bombers can't
+										iMissileBonus += 150;
+										break;
+									}
+								}
+							}
+						}
+					}
+				}
+				
+				// If emergency, skip the normal slot competition penalties
+				if (!bEmergency)
+				{
+					// Slot scarcity: if we're running low on slots, prefer reusable units
+					if (iExcessSlots <= 0)
+					{
+						// No excess capacity - heavily penalize missiles
+						// A bomber can fly many missions, a missile only one
+						iMissileBonus -= 400;
+					}
+					else if (iExcessSlots <= iTotalAirCapacity / 4)
+					{
+						// Less than 25% capacity free - prefer reusable
+						iMissileBonus -= 200;
+					}
+					else if (iExcessSlots >= iTotalAirCapacity / 2)
+					{
+						// Plenty of slots - missiles are more viable
+						iMissileBonus += 100;
+					}
+					
+					// Ratio check: missiles shouldn't dominate our air force
+					// Ideal: missiles are ~20% of air force for burst damage
+					int iIdealMissileRatio = max(1, iTotalAirCapacity / 5);
+					if (ourMissiles >= iIdealMissileRatio * 2)
+					{
+						// Way too many missiles - we need reusable units
+						iMissileBonus -= 300;
+					}
+					else if (ourMissiles >= iIdealMissileRatio)
+					{
+						// At or above ideal - slight penalty
+						iMissileBonus -= 100;
+					}
+					else if (ourMissiles < iIdealMissileRatio / 2 && ourBombers >= 2)
+					{
+						// We have bombers but few missiles - a few could be useful
+						iMissileBonus += 50;
+					}
+					
+					// Reusable air force health check
+					// Don't build missiles if we lack a solid reusable air force
+					int iMinReusableForMissiles = max(4, iTotalAirCapacity / 3);
+					if (ourBombers + ourFighters < iMinReusableForMissiles)
+					{
+						// Need more bombers/fighters first before missiles
+						iMissileBonus -= 200;
+					}
 				}
 				
 				// Empty local slots bonus (from the city we're building in)
