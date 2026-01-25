@@ -3933,11 +3933,11 @@ void CvTacticalAI::UpdateTargetScores()
 				}
 			}
 			
-			// COASTAL BOMBARDMENT COORDINATION: Prioritize units defending enemy coastal cities under land siege
-			// Naval ranged should prioritize clearing garrison/defenders when land forces are assaulting from shore
+			// COMBINED ARMS BOMBARDMENT: Prioritize units defending enemy cities under siege
+			// Naval ranged AND air units should prioritize clearing garrison/defenders when ground forces are assaulting
 			if (pTargetUnit->getDomainType() == DOMAIN_LAND || pTargetUnit->IsGarrisoned())
 			{
-				// Check if target is in or adjacent to an enemy coastal city
+				// Check if target is in or adjacent to an enemy city
 				CvCity* pEnemyCity = pPlot->getPlotCity();
 				if (!pEnemyCity)
 				{
@@ -3950,12 +3950,14 @@ void CvTacticalAI::UpdateTargetScores()
 					}
 				}
 				
-				if (pEnemyCity && pEnemyCity->isCoastal())
+				if (pEnemyCity)
 				{
-					// Check if we have land forces adjacent to this coastal city (land siege ongoing)
-					bool bLandSiegeOngoing = false;
+					// Check for combined arms siege - count all friendly forces around the city
+					bool bSiegeOngoing = false;
 					int iOurLandUnits = 0;
+					int iOurNavalUnits = 0;
 					bool bWeHaveNavalRanged = false;
+					bool bWeHaveAirUnits = false;
 					
 					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
 					{
@@ -3968,48 +3970,84 @@ void CvTacticalAI::UpdateTargetScores()
 								CvUnit* pOurUnit = pAdj->getBestDefender(m_pPlayer->GetID());
 								if (pOurUnit && pOurUnit->getDomainType() == DOMAIN_LAND)
 								{
-									bLandSiegeOngoing = true;
+									bSiegeOngoing = true;
 									iOurLandUnits++;
 								}
 							}
 							
-							// Check if we have naval ranged nearby that can support
+							// Check if we have naval units nearby
 							if (pAdj->isWater())
 							{
 								CvUnit* pOurUnit = pAdj->getBestDefender(m_pPlayer->GetID());
-								if (pOurUnit && pOurUnit->getDomainType() == DOMAIN_SEA && pOurUnit->IsCanAttackRanged())
-									bWeHaveNavalRanged = true;
+								if (pOurUnit && pOurUnit->getDomainType() == DOMAIN_SEA)
+								{
+									bSiegeOngoing = true;
+									iOurNavalUnits++;
+									if (pOurUnit->IsCanAttackRanged())
+										bWeHaveNavalRanged = true;
+								}
 							}
 						}
 					}
 					
-					// If land siege is ongoing and we have naval fire support, prioritize this target
-					if (bLandSiegeOngoing && bWeHaveNavalRanged)
+					// Check if we have air units that can strike this city
+					if (bHaveAirUnits)
 					{
-						int iCoastalBombardBonus = 15;
+						for (list<int>::iterator airIt = m_CurrentTurnUnits.begin(); airIt != m_CurrentTurnUnits.end(); ++airIt)
+						{
+							CvUnit* pAirUnit = m_pPlayer->getUnit(*airIt);
+							if (pAirUnit && pAirUnit->getDomainType() == DOMAIN_AIR && pAirUnit->IsCanAttackRanged())
+							{
+								if (pAirUnit->canRangeStrikeAt(pEnemyCity->getX(), pEnemyCity->getY()))
+								{
+									bWeHaveAirUnits = true;
+									break;
+								}
+							}
+						}
+					}
+					
+					// If siege is ongoing and we have ranged fire support (naval or air), prioritize this target
+					if (bSiegeOngoing && (bWeHaveNavalRanged || bWeHaveAirUnits))
+					{
+						int iCombinedArmsBonus = 15;
+						int iTotalAttackers = iOurLandUnits + iOurNavalUnits;
 						
-						// More land attackers = more value in clearing defenders
-						if (iOurLandUnits >= 3)
-							iCoastalBombardBonus += 12;
-						else if (iOurLandUnits >= 2)
-							iCoastalBombardBonus += 6;
+						// More attackers = more value in clearing defenders
+						if (iTotalAttackers >= 4)
+							iCombinedArmsBonus += 15;
+						else if (iTotalAttackers >= 3)
+							iCombinedArmsBonus += 12;
+						else if (iTotalAttackers >= 2)
+							iCombinedArmsBonus += 6;
+						
+						// Multi-domain assault bonus
+						int iDomains = 0;
+						if (iOurLandUnits > 0) iDomains++;
+						if (iOurNavalUnits > 0) iDomains++;
+						if (bWeHaveAirUnits) iDomains++;
+						if (iDomains >= 3)
+							iCombinedArmsBonus += 15; // Full combined arms assault!
+						else if (iDomains >= 2)
+							iCombinedArmsBonus += 8;
 						
 						// Garrison is priority - it adds city defense and counterattack
 						if (pTargetUnit->IsGarrisoned())
-							iCoastalBombardBonus += 15;
+							iCombinedArmsBonus += 15;
 						
 						// City already damaged = assault in progress, high priority
 						if (pEnemyCity->getDamage() > 0)
-							iCoastalBombardBonus += 10;
+							iCombinedArmsBonus += 10;
 						
-						it->SetAuxIntData(it->GetAuxIntData() + iCoastalBombardBonus);
+						it->SetAuxIntData(it->GetAuxIntData() + iCombinedArmsBonus);
 						
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
-							strLogString.Format("Coastal bombardment target: %s at (%d,%d), defending %s, priority boosted by %d (land units: %d)",
+							strLogString.Format("Combined arms target: %s at (%d,%d), defending %s, priority +%d (land:%d naval:%d air:%s domains:%d)",
 								pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(),
-								pEnemyCity->getNameNoSpace().c_str(), iCoastalBombardBonus, iOurLandUnits);
+								pEnemyCity->getNameNoSpace().c_str(), iCombinedArmsBonus, iOurLandUnits, iOurNavalUnits,
+								bWeHaveAirUnits ? "yes" : "no", iDomains);
 							LogTacticalMessage(strLogString);
 						}
 					}
@@ -6215,54 +6253,76 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 					// This effectively doubles their priority in the sort order
 					iAttackStrength = iAttackStrength * 3 / 2;
 					
-					// Coastal bombardment coordination: naval ranged units get extra priority
-					// when bombarding coastal cities that have land siege ongoing
-					// This ensures combined arms fire support from the sea
-					if (pLoopUnit->getDomainType() == DOMAIN_SEA)
+					// Combined arms bombardment coordination: naval and air units get extra priority
+					// when bombarding cities that have land/naval siege ongoing
+					// This ensures coordinated fire support from sea and air
+					if (pLoopUnit->getDomainType() == DOMAIN_SEA || pLoopUnit->getDomainType() == DOMAIN_AIR)
 					{
 						CvCity* pCity = pTarget->getPlotCity();
-						if (pCity && pCity->isCoastal())
+						if (pCity)
 						{
-							// Check if city is under land siege (has adjacent enemy land units)
-							bool bLandSiegeOngoing = false;
+							// Check for combined arms siege - count adjacent friendly forces by domain
+							bool bSiegeOngoing = false;
 							int iLandAttackers = 0;
+							int iNavalAttackers = 0;
+							
 							for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
 							{
 								CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
-								if (pAdj && !pAdj->isWater())
+								if (pAdj)
 								{
-									// Count our land units adjacent to the city
+									// Count our units adjacent to the city
 									CvUnit* pAdjUnit = pAdj->getBestDefender(m_pPlayer->GetID());
-									if (pAdjUnit && pAdjUnit->getDomainType() == DOMAIN_LAND)
+									if (pAdjUnit)
 									{
-										bLandSiegeOngoing = true;
-										iLandAttackers++;
+										if (pAdjUnit->getDomainType() == DOMAIN_LAND)
+										{
+											bSiegeOngoing = true;
+											iLandAttackers++;
+										}
+										else if (pAdjUnit->getDomainType() == DOMAIN_SEA)
+										{
+											bSiegeOngoing = true;
+											iNavalAttackers++;
+										}
 									}
 								}
 							}
 							
-							if (bLandSiegeOngoing)
+							if (bSiegeOngoing)
 							{
-								// Naval bombardment coordination bonus
-								// More land attackers = more important for naval fire support
-								int iNavalBombardBonus = 20;
-								if (iLandAttackers >= 3)
-									iNavalBombardBonus += 15;
-								else if (iLandAttackers >= 2)
-									iNavalBombardBonus += 8;
+								// Combined arms bombardment coordination bonus
+								// More attackers = more important for fire support
+								int iBombardBonus = 15;
+								int iTotalAttackers = iLandAttackers + iNavalAttackers;
+								
+								if (iTotalAttackers >= 4)
+									iBombardBonus += 20;
+								else if (iTotalAttackers >= 3)
+									iBombardBonus += 15;
+								else if (iTotalAttackers >= 2)
+									iBombardBonus += 8;
+								
+								// Multi-domain assault bonus: combined land+naval is more effective
+								if (iLandAttackers > 0 && iNavalAttackers > 0)
+									iBombardBonus += 10;
 								
 								// Extra bonus if city is damaged (siege already in progress)
 								if (pCity->getDamage() > 0)
-									iNavalBombardBonus += 10;
+									iBombardBonus += 10;
 								
 								// Bonus for cities under active assault (low HP)
 								int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
 								if (iCityHPPercent <= 50)
-									iNavalBombardBonus += 15;
+									iBombardBonus += 15;
 								else if (iCityHPPercent <= 75)
-									iNavalBombardBonus += 5;
+									iBombardBonus += 5;
 								
-								iAttackStrength += iAttackStrength * iNavalBombardBonus / 100;
+								// Air units get slight extra bonus - they can hit any city, very flexible
+								if (pLoopUnit->getDomainType() == DOMAIN_AIR)
+									iBombardBonus += 5;
+								
+								iAttackStrength += iAttackStrength * iBombardBonus / 100;
 							}
 						}
 					}
