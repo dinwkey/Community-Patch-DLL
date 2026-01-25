@@ -13119,6 +13119,28 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 				{
 					result.iBonusScore -= 15; // Don't pick fights you can't win
 				}
+				
+				// 5. SURVIVALISM BONUS: Recon with self-healing can be more aggressive
+				// If unit can heal in enemy/neutral territory, it can sustain longer raids
+				int iEnemyHeal = pUnit->getExtraEnemyHeal();
+				int iNeutralHeal = pUnit->getExtraNeutralHeal();
+				if (iEnemyHeal > 0 || iNeutralHeal > 0)
+				{
+					// Can heal outside friendly territory - more sustainable aggression
+					int iHealBonus = max(iEnemyHeal, iNeutralHeal);
+					
+					// Bonus for attacking when we can self-heal
+					if (bIsKill)
+						result.iBonusScore += iHealBonus / 3; // +3-6 for typical survivalism
+					
+					// Reduce penalty for risky attacks if we can heal
+					// Units with self-heal can afford to take some damage
+					if (result.iSelfDamage > 0 && result.iSelfDamage < pUnit->GetCurrHitPoints() / 2)
+					{
+						// Self-healing mitigates damage taken
+						result.iBonusScore += min(iHealBonus / 2, result.iSelfDamage / 5);
+					}
+				}
 			}
 		}
 	}
