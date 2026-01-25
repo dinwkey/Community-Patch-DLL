@@ -4506,8 +4506,10 @@ void CvMinorCivAI::Read(FDataStream& kStream)
 	// Validate minor civ type after loading - if the type couldn't be resolved from the database
 	// (e.g., mod was removed), the player should not be considered a valid city-state.
 	// Log a warning so players know why their city-state disappeared.
+	// Only check this for actual minor civs - major civs also have CvMinorCivAI objects but
+	// GetMinorCivType() will naturally return NO_MINORCIV for them.
 	MinorCivTypes eMinorCivType = GetMinorCivType();
-	if (eMinorCivType == NO_MINORCIV && m_pPlayer && m_pPlayer->isAlive())
+	if (eMinorCivType == NO_MINORCIV && m_pPlayer && m_pPlayer->isAlive() && m_pPlayer->isMinorCiv())
 	{
 		CvString strLogMsg;
 		strLogMsg.Format("WARNING: Minor civ player %d (%s) has invalid minor civ type (NO_MINORCIV) after loading save. The city-state's mod may have been removed. Setting status to NO_MINOR_CIV_STATUS_TYPE.", 
