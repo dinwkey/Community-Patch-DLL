@@ -1160,18 +1160,48 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					continue;
 				}
 
-				//see whether we have melee units for capturing
+				//see whether we have melee units for capturing and calculate combined melee damage potential
 				int iMeleeCount = 0;
+				int iTotalMeleeDamage = 0;
+				int iRangedDamageThisTurn = 0;
+				
+				// Track melee units that can reach the city and their expected damage
 				for (unsigned int iI = 0; iI < m_CurrentMoveUnits.size(); iI++)
 				{
 					CvUnit* pUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[iI].GetID());
 					if (!pUnit || !pUnit->canMove())
 						continue;
 
-					// Are we a melee unit
+					// Are we a melee unit?
 					if (!pUnit->IsCanAttackRanged())
+					{
 						iMeleeCount++;
+						// Calculate expected damage from this melee unit - use stored value if available
+						int iExpectedDamage = m_CurrentMoveUnits[iI].GetExpectedTargetDamage();
+						if (iExpectedDamage > 0)
+							iTotalMeleeDamage += iExpectedDamage;
+					}
+					else
+					{
+						// Track ranged damage that will soften the city first
+						int iExpectedDamage = m_CurrentMoveUnits[iI].GetExpectedTargetDamage();
+						if (iExpectedDamage > 0)
+							iRangedDamageThisTurn += iExpectedDamage;
+					}
 				}
+
+				// Better capture timing: determine if this is a capture opportunity
+				// City HP after ranged attacks this turn
+				int iCityHPAfterRanged = max(1, iRequiredDamage - iRangedDamageThisTurn);
+				bool bCaptureOpportunityThisTurn = (iTotalMeleeDamage >= iCityHPAfterRanged) && (iMeleeCount > 0);
+				
+				// If city is very low (<= 25% HP) or in danger of falling, also consider it a capture opportunity
+				int iCityMaxHP = pCity->GetMaxHitPoints();
+				int iCityCurrentHP = iCityMaxHP - pCity->getDamage();
+				bool bCityNearDeath = (iCityCurrentHP <= iCityMaxHP / 4) || pCity->isInDangerOfFalling();
+				
+				if (bCityNearDeath && iMeleeCount > 0)
+					bCaptureOpportunityThisTurn = true;
 
 				if (iMeleeCount == 0 && iRequiredDamage <= 1)
 				{
@@ -1188,9 +1218,11 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s",
+					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d, melee dmg %d, ranged dmg %d, capture opportunity: %s",
 						pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
-						iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded");
+						iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded",
+						iMeleeCount, iTotalMeleeDamage, iRangedDamageThisTurn,
+						bCaptureOpportunityThisTurn ? "YES" : "no");
 					LogTacticalMessage(strLogString);
 				}
 
@@ -1287,8 +1319,16 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					}
 				}
 
-				//finally do the attack. be a bit more careful if we have few melee units
-				ExecuteAttackWithUnits(pPlot, iMeleeCount>2 ? AL_HIGH : AL_MEDIUM);
+				//finally do the attack
+				// Use higher aggression when capture is achievable this turn - we want to press the advantage
+				// AL_BRAVEHEART allows riskier attacks, appropriate when the city can be captured
+				eAggressionLevel aggLevel = AL_MEDIUM;
+				if (bCaptureOpportunityThisTurn)
+					aggLevel = AL_BRAVEHEART; // Go all-in for the capture
+				else if (iMeleeCount > 2)
+					aggLevel = AL_HIGH;
+				
+				ExecuteAttackWithUnits(pPlot, aggLevel);
 
 				// Did it work?  If so, don't need a temporary dominance zone if had one here
 				if (pPlot->getOwner() == m_pPlayer->GetID())
