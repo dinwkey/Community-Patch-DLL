@@ -10312,6 +10312,119 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 			newAssignment.iBonusScore += 30;
 	}
 
+	// NAVAL RANGED SOFTENING: Naval ranged units should prioritize targets that naval melee can capture/finish
+	// This creates proper combined arms: frigates/battleships soften, then destroyers/privateers capture
+	if (unit.pUnit->getDomainType() == DOMAIN_SEA && unit.pUnit->IsCanAttackRanged())
+	{
+		// Check if we have naval melee units that could benefit from this softening
+		bool bHaveNavalMelee = false;
+		bool bNavalMeleeCanReach = false;
+		int iNavalMeleeDamage = 0;
+		
+		vector<SUnitStats> allUnits = assumedPosition.getAvailableUnits();
+		allUnits.insert(allUnits.end(), assumedPosition.getFinishedUnits().begin(), assumedPosition.getFinishedUnits().end());
+		
+		for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+		{
+			const CvUnit* pLoopUnit = it->pUnit;
+			if (!pLoopUnit || pLoopUnit->IsCanAttackRanged())
+				continue;
+			
+			// Found a naval melee unit
+			if (pLoopUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsCanAttackWithMove())
+			{
+				bHaveNavalMelee = true;
+				
+				// Check if naval melee can reach the target (adjacent or can move adjacent)
+				int iMeleeDistance = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+				if (iMeleeDistance <= 2) // Can reach this turn or next
+				{
+					bNavalMeleeCanReach = true;
+					
+					// Estimate damage the naval melee could do
+					if (enemyPlot.isEnemyCity())
+					{
+						CvCity* pCity = enemyPlot.getPlot()->getPlotCity();
+						if (pCity)
+							iNavalMeleeDamage += pLoopUnit->GetMaxAttackStrength(NULL, NULL, NULL) / 10;
+					}
+					else if (enemyPlot.getEnemyUnit())
+					{
+						iNavalMeleeDamage += pLoopUnit->GetMaxAttackStrength(NULL, NULL, enemyPlot.getEnemyUnit()) / 10;
+					}
+				}
+			}
+		}
+		
+		// Apply bonuses based on naval coordination potential
+		if (bHaveNavalMelee && bNavalMeleeCanReach)
+		{
+			// Attacking a coastal city that naval melee can capture
+			if (enemyPlot.isEnemyCity())
+			{
+				CvCity* pTargetCity = enemyPlot.getPlot()->getPlotCity();
+				if (pTargetCity && pTargetCity->isCoastal())
+				{
+					int iCityHP = pTargetCity->GetMaxHitPoints() - pTargetCity->getDamage();
+					int iHPAfterAttack = iCityHP - newAssignment.iDamage;
+					
+					// Big bonus if this attack brings city into capture range for naval melee
+					if (iHPAfterAttack > 0 && iHPAfterAttack <= iNavalMeleeDamage)
+					{
+						newAssignment.iBonusScore += 50; // Perfect softening for capture!
+					}
+					// Moderate bonus if we're making progress toward capturable
+					else if (iHPAfterAttack > 0 && iHPAfterAttack < iCityHP / 2)
+					{
+						newAssignment.iBonusScore += 25; // Good softening
+					}
+					// Small bonus just for coordinated attack on coastal city
+					else
+					{
+						newAssignment.iBonusScore += 10;
+					}
+				}
+			}
+			// Attacking an enemy naval unit that melee can finish
+			else if (enemyPlot.getEnemyUnit() && enemyPlot.getEnemyUnit()->getDomainType() == DOMAIN_SEA)
+			{
+				CvUnit* pEnemy = enemyPlot.getEnemyUnit();
+				int iEnemyHP = pEnemy->GetCurrHitPoints();
+				int iHPAfterAttack = iEnemyHP - newAssignment.iDamage;
+				
+				// Bonus if this softens enemy for naval melee kill
+				if (iHPAfterAttack > 0 && iHPAfterAttack <= iNavalMeleeDamage)
+				{
+					newAssignment.iBonusScore += 30; // Sets up kill for melee
+					
+					// Extra bonus if target is a high-value unit (carrier, battleship)
+					if (pEnemy->AI_getUnitAIType() == UNITAI_CARRIER_SEA || 
+						pEnemy->GetBaseCombatStrength() > unit.pUnit->GetBaseCombatStrength())
+					{
+						newAssignment.iBonusScore += 20;
+					}
+				}
+				// Moderate bonus if we're significantly damaging enemy naval unit
+				else if (newAssignment.iDamage > iEnemyHP / 3)
+				{
+					newAssignment.iBonusScore += 15;
+				}
+			}
+		}
+		
+		// Submarine first-strike bonus: submarines should attack before surface fleet
+		// when the target hasn't detected them (maximize stealth advantage)
+		if (IsSubmarineUnit(unit.pUnit) && bHaveNavalMelee)
+		{
+			// If target is a surface ship and we're undetected, attack first to weaken it
+			if (enemyPlot.getEnemyUnit() && !enemyPlot.getPlot()->IsKnownVisibleToEnemy(unit.pUnit->getOwner()))
+			{
+				// Bonus for sub striking first while hidden
+				newAssignment.iBonusScore += 15;
+			}
+		}
+	}
+
 	return newAssignment;
 }
 
@@ -10412,6 +10525,106 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 				// Extra bonus if the city is the primary target
 				if (assumedPosition.getTarget() == pAdjacentEnemyCity->plot())
 					result.iBonusScore += 30;
+			}
+		}
+	}
+
+	// NAVAL MELEE COORDINATION: Naval melee should prefer targets softened by naval ranged
+	// This complements the ranged softening logic for proper combined arms
+	if (pUnit->getDomainType() == DOMAIN_SEA && !pUnit->IsCanAttackRanged())
+	{
+		// Check if we have naval ranged units that could have softened this target
+		bool bHaveNavalRanged = false;
+		int iNavalRangedDamage = 0;
+		
+		vector<SUnitStats> allUnits = assumedPosition.getAvailableUnits();
+		allUnits.insert(allUnits.end(), assumedPosition.getFinishedUnits().begin(), assumedPosition.getFinishedUnits().end());
+		
+		for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+		{
+			const CvUnit* pLoopUnit = it->pUnit;
+			if (!pLoopUnit || !pLoopUnit->IsCanAttackRanged())
+				continue;
+			
+			// Found a naval ranged unit (or submarine)
+			if (pLoopUnit->getDomainType() == DOMAIN_SEA)
+			{
+				bHaveNavalRanged = true;
+				
+				// Check if ranged unit can hit this target
+				int iRangedDistance = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+				if (iRangedDistance <= pLoopUnit->GetRange())
+				{
+					// Estimate damage the ranged could do
+					iNavalRangedDamage += pLoopUnit->GetMaxRangedCombatStrength(NULL, NULL, true, NULL) / 10;
+				}
+			}
+		}
+		
+		if (bHaveNavalRanged)
+		{
+			// Attacking a coastal city - check if ranged can help soften
+			if (enemyPlot.isEnemyCity())
+			{
+				CvCity* pTargetCity = enemyPlot.getPlot()->getPlotCity();
+				if (pTargetCity && pTargetCity->isCoastal())
+				{
+					int iCityHP = pTargetCity->GetMaxHitPoints() - pTargetCity->getDamage();
+					
+					// Big bonus if city is already softened and we can capture
+					if (result.eAssignmentType == A_MELEEKILL)
+					{
+						result.iBonusScore += 75; // Capture the softened city!
+						
+						// Extra bonus for island cities (naval-only capture)
+						int iLandApproaches = 0;
+						for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+						{
+							CvPlot* pAdj = plotDirection(pEnemyPlot->getX(), pEnemyPlot->getY(), (DirectionTypes)iDir);
+							if (pAdj && !pAdj->isWater() && !pAdj->isImpassable(pUnit->getTeam()))
+								iLandApproaches++;
+						}
+						if (iLandApproaches == 0)
+							result.iBonusScore += 50; // Only we can capture this!
+					}
+					// Moderate bonus if city is damaged (being softened)
+					else if (pTargetCity->getDamage() > 0)
+					{
+						// More bonus the more damaged the city is
+						int iDamagePercent = (100 * pTargetCity->getDamage()) / pTargetCity->GetMaxHitPoints();
+						result.iBonusScore += iDamagePercent / 4; // Up to +25 at 100% damage
+					}
+				}
+			}
+			// Attacking an enemy naval unit
+			else if (enemyPlot.getEnemyUnit() && enemyPlot.getEnemyUnit()->getDomainType() == DOMAIN_SEA)
+			{
+				CvUnit* pEnemy = enemyPlot.getEnemyUnit();
+				int iEnemyMaxHP = pEnemy->GetMaxHitPoints();
+				int iEnemyHP = pEnemy->GetCurrHitPoints();
+				
+				// Bonus if enemy is already damaged (ranged softened it)
+				if (iEnemyHP < iEnemyMaxHP)
+				{
+					int iDamagePercent = (100 * (iEnemyMaxHP - iEnemyHP)) / iEnemyMaxHP;
+					
+					// Prefer finishing off damaged enemies
+					if (result.eAssignmentType == A_MELEEKILL || result.eAssignmentType == A_MELEEKILL_NO_ADVANCE)
+					{
+						result.iBonusScore += 25 + iDamagePercent / 2; // Up to +75 for killing heavily damaged
+					}
+					else
+					{
+						result.iBonusScore += iDamagePercent / 5; // Up to +20 for attacking damaged
+					}
+				}
+				
+				// Extra bonus for high-value targets (carriers, capital ships)
+				if (bIsKill && (pEnemy->AI_getUnitAIType() == UNITAI_CARRIER_SEA || 
+					pEnemy->GetBaseCombatStrength() > pUnit->GetBaseCombatStrength()))
+				{
+					result.iBonusScore += 30;
+				}
 			}
 		}
 	}
