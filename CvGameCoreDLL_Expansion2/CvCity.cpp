@@ -33050,7 +33050,28 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						// Air units are dangerous
 						iScore += 60;
 					}
-					// Melee units are lower priority - they take damage when attacking the city
+					else if (iRing == 1 && iTargetHP < pTarget->GetMaxHitPoints() / 2)
+					{
+						// Adjacent wounded melee unit - immediate capture threat!
+						// This unit could capture the city next turn if not dealt with
+						iScore += 90;
+					}
+					// Regular melee units are lower priority - they take damage when attacking the city
+
+					// Blockade breaker bonus - prioritize naval units that are blockading us
+					// Killing them restores city healing which is critical during a siege
+					if (GetCityCitizens()->AnyPlotBlockaded() && pTarget->getDomainType() == DOMAIN_SEA)
+					{
+						// Check if this unit is on a plot that's blockading one of our tiles
+						if (pTargetPlot->isBlockaded(getOwner()))
+						{
+							iScore += 70; // High priority - breaking blockade restores healing
+
+							// Extra bonus if we can kill the blockader
+							if (iDamage >= iTargetHP)
+								iScore += 30;
+						}
+					}
 
 					// It's generally not useful to bombard civilians
 					if (pTarget->IsCivilianUnit())
