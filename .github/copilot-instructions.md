@@ -48,8 +48,24 @@ File creation safety
   - Prefer using the clang-based workflow (`build_vp_clang.ps1` / `clang-cl`) for local development and CI checks because it gives faster iteration. **However, all code and binaries must be written and verified to target Visual C++ 2008 SP1 (VC9) ABI and language constraints (C++03 with only TR1 where already available).** Do not assume modern MSVC toolsets (2015/2017/2019/2022) are compatible for release artifacts.
   - After making any change to C++ sources, run the clang-based build script to verify compilation before committing or opening a PR: `.\\build_vp_clang.ps1 -Config debug` (use `-Config release` for release-targeted changes). Confirm `clang-output/<config>/CvGameCore_Expansion2.dll` and `.pdb` are created and check `clang-output/<config>/build.log` for errors; if the build fails, fix locally and re-run until it succeeds. Additionally, when possible, validate the produced artifacts against a VC9 linker or perform an MSVC2008 build to confirm ABI/linkage compatibility. Add a short note in the commit/PR indicating the clang build passed (e.g., `clang-build: debug successful`) and note any VC9 verification performed.
   - **CRITICAL: Run the clang build blocking and wait for completion.** When invoking .\build_vp_clang.ps1 -Config debug, run it interactively in the foreground and stream its output until it finishes; do not start it in the background or detach it. The compilation of hundreds of .cpp files is CPU-intensive and can take 10-30 minutes. Do not interrupt the build once started — allow it to complete before performing follow-up checks or edits.
-  - **Clean build fallback:** The PowerShell script (`build_vp_clang.ps1`) performs incremental builds for speed. If you encounter repeated build errors, build interruptions, or unexplained failures after code changes, fall back to a full clean build using the Python script: `python build_vp_clang.py --config debug --clean` (or `--config release`). The Python script will perform a complete rebuild from scratch, which can resolve stale object file or dependency issues that incremental builds may miss.
   - Required environment note: `VS90COMNTOOLS` must point to a valid VS2008 installation for tooling and some scripts (e.g., `build_vp_clang.ps1`) to work.
+
+- **Incremental vs Full Build — when to use each:**
+  - **Incremental build (`build_vp_clang.ps1`):** Faster, only recompiles `.cpp` files whose timestamps are newer than their `.obj` outputs. Use for quick iteration when you **only changed `.cpp` files** (no headers).
+  - **Full build (`python build_vp_clang.py --config debug`):** Always rebuilds everything from scratch. Slower but guaranteed correct.
+  - **MUST use full build when:**
+    1. You changed **any header file (`.h`)** — the incremental script does NOT track header dependencies; it only checks `.cpp` → `.obj` timestamps. Changing a header will silently produce stale/incorrect `.obj` files.
+    2. You changed the **PCH header (`CvGameCoreDLLPCH.h`)** — the incremental script rebuilds the PCH itself but does NOT invalidate all `.obj` files that depend on it.
+    3. A **previous build was interrupted** (Ctrl+C, crash, timeout) — partial/corrupt `.obj` files may exist and appear "up-to-date" by timestamp.
+    4. You **updated clang, MSVC SDK, or toolchain** — old `.obj` files may have ABI mismatches.
+    5. You **changed preprocessor defines** in the build script (e.g., switching `VPDEBUG`/`NDEBUG`) — existing objects won't reflect the new defines.
+    6. You're seeing **unexplained link errors, runtime crashes, or "it worked before"** issues after incremental builds.
+  - **Quick way to force full rebuild with PS1:** delete the build cache folder before running:
+    ```powershell
+    Remove-Item -Recurse -Force .\clang-build\Debug
+    .\build_vp_clang.ps1 -Config debug
+    ```
+  - **Incremental build may hang/timeout** on large files (`CvDiplomacyAI.cpp`, `CvPlayer.cpp`) or under low disk space. The PS1 script has a 5-minute per-file and 10-minute total timeout. If builds hang, use the Python full build instead.
 
   - **MSBuild fallback (when to use):** Prefer the clang-based workflow, but fall back to MSBuild/VS2008 when failures appear to be unrelated to C++ syntax (for example: linker issues, resource compiler errors, ToolsVersion/VS project compatibility, or VC9 ABI/linker behavior that clang can't reproduce). When using MSBuild as a fallback, set the VC2008 environment first and use the .NET 4 MSBuild executable to drive the solution. Example PowerShell commands:
 
