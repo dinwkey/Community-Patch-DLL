@@ -290,6 +290,10 @@ public:
 	{
 		return m_iNumFreeCarriers;
 	}
+	int GetNumMissileUnits() const
+	{
+		return m_iNumMissileUnits;
+	}
 
 private:
 

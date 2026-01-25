@@ -4585,6 +4585,102 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					//bonus for hitting units in cities, can only do that with missiles
 					if (pDefender->plot()->isCity())
 						iValue += 17;
+					
+					// MISSILE COST-BENEFIT: One-time use requires worthwhile targets
+					// Don't waste missiles on low-value targets
+					{
+						int iTargetValue = 0;
+						int iDefenderStrength = pDefender->GetBaseCombatStrength();
+						int iMissileStrength = pUnit->GetBaseRangedCombatStrength();
+						
+						// Calculate target value based on unit type and situation
+						UnitAITypes eDefenderAI = pDefender->AI_getUnitAIType();
+						
+						// High-value targets: siege, ranged, carriers, generals
+						if (eDefenderAI == UNITAI_CITY_BOMBARD)
+						{
+							iTargetValue += 80; // Siege units are critical to eliminate
+						}
+						else if (eDefenderAI == UNITAI_RANGED)
+						{
+							iTargetValue += 50; // Ranged units deal damage without risk
+						}
+						else if (eDefenderAI == UNITAI_CARRIER_SEA)
+						{
+							iTargetValue += 100; // Carriers are extremely high value
+						}
+						else if (eDefenderAI == UNITAI_GENERAL || eDefenderAI == UNITAI_ADMIRAL)
+						{
+							iTargetValue += 120; // Generals/Admirals provide huge bonuses
+						}
+						else if (pDefender->IsCanAttackRanged())
+						{
+							iTargetValue += 40; // Other ranged
+						}
+						else
+						{
+							iTargetValue += 20; // Regular melee - lower value for missile
+						}
+						
+						// Bonus for hitting high-strength units
+						if (iDefenderStrength > iMissileStrength)
+						{
+							iTargetValue += (iDefenderStrength - iMissileStrength) / 2;
+						}
+						
+						// Major bonus for kills - missile is "worth it" if it gets a kill
+						if (pDefender->GetCurrHitPoints() <= iAirDamage)
+						{
+							iTargetValue += 50; // Kill bonus
+							
+							// Extra bonus for killing expensive units
+							if (iDefenderStrength >= 50)
+								iTargetValue += 30;
+						}
+						
+						// Bonus for targets in cities (missiles' unique capability)
+						if (pDefender->plot()->isCity())
+						{
+							iTargetValue += 40; // Only missiles can hit these!
+							
+							CvCity* pTargetCity = pDefender->plot()->getPlotCity();
+							if (pTargetCity && pTargetCity->isInDangerOfFalling())
+							{
+								// City about to fall - clearing garrison helps capture
+								iTargetValue += 60;
+							}
+						}
+						
+						// Strategic timing: missiles are most valuable during active assaults
+						if (pApproximateTargetPlot && plotDistance(*pTestPlot, *pApproximateTargetPlot) <= 3)
+						{
+							iTargetValue += 30; // Target is near our main objective
+						}
+						
+						// Apply value threshold: don't fire if target isn't worth the missile
+						int iMinValueThreshold = 50; // Baseline for "worth firing"
+						
+						// Lower threshold if we're in a critical battle
+						if (pApproximateTargetPlot && pApproximateTargetPlot->isCity())
+						{
+							CvCity* pAssaultCity = pApproximateTargetPlot->getPlotCity();
+							if (pAssaultCity && m_pPlayer->IsAtWarWith(pAssaultCity->getOwner()))
+							{
+								iMinValueThreshold = 30; // More willing to use missiles during city assault
+							}
+						}
+						
+						if (iTargetValue < iMinValueThreshold)
+						{
+							// Target not worth the missile - heavy penalty
+							iValue /= 3;
+						}
+						else
+						{
+							// Target is worthwhile - scale bonus by value
+							iValue += iTargetValue / 2;
+						}
+					}
 				}
 				else
 				{

@@ -473,10 +473,125 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			{
 				iBonus += 100;
 			}
-			//Cruise Missiles? Only if we don't have any nukes lying around...
-			else if(pkUnitEntry->GetRangedCombat() > 0 && kPlayer.getNumNukeUnits() > 0)
+			//CRUISE MISSILES: Cost-benefit analysis for one-time use units
+			//Only build if we have worthwhile targets and the damage justifies the production cost
+			else if(pkUnitEntry->GetRangedCombat() > 0)
 			{
-				iBonus -= 50;
+				// Base evaluation: are we at war or likely to be?
+				bool bAtWarNow = kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0;
+				bool bPreparingWar = kPlayer.HasAnyOffensiveOperationsAgainstPlayer(NO_PLAYER);
+				
+				if (!bAtWarNow && !bPreparingWar)
+				{
+					// No war and not planning one - missiles are wasteful
+					iBonus -= 100;
+				}
+				else
+				{
+					// COST-BENEFIT: Compare missile production cost to expected value
+					int iMissileProductionCost = m_pCity->getProductionNeeded(eUnit);
+					int iMissileDamage = pkUnitEntry->GetRangedCombat(); // Base damage output
+					int iMissileRange = pkUnitEntry->GetRange();
+					
+					// Calculate expected targets: units in cities, high-value units, etc.
+					// Missiles excel at hitting units in cities where bombers can't
+					int iHighValueTargets = 0;
+					int iPotentialDamageValue = 0;
+					
+					// Check for enemy cities with units in them (missile specialty)
+					for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+					{
+						PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+						if (eEnemy == kPlayer.GetID())
+							continue;
+						if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+							continue;
+						
+						int iLoop = 0;
+						for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iLoop))
+						{
+							// Count garrisoned units - missiles can hit these, bombers can't
+							CvUnit* pGarrison = pEnemyCity->GetGarrisonedUnit();
+							if (pGarrison)
+							{
+								iHighValueTargets++;
+								// Value based on strength of garrisoned unit
+								iPotentialDamageValue += pGarrison->GetBaseCombatStrength() * 2;
+							}
+							
+							// Check for siege units near enemy cities - high value to eliminate
+							for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
+							{
+								CvPlot* pLoopPlot = iterateRingPlots(pEnemyCity->plot(), i);
+								if (pLoopPlot)
+								{
+									CvUnit* pUnit = pLoopPlot->getBestDefender(eEnemy);
+									if (pUnit && (pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD || 
+										pUnit->AI_getUnitAIType() == UNITAI_RANGED))
+									{
+										iHighValueTargets++;
+										iPotentialDamageValue += pUnit->GetBaseCombatStrength();
+									}
+								}
+							}
+						}
+					}
+					
+					// Calculate cost efficiency
+					// A missile is worth building if: expected damage value > production cost / some factor
+					int iCostEfficiency = (iPotentialDamageValue * 10) / max(1, iMissileProductionCost);
+					
+					if (iHighValueTargets >= 3 && iCostEfficiency >= 5)
+					{
+						// Lots of good targets and cost-effective - build missiles!
+						iBonus += 75 + min(iHighValueTargets * 10, 50);
+					}
+					else if (iHighValueTargets >= 1 && iCostEfficiency >= 3)
+					{
+						// Some targets, reasonable efficiency
+						iBonus += 40;
+					}
+					else if (bAtWarNow && iHighValueTargets >= 1)
+					{
+						// At war with some targets - modest bonus
+						iBonus += 20;
+					}
+					else
+					{
+						// Few worthwhile targets - prefer reusable bombers
+						iBonus -= 30;
+					}
+					
+					// Stockpile limit: don't build too many missiles
+					int iCurrentMissiles = kPlayer.GetMilitaryAI()->GetNumMissileUnits();
+					int iMissileLimit = max(3, iHighValueTargets); // At least 3, or one per high-value target
+					if (iCurrentMissiles >= iMissileLimit * 2)
+					{
+						iBonus -= 100; // Already have plenty
+					}
+					else if (iCurrentMissiles >= iMissileLimit)
+					{
+						iBonus -= 40; // Have enough
+					}
+					
+					// Carrier/Cruiser capacity check: do we have platforms for missiles?
+					int iMissileSlots = 0;
+					int iLoop = 0;
+					for (CvUnit* pUnit = kPlayer.firstUnit(&iLoop); pUnit != NULL; pUnit = kPlayer.nextUnit(&iLoop))
+					{
+						// Missile cruisers and nuclear subs can carry missiles
+						if (pUnit->cargoSpace() > 0 && pUnit->domainCargo() == DOMAIN_AIR)
+						{
+							iMissileSlots += pUnit->cargoSpaceAvailable();
+						}
+					}
+					
+					if (iMissileSlots > iCurrentMissiles)
+					{
+						// Have unused missile capacity - good reason to build
+						iBonus += 25;
+					}
+				}
 			}
 			else
 			{
