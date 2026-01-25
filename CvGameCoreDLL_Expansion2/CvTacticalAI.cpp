@@ -13141,6 +13141,33 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 						result.iBonusScore += min(iHealBonus / 2, result.iSelfDamage / 5);
 					}
 				}
+				
+				// 6. WITHDRAWAL BONUS: Recon with withdrawal chance can take more risks
+				// Units that can withdraw from melee effectively take less damage on average
+				int iWithdrawalChance = pUnit->withdrawalProbability();
+				if (iWithdrawalChance > 0)
+				{
+					// Withdrawal is powerful - it completely negates damage when it triggers
+					// Scale bonus based on withdrawal chance (typically 50-75% for recon)
+					int iWithdrawBonus = iWithdrawalChance / 10; // +5-7 for typical withdrawal
+					
+					// Withdrawal only helps against melee attackers, not ranged
+					// Since recon is attacking, the bonus applies to counterattacks they might face
+					result.iBonusScore += iWithdrawBonus;
+					
+					// Extra bonus when taking risks - withdrawal makes self-damage less certain
+					if (result.iSelfDamage > 0 && !bIsKill)
+					{
+						// Effective damage is reduced by withdrawal chance
+						// e.g., 50% withdrawal = expected 50% of normal damage
+						int iEffectiveDamageReduction = (result.iSelfDamage * iWithdrawalChance) / 200;
+						result.iBonusScore += iEffectiveDamageReduction;
+					}
+					
+					// Withdrawal makes isolated attacks safer since you can escape
+					if (iEnemySupport == 0)
+						result.iBonusScore += 3; // Extra safe when can withdraw from lone enemy
+				}
 			}
 		}
 	}
