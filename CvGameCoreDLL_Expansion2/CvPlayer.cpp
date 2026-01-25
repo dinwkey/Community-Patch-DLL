@@ -45261,17 +45261,18 @@ std::vector<CvUnit*> CvPlayer::GetPossibleAttackers(const CvPlot& Plot, TeamType
 
 bool CvPlayer::IsKnownAttacker(const CvUnit* pAttacker)
 {
-	if (m_pDangerPlots->IsDirty())
-		m_pDangerPlots->UpdateDanger();
-
+	// Optimization: Don't trigger full UpdateDanger() here.
+	// IsKnownAttacker only checks if a unit is in the known units set - 
+	// it doesn't need updated danger values to answer that question.
 	return m_pDangerPlots->IsKnownAttacker(pAttacker);
 }
 
 bool CvPlayer::AddKnownAttacker(const CvUnit* pAttacker)
 {
-	if (m_pDangerPlots->IsDirty())
-		m_pDangerPlots->UpdateDanger();
-
+	// Option A optimization: Don't trigger full UpdateDanger() here.
+	// The underlying AddKnownAttacker() does an incremental UpdateDangerSingleUnit() 
+	// which is fast (~0.1ms) vs full UpdateDanger() (~40ms).
+	// Full danger recalc will happen at the proper update points (turn start, before tactical AI).
 	return m_pDangerPlots->AddKnownAttacker(pAttacker);
 }
 
