@@ -9938,29 +9938,75 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		
 		// AIR RANGE OPTIMIZATION: Position to maximize air unit effectiveness
 		// Check if this position keeps carrier within strike range of targets
+		if (bHasCargo)
 		{
-			int iAirRange = 0;
+			int iMaxAirRange = 0;
+			int iMinAirRange = 99;
+			int iAttackAirCount = 0;
 			
-			// Estimate air unit range (use typical bomber range of 8-10, fighters 6-8)
-			// In practice, we'd check cargo units, but for efficiency use reasonable estimate
-			iAirRange = 8; // Default to typical bomber range
+			// Get actual range of loaded air units by iterating cargo
+			// Note: We use the carrier's current plot since cargo moves with carrier
+			const CvPlot* pCarrierPlot = pUnit->plot();
+			if (pCarrierPlot)
+			{
+				const IDInfo* pUnitNode = pCarrierPlot->headUnitNode();
+				while (pUnitNode != NULL)
+				{
+					const CvUnit* pCargoUnit = ::GetPlayerUnit(*pUnitNode);
+					pUnitNode = pCarrierPlot->nextUnitNode(pUnitNode);
+					
+					if (pCargoUnit && pCargoUnit->getTransportUnit() == pUnit)
+					{
+						// This is one of our loaded aircraft
+						int iCargoRange = pCargoUnit->GetRange();
+						
+						// Only count attack aircraft (bombers, missiles) for strike range
+						// Fighters have shorter range and are for defense
+						UnitAITypes eCargoAI = pCargoUnit->AI_getUnitAIType();
+						if (eCargoAI == UNITAI_ATTACK_AIR || eCargoAI == UNITAI_MISSILE_AIR || eCargoAI == UNITAI_ICBM)
+						{
+							iAttackAirCount++;
+							if (iCargoRange > iMaxAirRange)
+								iMaxAirRange = iCargoRange;
+							if (iCargoRange < iMinAirRange)
+								iMinAirRange = iCargoRange;
+						}
+						else if (eCargoAI == UNITAI_DEFENSE_AIR)
+						{
+							// Fighters - track for interception range but don't use for strike positioning
+							// Fighters still benefit from being near enemies for interception
+						}
+					}
+				}
+			}
+			
+			// If no attack aircraft, use a default range (might have only fighters)
+			if (iMaxAirRange == 0)
+				iMaxAirRange = 6; // Default fighter range for interception positioning
 			
 			// Check if there are enemy targets within air range from this position
 			const CvPlot* pTargetPlot = assumedPosition.getTarget();
-			if (pTargetPlot)
+			if (pTargetPlot && iAttackAirCount > 0)
 			{
 				int iDistToTarget = plotDistance(*testPlot.getPlot(), *pTargetPlot);
 				
-				// Optimal: within air range but not too close
-				if (iDistToTarget <= iAirRange && iDistToTarget >= 3)
+				// Optimal: within air range but not too close (safe position)
+				// Use the minimum range of our attack aircraft to ensure all can strike
+				int iEffectiveRange = (iMinAirRange < 99) ? iMinAirRange : iMaxAirRange;
+				
+				if (iDistToTarget <= iEffectiveRange && iDistToTarget >= 3)
 				{
 					iCarrierBonus += 25; // Perfect positioning - safe but in range
+					
+					// Extra bonus if all attack aircraft can reach
+					if (iDistToTarget <= iMinAirRange)
+						iCarrierBonus += 10; // All aircraft can strike
 				}
-				else if (iDistToTarget <= iAirRange)
+				else if (iDistToTarget <= iMaxAirRange)
 				{
-					iCarrierBonus += 10; // In range but maybe too close
+					iCarrierBonus += 15; // At least some aircraft in range
 				}
-				else if (iDistToTarget <= iAirRange + 2)
+				else if (iDistToTarget <= iMaxAirRange + 2)
 				{
 					iCarrierBonus += 5; // Close to range, might reach next turn
 				}
@@ -9968,9 +10014,10 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			
 			// Also check for any enemy units within air range
 			int iTargetsInAirRange = 0;
-			for (int iRing = 3; iRing <= iAirRange; iRing++)
+			int iMaxRingToCheck = min(iMaxAirRange, 10); // Cap at 10 for performance
+			for (int iRing = 3; iRing <= iMaxRingToCheck; iRing++)
 			{
-				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[iRing] && i < RING_PLOTS[5]; i++)
+				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
 				{
 					CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
 					if (pLoopPlot && pLoopPlot->isVisibleOtherUnit(pUnit->getOwner()))
@@ -9988,10 +10035,12 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				}
 			}
 			
-			// Bonus for having targets in optimal air range
-			if (iTargetsInAirRange > 0 && bHasCargo)
+			// Bonus for having targets in optimal air range (scaled by attack aircraft count)
+			if (iTargetsInAirRange > 0 && iAttackAirCount > 0)
 			{
-				iCarrierBonus += min(iTargetsInAirRange * 4, 20); // Up to +20 for target-rich environment
+				int iTargetBonus = min(iTargetsInAirRange * 3, 15);
+				iTargetBonus += min(iAttackAirCount * 3, 12); // More bombers = more important to be in range
+				iCarrierBonus += min(iTargetBonus, 25);
 			}
 		}
 		
