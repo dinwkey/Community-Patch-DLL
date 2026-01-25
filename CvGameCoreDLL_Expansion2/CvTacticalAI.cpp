@@ -1720,36 +1720,75 @@ void CvTacticalAI::PlotCounterBlockadeMoves()
 			
 			if (FindUnitsForHarassing(pAdj, iSearchRange, GD_INT_GET(MAX_HIT_POINTS) / 3, -1, DOMAIN_SEA, false, false, 3))
 			{
-				// Try to attack the blockader
+				// Prefer melee units over ranged - melee can also capture the city if opportunity arises
+				// Sort candidates: melee first, then by health
+				CvUnit* pBestMelee = NULL;
+				CvUnit* pBestRanged = NULL;
+				
 				for (size_t i = 0; i < m_CurrentMoveUnits.size(); i++)
 				{
 					CvUnit* pAttacker = m_pPlayer->getUnit(m_CurrentMoveUnits[i].GetID());
 					if (!pAttacker || pAttacker->TurnProcessed())
 						continue;
 					
-					// Can we attack from current position or move adjacent to attack?
-					if (pAttacker->canMoveInto(*pAdj, CvUnit::MOVEFLAG_ATTACK))
+					if (pAttacker->IsCanAttackRanged())
+					{
+						// Check if ranged unit can actually attack
+						if (pAttacker->canRangeStrikeAt(pAdj->getX(), pAdj->getY()))
+						{
+							if (!pBestRanged || pAttacker->GetCurrHitPoints() > pBestRanged->GetCurrHitPoints())
+								pBestRanged = pAttacker;
+						}
+					}
+					else
+					{
+						// Melee unit - check if it can move to attack
+						if (pAttacker->canMoveInto(*pAdj, CvUnit::MOVEFLAG_ATTACK))
+						{
+							if (!pBestMelee || pAttacker->GetCurrHitPoints() > pBestMelee->GetCurrHitPoints())
+								pBestMelee = pAttacker;
+						}
+					}
+				}
+				
+				// Prefer melee (can capture city too) unless it would die from the attack
+				CvUnit* pAttacker = NULL;
+				if (pBestMelee)
+				{
+					// Check if melee attack is safe enough (won't lose the unit)
+					int iSelfDamage = 0;
+					TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(pBlockader, pBestMelee, pAdj, pBestMelee->plot(), iSelfDamage, true, 0, true);
+					
+					// Use melee if it won't die or if no ranged alternative
+					if (pBestMelee->GetCurrHitPoints() > iSelfDamage || !pBestRanged)
+						pAttacker = pBestMelee;
+					else
+						pAttacker = pBestRanged;
+				}
+				else
+				{
+					pAttacker = pBestRanged;
+				}
+				
+				if (pAttacker)
+				{
+					bool bIsMelee = !pAttacker->IsCanAttackRanged();
+					
+					if (bIsMelee)
 					{
 						pAttacker->PushMission(CvTypes::getMISSION_MOVE_TO(), pAdj->getX(), pAdj->getY(), CvUnit::MOVEFLAG_ATTACK);
 						
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
-							strLogString.Format("Counter-blockade: Unit %d attacking blockader near %s at (%d,%d)%s%s",
+							strLogString.Format("Counter-blockade: Melee unit %d attacking blockader near %s at (%d,%d)%s%s [can capture]",
 								pAttacker->GetID(), pCity->getName().GetCString(), pAdj->getX(), pAdj->getY(),
 								bCityDamaged ? " [CITY DAMAGED]" : "", bCityUnderSiege ? " [UNDER SIEGE]" : "");
 							LogTacticalMessage(strLogString);
 						}
-						
-						if (!pAttacker->canMove())
-							UnitProcessed(pAttacker->GetID());
-						
-						// One attacker per blockader per turn to spread damage
-						break;
 					}
-					else if (pAttacker->IsCanAttackRanged() && pAttacker->canRangeStrikeAt(pAdj->getX(), pAdj->getY()))
+					else
 					{
-						// Ranged naval unit can attack from distance
 						pAttacker->PushMission(CvTypes::getMISSION_RANGE_ATTACK(), pAdj->getX(), pAdj->getY());
 						
 						if (GC.getLogging() && GC.getAILogging())
@@ -1759,10 +1798,10 @@ void CvTacticalAI::PlotCounterBlockadeMoves()
 								pAttacker->GetID(), pCity->getName().GetCString(), pAdj->getX(), pAdj->getY());
 							LogTacticalMessage(strLogString);
 						}
-						
-						if (!pAttacker->canMove())
-							UnitProcessed(pAttacker->GetID());
 					}
+					
+					if (!pAttacker->canMove())
+						UnitProcessed(pAttacker->GetID());
 				}
 			}
 		}
