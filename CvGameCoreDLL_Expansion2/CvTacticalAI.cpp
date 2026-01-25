@@ -8246,6 +8246,22 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		}
 	}
 
+	// Wounded unit damage rotation - heavily wounded units should avoid front line
+	// This encourages healthier units to take hits while wounded units heal
+	int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints());
+	if (iHealthPercent < 35 && testPlot.getEnemyDistance(eRelevantDomain) <= 1)
+	{
+		// Heavily wounded on front line is bad - they might die and be lost
+		// Exception: citadels and cities are safer
+		if (!bIsFrontlineCitadelOrCity)
+			iResult -= 15;
+	}
+	else if (iHealthPercent > 80 && testPlot.getEnemyDistance(eRelevantDomain) <= 1 && !pUnit->IsCanAttackRanged())
+	{
+		// Healthy melee units should take the front line
+		iResult += 5;
+	}
+
 	//try to stay together, in pairs at least
 	if (iNumAdjFriendlies > 0)
 	{
@@ -8473,6 +8489,78 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 
 	//consider visibility as well
 	iDangerScore += ScorePlotForVisibility(pUnit, testPlot);
+
+	// === DEFENSIVE POSITIONING IMPROVEMENTS ===
+	// When defending friendly territory, use terrain and positioning smartly
+	const CvPlot* pTarget = assumedPosition.getTarget();
+	bool bDefendingFriendlyCity = pTarget && pTarget->isCity() && pTarget->isFriendlyCity(*pUnit);
+	
+	if (bDefendingFriendlyCity && pTestPlot->IsFriendlyTerritory(pUnit->getOwner()))
+	{
+		CvCity* pFriendlyCity = pTarget->getPlotCity();
+		int iDistToCity = plotDistance(*pTestPlot, *pTarget);
+		
+		// 1. Defensive terrain bonus - prefer hills, forests for defensive bonuses
+		// This helps units take less damage when enemies attack them
+		if (!pUnit->IsCanAttackRanged() || pUnit->GetRange() == 1) // melee and skirmishers benefit most
+		{
+			int iDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
+			if (iDefMod > 0)
+				iPlotScore += iDefMod / 10; // +2 for 20% defense, +5 for 50% defense
+		}
+		
+		// 2. Chokepoint bonus for melee units - block enemy advance routes
+		if (!pUnit->IsCanAttackRanged() && pTestPlot->IsChokePoint())
+		{
+			// Melee on chokepoints can block multiple enemies
+			iPlotScore += 8;
+		}
+		
+		// 3. Wounded unit rotation - heavily wounded units should fall back
+		// Let healthier units take the front line
+		int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+		if (iHealthPercent < 40) // below 40% HP
+		{
+			// Prefer positions further from enemies (higher enemy distance = safer)
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			if (iEnemyDist >= 2)
+				iPlotScore += 4; // bonus for falling back
+			else if (iEnemyDist <= 1 && !pTestPlot->isCity())
+				iPlotScore -= 6; // penalty for wounded unit staying on front line
+		}
+		
+		// 4. City proximity bonus when city is threatened
+		// Units should stay close to defend rather than chase enemies
+		if (pFriendlyCity && (pFriendlyCity->isUnderSiege() || pFriendlyCity->isInDangerOfFalling()))
+		{
+			if (iDistToCity <= 2)
+				iPlotScore += 6; // strong bonus for staying close to threatened city
+			else if (iDistToCity <= 3)
+				iPlotScore += 3;
+			else if (iDistToCity > 4)
+				iPlotScore -= 4; // penalty for being too far from threatened city
+		}
+		
+		// 5. Melee screening for ranged - melee should position between ranged and enemies
+		if (!pUnit->IsCanAttackRanged())
+		{
+			// Check if there are friendly ranged units nearby that need protection
+			int iAdjacentFriendlyRanged = 0;
+			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+			{
+				CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+				if (pAdj)
+				{
+					CvUnit* pAdjUnit = pAdj->getBestDefender(pUnit->getOwner());
+					if (pAdjUnit && pAdjUnit->IsCanAttackRanged() && pAdjUnit->GetRange() > 1)
+						iAdjacentFriendlyRanged++;
+				}
+			}
+			// Bonus for melee being adjacent to friendly ranged (screening them)
+			if (iAdjacentFriendlyRanged > 0 && testPlot.getEnemyDistance(eRelevantDomain) <= 2)
+				iPlotScore += iAdjacentFriendlyRanged * 3;
+		}
+	}
 
 	// Siege unit positioning bonus: encourage UNITAI_CITY_BOMBARD units to position within range of enemy cities
 	// This helps siege weapons get into optimal firing positions faster
