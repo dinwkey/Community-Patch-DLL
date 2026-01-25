@@ -11022,6 +11022,319 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		}
 	}
 
+	// === HELICOPTER GUNSHIP POSITIONING ===
+	// Helicopters are extremely mobile but need to:
+	// - Stay away from AA coverage zones
+	// - Position for quick surgical strikes
+	// - Use their ability to reach any terrain
+	// - Avoid clustering (vulnerable to area AA)
+	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND && 
+		pUnit->IsHoveringUnit() && evalMode != EM_INTERMEDIATE)
+	{
+		int iUnitRange = pUnit->GetRange();
+		int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+		
+		// 1. AA AVOIDANCE ZONES: Helicopters must avoid areas covered by AA
+		// This is life-or-death for helicopters
+		int iAAUnitsNearby = 0;
+		int iClosestAADist = INT_MAX;
+		
+		for (int i = RING0_PLOTS; i < RING_PLOTS[4]; i++) // Check 4-tile radius
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+			if (!pLoopPlot)
+				continue;
+			
+			CvUnit* pPotentialAA = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+			if (pPotentialAA && pPotentialAA->canIntercept() && pPotentialAA->getDomainType() != DOMAIN_AIR)
+			{
+				iAAUnitsNearby++;
+				int iDistToAA = plotDistance(*pTestPlot, *pLoopPlot);
+				if (iDistToAA < iClosestAADist)
+					iClosestAADist = iDistToAA;
+			}
+		}
+		
+		// Heavy penalty for being in AA coverage
+		if (iAAUnitsNearby > 0)
+		{
+			// Get interception range (usually 2-3)
+			int iAARange = 2; // Default interception range
+			
+			if (iClosestAADist <= iAARange)
+			{
+				// In interception range - very dangerous
+				iPlotScore -= 20;
+				
+				// Even worse with multiple AA (crossfire)
+				if (iAAUnitsNearby >= 2)
+					iPlotScore -= iAAUnitsNearby * 10;
+			}
+			else if (iClosestAADist <= iAARange + 1)
+			{
+				// Just outside AA range - still risky
+				iPlotScore -= 8;
+			}
+		}
+		else
+		{
+			// No AA nearby - helicopter can operate freely
+			iPlotScore += 8;
+		}
+		
+		// 2. STRIKE POSITIONING: Position to hit targets without entering AA zones
+		// Helicopters should position at their max range from valuable targets
+		{
+			int iTargetsInRange = 0;
+			int iHighValueTargetsInRange = 0;
+			
+			for (int iRing = 1; iRing <= iUnitRange; iRing++)
+			{
+				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemy && !pEnemy->IsCivilianUnit())
+						{
+							iTargetsInRange++;
+							
+							// High-value targets for helicopter
+							if (pEnemy->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+								iHighValueTargetsInRange += 2; // Siege
+							else if (pEnemy->canIntercept())
+								iHighValueTargetsInRange += 3; // Enemy AA (remove threats)
+							else if (pEnemy->GetCurrHitPoints() < pEnemy->GetMaxHitPoints() / 2)
+								iHighValueTargetsInRange++; // Wounded
+						}
+					}
+				}
+			}
+			
+			// Bonus for having targets in range
+			if (iTargetsInRange > 0)
+				iPlotScore += min(iTargetsInRange * 2, 6);
+			
+			// Extra bonus for high-value targets
+			if (iHighValueTargetsInRange > 0)
+				iPlotScore += min(iHighValueTargetsInRange * 3, 12);
+		}
+		
+		// 3. DON'T CLUSTER: Helicopters should spread out to avoid area attacks
+		int iAdjacentFriendlyHelis = 0;
+		for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+		{
+			CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+			if (pAdj)
+			{
+				CvUnit* pFriendly = pAdj->getBestDefender(pUnit->getOwner());
+				if (pFriendly && pFriendly->IsHoveringUnit() && pFriendly->IsCanAttackRanged())
+					iAdjacentFriendlyHelis++;
+			}
+		}
+		
+		if (iAdjacentFriendlyHelis >= 2)
+		{
+			// Clustering helicopters - vulnerable to area attacks
+			iPlotScore -= 6;
+		}
+		
+		// 4. TERRAIN FLEXIBILITY: Helicopters can use any terrain
+		// They should use this to reach positions other units can't
+		// No terrain penalties for helicopters!
+		// But prefer positions that let them retreat over friendly territory
+		if (pTestPlot->IsFriendlyTerritory(pUnit->getOwner()))
+		{
+			iPlotScore += 3; // Easier to retreat/resupply
+		}
+		else if (pTestPlot->isWater() && pUnit->IsHoveringUnit())
+		{
+			// Hovering over water - unique helicopter advantage
+			// Good if it gives firing angles others can't get
+			if (iEnemyDist <= iUnitRange && iAAUnitsNearby == 0)
+				iPlotScore += 5; // Exploit water-hover for attack angles
+		}
+		
+		// 5. MOBILITY PRESERVATION: Don't garrison helicopters
+		if (pTestPlot->isCity())
+		{
+			int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+			if (iHealthPercent > 50)
+			{
+				iPlotScore -= 8; // Helicopters should stay mobile
+			}
+		}
+	}
+
+	// === LIGHT TANK / ARMORED CAR POSITIONING ===
+	// Light tanks are reconnaissance and screening units that should:
+	// - Stay ahead of main force (scouting)
+	// - Avoid direct confrontation with heavy armor
+	// - Use speed to exploit gaps and flank
+	// - Support heavy tanks with fire
+	// Detection: Fast ranged (4+ moves), moderate strength (30-60), not hovering
+	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND &&
+		pUnit->baseMoves(false) >= 4 && !pUnit->IsHoveringUnit() && evalMode != EM_INTERMEDIATE)
+	{
+		int iOurStrength = pUnit->GetBaseCombatStrength();
+		bool bIsLightTank = (iOurStrength >= 30 && iOurStrength < 60);
+		
+		if (bIsLightTank && assumedPosition.haveEnemies())
+		{
+			int iUnitRange = pUnit->GetRange();
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			int iAdjacentEnemies = testPlot.getNumAdjacentEnemies(eRelevantDomain);
+			
+			// 1. SCREENING POSITION: Stay ahead of main force but not too exposed
+			// Light tanks should be at range 2-3 from enemies (can fire, hard to catch)
+			if (iEnemyDist == 2 || iEnemyDist == iUnitRange)
+			{
+				// Good screening distance
+				iPlotScore += 8;
+			}
+			else if (iEnemyDist == 1 && iAdjacentEnemies > 0)
+			{
+				// Too close for a light tank
+				iPlotScore -= 10;
+			}
+			
+			// 2. FLANK POSITIONING: Light tanks exploit gaps
+			// Check for positions on the flanks of enemy formations
+			{
+				int iEnemiesInFront = 0;
+				int iEnemiesOnSide = 0;
+				
+				const CvPlot* pTarget = assumedPosition.getTarget();
+				if (pTarget)
+				{
+					DirectionTypes eDirToTarget = directionXY(pTestPlot, pTarget);
+					
+					for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (!pLoopPlot)
+							continue;
+						
+						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemy && pEnemy->IsCombatUnit())
+						{
+							DirectionTypes eDirToEnemy = directionXY(pTestPlot, pLoopPlot);
+							
+							// Is enemy in our attack direction or on the side?
+							int iAngleDiff = abs((int)eDirToTarget - (int)eDirToEnemy);
+							if (iAngleDiff > 3) iAngleDiff = 6 - iAngleDiff;
+							
+							if (iAngleDiff <= 1)
+								iEnemiesInFront++;
+							else
+								iEnemiesOnSide++;
+						}
+					}
+				}
+				
+				// Bonus for flanking positions (enemies on side, not in front)
+				if (iEnemiesOnSide > 0 && iEnemiesInFront == 0)
+				{
+					iPlotScore += 8; // Good flanking position
+				}
+				else if (iEnemiesInFront >= 2)
+				{
+					iPlotScore -= 5; // Facing strong enemy concentration
+				}
+			}
+			
+			// 3. HEAVY TANK SUPPORT: Position to support friendly heavy armor
+			{
+				bool bNearFriendlyHeavyArmor = false;
+				for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+						if (pFriendly && !pFriendly->IsCanAttackRanged() &&
+							pFriendly->baseMoves(false) >= 4 &&
+							pFriendly->GetBaseCombatStrength() >= 60)
+						{
+							bNearFriendlyHeavyArmor = true;
+							break;
+						}
+					}
+				}
+				
+				// Bonus for being near heavy tanks (combined arms support)
+				if (bNearFriendlyHeavyArmor)
+				{
+					iPlotScore += 6;
+					
+					// Extra bonus if in position to support their attack
+					if (iEnemyDist <= iUnitRange)
+						iPlotScore += 4;
+				}
+			}
+			
+			// 4. AVOID HEAVY ENEMY ARMOR: Don't get caught by tanks
+			{
+				bool bHeavyEnemyNearby = false;
+				for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemy && !pEnemy->IsCanAttackRanged() &&
+							pEnemy->GetBaseCombatStrength() >= 60)
+						{
+							bHeavyEnemyNearby = true;
+							break;
+						}
+					}
+				}
+				
+				if (bHeavyEnemyNearby)
+				{
+					// Enemy heavy armor nearby - dangerous for light tank
+					iPlotScore -= 10;
+				}
+			}
+			
+			// 5. OPEN TERRAIN: Light tanks need mobility
+			if (pTestPlot->isOpenGround())
+			{
+				iPlotScore += 4;
+			}
+			else if (pTestPlot->isRoughGround())
+			{
+				iPlotScore -= 3;
+			}
+			
+			// 6. ESCAPE ROUTES: Light tanks need to retreat if caught
+			{
+				int iEscapeRoutes = 0;
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (pAdj && pUnit->canMoveInto(*pAdj, CvUnit::MOVEFLAG_DESTINATION))
+					{
+						int iAdjEnemyDist = assumedPosition.getTactPlot(pAdj->GetPlotIndex()).getEnemyDistance(eRelevantDomain);
+						if (iAdjEnemyDist > iEnemyDist)
+							iEscapeRoutes++;
+					}
+				}
+				
+				if (iEscapeRoutes >= 2)
+				{
+					iPlotScore += 4;
+				}
+				else if (iEscapeRoutes == 0 && iEnemyDist <= 2)
+				{
+					iPlotScore -= 6; // Cornered light tank
+				}
+			}
+		}
+	}
+
 	//final score
 	//danger values (typically negative!) are mostly useful as tiebreaker
 	result.iPlotScore = iPlotScore * 10 + iDangerScore;
@@ -11444,6 +11757,257 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 					// Settlers are extremely valuable
 					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
 						newAssignment.iBonusScore += 20;
+				}
+			}
+		}
+	}
+
+	// === HELICOPTER GUNSHIP TACTICS ===
+	// Helicopters are extremely mobile but vulnerable to anti-air. They excel at:
+	// - Surgical strikes on isolated targets
+	// - Picking off wounded units
+	// - Destroying siege/artillery before it can fire
+	// - Avoiding AA coverage zones at all costs
+	if (unit.pUnit->getDomainType() == DOMAIN_LAND && unit.pUnit->IsCanAttackRanged() && 
+		unit.pUnit->IsHoveringUnit())
+	{
+		CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+		const CvPlot* pTargetPlot = enemyPlot.getPlot();
+		
+		// 1. AA AVOIDANCE: Check for anti-air threats near target
+		// This is CRITICAL - helicopters take massive damage from AA
+		int iAAThreatsNearTarget = 0;
+		int iMaxAADamage = 0;
+		
+		for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++) // Check 3-tile radius
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pTargetPlot, i);
+			if (!pLoopPlot)
+				continue;
+			
+			CvUnit* pPotentialAA = pLoopPlot->getBestDefender(NO_PLAYER, unit.pUnit->getOwner(), NULL, true);
+			if (pPotentialAA && pPotentialAA->canIntercept() && pPotentialAA->getDomainType() != DOMAIN_AIR)
+			{
+				iAAThreatsNearTarget++;
+				int iAADamage = pPotentialAA->GetInterceptionDamage(unit.pUnit, false, pTargetPlot);
+				if (iAADamage > iMaxAADamage)
+					iMaxAADamage = iAADamage;
+			}
+		}
+		
+		// Heavy penalty for attacking into AA coverage
+		if (iAAThreatsNearTarget > 0)
+		{
+			// Estimate interception damage as fraction of our HP
+			int iOurHP = unit.pUnit->GetCurrHitPoints();
+			int iDamagePercent = (iMaxAADamage * 100) / max(1, iOurHP);
+			
+			// Scale penalty by damage risk
+			if (iDamagePercent >= 50)
+			{
+				// Would take serious damage - heavily discourage unless it's a kill
+				if (!bIsKill)
+					newAssignment.iBonusScore -= 60;
+				else
+					newAssignment.iBonusScore -= 30; // Still risky but kill might be worth it
+			}
+			else if (iDamagePercent >= 25)
+			{
+				newAssignment.iBonusScore -= 25;
+			}
+			else
+			{
+				newAssignment.iBonusScore -= 10; // Mild risk
+			}
+			
+			// Extra penalty for multiple AA (crossfire)
+			if (iAAThreatsNearTarget >= 2)
+				newAssignment.iBonusScore -= iAAThreatsNearTarget * 15;
+		}
+		else
+		{
+			// No AA coverage - helicopter can operate freely!
+			newAssignment.iBonusScore += 15; // Safe operating zone
+		}
+		
+		// 2. TARGET PRIORITY: Helicopters excel at specific targets
+		if (pEnemyUnit && !enemyPlot.isEnemyCity())
+		{
+			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
+			
+			// PRIORITY A: Siege/Artillery - destroy before they bombard our cities
+			if (eEnemyAI == UNITAI_CITY_BOMBARD)
+			{
+				newAssignment.iBonusScore += 25;
+				
+				// Extra bonus for killing siege
+				if (bIsKill)
+					newAssignment.iBonusScore += 20;
+			}
+			// PRIORITY B: Enemy AA units - eliminate threats to our air operations
+			else if (pEnemyUnit->canIntercept())
+			{
+				// Very high value target - removing AA opens airspace
+				newAssignment.iBonusScore += 30;
+				
+				if (bIsKill)
+					newAssignment.iBonusScore += 25;
+			}
+			// PRIORITY C: Wounded enemies - surgical finishing
+			else
+			{
+				int iEnemyHPPercent = (pEnemyUnit->GetCurrHitPoints() * 100) / pEnemyUnit->GetMaxHitPoints();
+				if (iEnemyHPPercent <= 40)
+				{
+					// Heavily wounded - perfect helicopter target
+					newAssignment.iBonusScore += 15;
+					
+					if (bIsKill)
+						newAssignment.iBonusScore += 10;
+				}
+			}
+			
+			// PRIORITY D: Isolated targets - helicopter can reach where others can't
+			int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
+			if (iEnemySupport == 0)
+			{
+				// Isolated unit - helicopter's reach advantage
+				newAssignment.iBonusScore += 12;
+			}
+			
+			// PRIORITY E: Supply line disruption - workers, settlers behind enemy lines
+			if (pEnemyUnit->IsCivilianUnit())
+			{
+				newAssignment.iBonusScore += 20;
+				
+				// Settlers are prime targets
+				if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
+					newAssignment.iBonusScore += 15;
+			}
+		}
+		
+		// 3. AVOID FORTIFIED/ENTRENCHED TARGETS: Helicopters waste their mobility on these
+		// Better to let ground forces handle dug-in enemies
+		if (pEnemyUnit && pEnemyUnit->IsCombatUnit() && !pEnemyUnit->IsCanAttackRanged())
+		{
+			if (pEnemyUnit->IsFortified() || pEnemyUnit->fortifyModifier() > 0)
+			{
+				// Fortified enemy - less valuable target for helicopter
+				newAssignment.iBonusScore -= 8;
+			}
+		}
+	}
+	
+	// === LIGHT TANK / ARMORED CAR TACTICS ===
+	// Light tanks: Fast ranged units with moderate armor. Different from helicopters:
+	// - Bound by terrain (no hovering)
+	// - Not vulnerable to AA
+	// - Good for reconnaissance, screening, exploiting gaps
+	// - Can engage enemy armor but prefer softer targets
+	// Detection: Fast ranged (4+ moves), moderate strength (30-60), land unit, not hovering
+	if (unit.pUnit->getDomainType() == DOMAIN_LAND && unit.pUnit->IsCanAttackRanged() &&
+		unit.pUnit->baseMoves(false) >= 4 && !unit.pUnit->IsHoveringUnit())
+	{
+		int iOurStrength = unit.pUnit->GetBaseCombatStrength();
+		bool bIsLightTank = (iOurStrength >= 30 && iOurStrength < 60);
+		
+		if (bIsLightTank && !enemyPlot.isEnemyCity())
+		{
+			CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+			if (pEnemyUnit)
+			{
+				int iEnemyStrength = pEnemyUnit->GetBaseCombatStrength();
+				UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
+				
+				// 1. RECONNAISSANCE ROLE: Light tanks should spot and report, not brawl
+				// Prefer softer targets over heavy armor
+				if (iEnemyStrength > iOurStrength + 20)
+				{
+					// Enemy is much stronger (heavy tank or fortified unit)
+					// Light tank should harass, not engage directly
+					if (!bIsKill)
+						newAssignment.iBonusScore -= 15; // Don't pick fights we can't win
+				}
+				else if (iEnemyStrength < iOurStrength - 10)
+				{
+					// Weaker enemy - good target for light tank
+					newAssignment.iBonusScore += 10;
+				}
+				
+				// 2. SCREENING ROLE: Engage enemy recon and light units
+				// Counter enemy light units and scouts
+				if (pEnemyUnit->baseMoves(false) >= 3 && !pEnemyUnit->IsCanAttackRanged())
+				{
+					// Enemy fast melee (cavalry/light armor) - good target for light tank
+					newAssignment.iBonusScore += 12;
+					
+					if (bIsKill)
+						newAssignment.iBonusScore += 8;
+				}
+				
+				// 3. EXPLOIT GAPS: Light tanks can quickly exploit weak points
+				// Prefer targets on the flanks of enemy formations
+				int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
+				if (iEnemySupport == 0)
+				{
+					// Isolated/flanked enemy
+					newAssignment.iBonusScore += 10;
+				}
+				else if (iEnemySupport == 1)
+				{
+					// Lightly supported - still viable
+					newAssignment.iBonusScore += 5;
+				}
+				else if (iEnemySupport >= 3)
+				{
+					// Heavily defended - not ideal for light tank
+					newAssignment.iBonusScore -= 8;
+				}
+				
+				// 4. FIRE SUPPORT: Prioritize helping our heavier units
+				// Check if friendly heavy armor is engaged with this target
+				vector<SUnitStats> allUnits = assumedPosition.getAvailableUnits();
+				allUnits.insert(allUnits.end(), assumedPosition.getFinishedUnits().begin(), assumedPosition.getFinishedUnits().end());
+				
+				bool bFriendlyArmorEngaged = false;
+				for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+				{
+					const CvUnit* pFriendly = it->pUnit;
+					if (!pFriendly || pFriendly == unit.pUnit)
+						continue;
+					
+					// Check for heavy armor (strength >= 60, fast melee)
+					if (pFriendly->GetBaseCombatStrength() >= 60 && 
+						pFriendly->baseMoves(false) >= 4 && 
+						!pFriendly->IsCanAttackRanged())
+					{
+						int iDistToEnemy = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+						if (iDistToEnemy <= 2)
+						{
+							bFriendlyArmorEngaged = true;
+							break;
+						}
+					}
+				}
+				
+				if (bFriendlyArmorEngaged)
+				{
+					// Support our heavy tanks
+					newAssignment.iBonusScore += 15;
+					
+					// Extra bonus if this softens target for heavy armor kill
+					if (!bIsKill && newAssignment.iDamage > pEnemyUnit->GetCurrHitPoints() / 3)
+						newAssignment.iBonusScore += 8;
+				}
+				
+				// 5. SOFT TARGETS: Light tanks excel against infantry, siege, supply
+				if (eEnemyAI == UNITAI_CITY_BOMBARD)
+				{
+					newAssignment.iBonusScore += 15; // Artillery is vulnerable
+				}
+				else if (pEnemyUnit->IsCivilianUnit())
+				{
+					newAssignment.iBonusScore += 12; // Raid supply lines
 				}
 			}
 		}
