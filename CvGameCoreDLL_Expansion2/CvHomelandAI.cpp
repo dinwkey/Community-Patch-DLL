@@ -5873,6 +5873,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR));
 		
 		// MISSILE-SPECIFIC REBASING: Missiles should go to bases near targets for immediate use
+		// PRIORITY: Missile-only platforms first (subs, cruisers), then carriers only if needed
 		bool bIsMissile = (pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR);
 		int iBestMissileScore = -1;
 		CvPlot* pBestMissileBase = NULL;
@@ -5881,8 +5882,20 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		{
 			// For missiles, we want to be at a base within range of high-value targets
 			// Re-score bases based on missile-specific criteria
+			// CRITICAL: Prefer missile-only platforms to save carrier slots for bombers/fighters
 			int iMissileRange = pUnit->GetRange();
 			const vector<CvTacticalTarget>& allTargets = m_pPlayer->GetTacticalAI()->GetTacticalTargets();
+			
+			// Cache the special unit type for missile platforms
+			static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
+			
+			// First pass: find best missile-only platform
+			int iBestMissilePlatformScore = -1;
+			CvPlot* pBestMissilePlatform = NULL;
+			
+			// Second pass: find best carrier (as fallback)
+			int iBestCarrierScore = -1;
+			CvPlot* pBestCarrier = NULL;
 			
 			for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
 			{
@@ -5894,6 +5907,22 @@ void CvHomelandAI::ExecuteAircraftMoves()
 					continue;
 				
 				int iMissileBaseScore = it->score;
+				
+				// Determine platform type
+				bool bIsMissileOnlyPlatform = false;
+				bool bIsCarrier = false;
+				bool bIsCity = it->pPlot->isCity();
+				
+				if (!bIsCity)
+				{
+					CvUnit* pPlatform = it->pPlot->getBestDefender(m_pPlayer->GetID());
+					if (pPlatform && pPlatform->domainCargo() == DOMAIN_AIR)
+					{
+						SpecialUnitTypes eSpecialCargo = pPlatform->specialCargo();
+						bIsMissileOnlyPlatform = (eSpecialCargo == eMissileSpecial);
+						bIsCarrier = !bIsMissileOnlyPlatform;
+					}
+				}
 				
 				// Count high-value targets within missile range from this base
 				int iTargetsInRange = 0;
@@ -5936,13 +5965,13 @@ void CvHomelandAI::ExecuteAircraftMoves()
 						if (bMissileOnlyPlatform)
 						{
 							// MISSILE-ONLY PLATFORMS (Submarines, Cruisers)
-							// These are designed for missiles - give them priority
-							iMissileBaseScore += 15; // Bonus for being on dedicated missile platform
+							// These are designed for missiles - give them HIGH priority
+							iMissileBaseScore += 50; // Large bonus - save carrier slots for bombers!
 							
 							// Submarines get extra bonus - stealthy strike capability
 							if (pPlatform->getInvisibleType() != NO_INVISIBLE)
 							{
-								iMissileBaseScore += 10; // Submarine stealth bonus
+								iMissileBaseScore += 15; // Submarine stealth bonus
 							}
 							
 							// Even missile platforms need resupply consideration
@@ -5953,17 +5982,15 @@ void CvHomelandAI::ExecuteAircraftMoves()
 						}
 						else
 						{
-							// Full carriers - apply original logic
+							// Full carriers - PENALIZE to encourage missile-only platforms
+							// Only use carriers when no missile platform available or carrier is much better positioned
+							iMissileBaseScore -= 30; // Penalty for using precious carrier slots
+							
 							if (iDistToCity > 10)
 							{
-								// Carrier can't easily get more missiles - penalize if few targets
+								// Carrier can't easily get more missiles - extra penalty if few targets
 								if (iTargetsInRange < 2)
 									iMissileBaseScore -= 20;
-							}
-							else
-							{
-								// Carrier can resupply - slight bonus
-								iMissileBaseScore += 5;
 							}
 						}
 					}
@@ -5973,24 +6000,93 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				if (iTargetsInRange == 0)
 					iMissileBaseScore -= 50;
 				
-				if (iMissileBaseScore > iBestMissileScore)
+				// Track best by platform type
+				if (bIsMissileOnlyPlatform)
 				{
-					iBestMissileScore = iMissileBaseScore;
-					pBestMissileBase = it->pPlot;
+					if (iMissileBaseScore > iBestMissilePlatformScore)
+					{
+						iBestMissilePlatformScore = iMissileBaseScore;
+						pBestMissilePlatform = it->pPlot;
+					}
+				}
+				else if (bIsCarrier)
+				{
+					if (iMissileBaseScore > iBestCarrierScore)
+					{
+						iBestCarrierScore = iMissileBaseScore;
+						pBestCarrier = it->pPlot;
+					}
+				}
+				else // City
+				{
+					// Cities are neutral - track as general best
+					if (iMissileBaseScore > iBestMissileScore)
+					{
+						iBestMissileScore = iMissileBaseScore;
+						pBestMissileBase = it->pPlot;
+					}
+				}
+			}
+			
+			// PRIORITY SELECTION: Missile-only platform > City > Carrier (unless carrier is much better)
+			// Only use carrier if:
+			// 1. No missile platform available, OR
+			// 2. Carrier score is significantly higher (40+ points better) due to positioning
+			
+			int iCurrentScore = scoreLookup[pUnit->plot()->GetPlotIndex()];
+			const int iCarrierAdvantageThreshold = 40; // Carrier must be this much better to override
+			
+			if (pBestMissilePlatform && iBestMissilePlatformScore > iCurrentScore)
+			{
+				// Prefer missile-only platform
+				pBestMissileBase = pBestMissilePlatform;
+				iBestMissileScore = iBestMissilePlatformScore;
+			}
+			else if (pBestMissileBase && iBestMissileScore > iCurrentScore)
+			{
+				// City is acceptable
+				// pBestMissileBase already set
+			}
+			else if (pBestCarrier && iBestCarrierScore > iCurrentScore)
+			{
+				// Check if carrier is significantly better than available missile platform
+				if (!pBestMissilePlatform || iBestCarrierScore > iBestMissilePlatformScore + iCarrierAdvantageThreshold)
+				{
+					pBestMissileBase = pBestCarrier;
+					iBestMissileScore = iBestCarrierScore;
+				}
+				else if (pBestMissilePlatform)
+				{
+					// Missile platform exists and carrier isn't that much better - use platform
+					pBestMissileBase = pBestMissilePlatform;
+					iBestMissileScore = iBestMissilePlatformScore;
 				}
 			}
 			
 			// Use missile-specific best base if found and better than current
-			if (pBestMissileBase && iBestMissileScore > scoreLookup[pUnit->plot()->GetPlotIndex()])
+			if (pBestMissileBase && iBestMissileScore > iCurrentScore)
 			{
 				pNewBase = pBestMissileBase;
+				
+				// Determine what type of base we chose for logging
+				bool bChoseMissilePlatform = (pBestMissileBase == pBestMissilePlatform);
+				bool bChoseCarrier = (pBestMissileBase == pBestCarrier);
 				
 				if(GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to %d,%d (missile score %d) - optimized for targets in range", 
-						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
-						pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
+					if (bChoseMissilePlatform)
+						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to MISSILE PLATFORM at %d,%d (score %d) - preferred dedicated platform", 
+							pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+							pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
+					else if (bChoseCarrier)
+						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to CARRIER at %d,%d (score %d) - no better missile platform available", 
+							pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+							pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
+					else
+						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to CITY at %d,%d (score %d)", 
+							pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+							pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
 					LogHomelandMessage(strLogString);
 				}
 				
