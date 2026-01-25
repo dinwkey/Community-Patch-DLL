@@ -441,6 +441,8 @@ private:
 	bool ShouldPlunderTradeRouteAtPlot(CvPlot* pPlot);
 	void ExecutePlunderTradeUnit(CvPlot* pTargetPlot);
 	void ExecuteParadropPillage(CvPlot* pTargetPlot);
+	bool ExecuteParadropCivilian(CvPlot* pTargetPlot);
+	bool ExecuteParadropCityCapture(CvCity* pCity);
 	void ExecuteLandingOperation(CvPlot* pTargetPlot);
 	bool ExecuteSpotterMove(const vector<CvUnit*>& vUnits, CvPlot* pTargetPlot);
 	bool ExecuteAttackWithUnits(CvPlot* pTargetPlot, eAggressionLevel eAggLvl);

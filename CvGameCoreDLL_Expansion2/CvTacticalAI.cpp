@@ -1231,6 +1231,27 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				if (bCityNearDeath && iMeleeCount > 0)
 					bCaptureOpportunityThisTurn = true;
 
+				// Special case: City is at 0 HP with no garrison - try paradrop to capture!
+				// Paratroopers can't attack after dropping, but they CAN capture undefended cities
+				if (iRequiredDamage <= 0 && !pCity->HasGarrison())
+				{
+					CvPlot* pCityPlot = pCity->plot();
+					if (pCityPlot && FindParatroopersWithinStrikingDistance(pCityPlot, true))
+					{
+						if (ExecuteParadropCityCapture(pCity))
+						{
+							if (GC.getLogging() && GC.getAILogging())
+							{
+								CvString strLogString;
+								strLogString.Format("Paratrooping to capture undefended city %s at 0 HP, X: %d, Y: %d",
+									pCity->getNameNoSpace().c_str(), pCity->getX(), pCity->getY());
+								LogTacticalMessage(strLogString);
+							}
+							continue; // City captured, move to next target
+						}
+					}
+				}
+
 				if (iMeleeCount == 0 && iRequiredDamage <= 1)
 				{
 					if (GC.getLogging() && GC.getAILogging())
@@ -2076,6 +2097,26 @@ void CvTacticalAI::ExecuteCivilianAttackMoves(AITacticalTargetType eTargetType)
 	{
 		// See what units we have who can reach target this turn
 		CvPlot* pPlot = GC.getMap().plot(pTarget->GetTargetX(), pTarget->GetTargetY());
+
+		// Try paratroopers first - they can drop directly on the civilian to capture it
+		// This is especially effective for settlers which are high-value targets
+		if (FindParatroopersWithinStrikingDistance(pPlot, true))
+		{
+			if (ExecuteParadropCivilian(pPlot))
+			{
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("Paratrooping to capture %s civilian, X: %d, Y: %d",
+						eTargetType == AI_TACTICAL_TARGET_HIGH_PRIORITY_CIVILIAN ? "high priority" : "low priority",
+						pTarget->GetTargetX(), pTarget->GetTargetY());
+					LogTacticalMessage(strLogString);
+				}
+				continue; // Captured, move to next target
+			}
+		}
+
+		// Standard ground approach
 		if(FindUnitsForHarassing(pPlot,1,GD_INT_GET(MAX_HIT_POINTS)/2,-1,DOMAIN_LAND,false,false,1))
 		{
 			for (size_t i = 0; i < m_CurrentMoveUnits.size(); i++)
@@ -2533,6 +2574,36 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 
 					//the new garrison came from the tactical AI current turn units, so need to mark it
 					UnitProcessed(pUnit->GetID());
+				}
+			}
+			// No ground unit available in range - try paradrop reinforcement for urgent cases
+			// Paratroopers can drop directly into a city that desperately needs a garrison
+			else if (pCity->isInDangerOfFalling() || (pCity->NeedsGarrison() && bProactiveThreat))
+			{
+				if (FindParatroopersWithinStrikingDistance(pPlot, false)) // Don't check danger - we WANT to drop into danger
+				{
+					// Find a paratrooper that can drop into the city
+					for (unsigned int iI = 0; iI < m_CurrentMoveUnits.size(); iI++)
+					{
+						CvUnit* pParatrooper = m_pPlayer->getUnit(m_CurrentMoveUnits[iI].GetID());
+						if (!pParatrooper)
+							continue;
+
+						// Execute the paradrop
+						pParatrooper->PushMission(CvTypes::getMISSION_PARADROP(), pPlot->getX(), pPlot->getY());
+
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("Paratrooper %d paradropping to reinforce threatened city %s, X: %d, Y: %d, InDanger: %d",
+								pParatrooper->GetID(), pCity->getName().GetCString(), pPlot->getX(), pPlot->getY(),
+								pCity->isInDangerOfFalling() ? 1 : 0);
+							LogTacticalMessage(strLogString);
+						}
+
+						UnitProcessed(pParatrooper->GetID());
+						break; // Only need one paratrooper
+					}
 				}
 			}
 		}
@@ -4469,6 +4540,52 @@ void CvTacticalAI::ExecuteParadropPillage(CvPlot* pTargetPlot)
 		if (!pUnit->canMove())
 			UnitProcessed(pUnit->GetID());
 	}
+}
+
+/// Paradrop in to capture an undefended civilian (worker, settler, etc.)
+bool CvTacticalAI::ExecuteParadropCivilian(CvPlot* pTargetPlot)
+{
+	if (m_CurrentMoveUnits.size() == 0)
+		return false;
+
+	// Use the best paratrooper from the list
+	CvUnit* pUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[0].GetID());
+	if (!pUnit)
+		return false;
+
+	// Paradrop lands the unit on the plot, capturing any civilian there
+	pUnit->PushMission(CvTypes::getMISSION_PARADROP(), pTargetPlot->getX(), pTargetPlot->getY());
+
+	// Delete this unit from those we have to move
+	if (!pUnit->canMove())
+		UnitProcessed(pUnit->GetID());
+
+	return true;
+}
+
+/// Paradrop in to capture a city at 0 HP with no garrison
+bool CvTacticalAI::ExecuteParadropCityCapture(CvCity* pCity)
+{
+	if (!pCity || m_CurrentMoveUnits.size() == 0)
+		return false;
+
+	CvPlot* pCityPlot = pCity->plot();
+	if (!pCityPlot)
+		return false;
+
+	// Use the best paratrooper from the list
+	CvUnit* pUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[0].GetID());
+	if (!pUnit)
+		return false;
+
+	// Paradrop onto the city center captures it (since city is at 0 HP with no garrison)
+	pUnit->PushMission(CvTypes::getMISSION_PARADROP(), pCityPlot->getX(), pCityPlot->getY());
+
+	// Delete this unit from those we have to move
+	if (!pUnit->canMove())
+		UnitProcessed(pUnit->GetID());
+
+	return true;
 }
 
 void CvTacticalAI::ExecuteAirAttack(CvPlot* pTargetPlot)
