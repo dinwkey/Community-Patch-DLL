@@ -45056,6 +45056,12 @@ int CvPlayer::GetBuyPlotCost() const
 		iCost /= 100;
 	}
 
+	// Prevent zero or negative plot costs
+	if (iCost < 1)
+	{
+		iCost = 1;
+	}
+
 	return iCost;
 }
 
