@@ -9977,7 +9977,6 @@ bool isKillAssignment(eUnitAssignmentType eAssignmentType)
 		eAssignmentType == A_RANGEKILL;
 }
 
-<<<<<<< HEAD
 static bool IsSubmarineUnit(const CvUnit* pUnit)
 {
 	if (!pUnit)
@@ -10214,6 +10213,75 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		{
 			iResult += 5; // Forward screening position
 		}
+	}
+
+	// NAVAL FLEET CONCENTRATION POSITIONING: Naval units should prefer to end turns
+	// in positions where they can support other ships attacking the same targets
+	if (pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit() && !bIsSubmarine)
+	{
+		int iConcentrationBonus = 0;
+		int iAdjacentNavalFriendlies = 0;
+		int iNearbyNavalUnitsInRange = 0;
+		
+		// Count nearby friendly naval combat units
+		for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
+			if (!pLoopPlot)
+				continue;
+			
+			for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+			{
+				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+				if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner() || pLoopUnit == pUnit)
+					continue;
+				if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
+					continue;
+				
+				int iDist = plotDistance(*testPlot.getPlot(), *pLoopPlot);
+				if (iDist <= 1)
+				{
+					iAdjacentNavalFriendlies++;
+				}
+				
+				// Count ships that share attack range with us (for ranged units)
+				if (pUnit->IsCanAttackRanged() && pLoopUnit->IsCanAttackRanged())
+				{
+					// Check if from this position we could engage similar targets
+					int iUnitRange = pUnit->GetRange();
+					int iLoopRange = pLoopUnit->GetRange();
+					// If both can reach similar distance, they can focus fire
+					if (iDist <= iUnitRange + iLoopRange)
+					{
+						iNearbyNavalUnitsInRange++;
+					}
+				}
+			}
+		}
+		
+		// Bonus for naval formation - not too spread out, not too bunched
+		if (iAdjacentNavalFriendlies >= 1 && iAdjacentNavalFriendlies <= 3)
+		{
+			iConcentrationBonus += 8; // Good formation density
+		}
+		else if (iAdjacentNavalFriendlies > 3)
+		{
+			iConcentrationBonus += 4; // A bit crowded but still supporting
+		}
+		
+		// Ranged ships get bonus for being in coordinated firing positions
+		if (pUnit->IsCanAttackRanged() && iNearbyNavalUnitsInRange >= 1)
+		{
+			iConcentrationBonus += min(iNearbyNavalUnitsInRange * 3, 12); // Up to +12 for fire coordination
+		}
+		
+		// Position near enemy targets where fleet can focus fire
+		if (testPlot.getEnemyDistance(CvTacticalPlot::TD_SEA) <= 2 && iAdjacentNavalFriendlies >= 2)
+		{
+			iConcentrationBonus += 10; // Good attack position with support
+		}
+		
+		iResult += iConcentrationBonus;
 	}
 
 	//try to occupy enemy citadels!
@@ -10874,6 +10942,78 @@ static STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, con
 				iNavalBonus += 15;
 		}
 
+		// NAVAL FLEET CONCENTRATION: Prioritize targets that multiple friendly ships can engage
+		{
+			int iFriendlyShipsCanEngage = 0;
+			int iFriendlyRangedDamage = 0;
+			int iFriendlyMeleeDamage = 0;
+
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+			{
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (!pLoopUnit || pLoopUnit == unit.pUnit)
+					continue;
+				if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
+					continue;
+
+				int iDistToTarget = plotDistance(it->iPlotIndex, enemyPlot->getPlotIndex());
+
+				if (pLoopUnit->IsCanAttackRanged())
+				{
+					if (iDistToTarget <= pLoopUnit->GetRange())
+					{
+						iFriendlyShipsCanEngage++;
+						iFriendlyRangedDamage += pLoopUnit->GetMaxRangedCombatStrength(NULL, NULL, true, NULL) / 10;
+					}
+				}
+				else if (iDistToTarget <= 2)
+				{
+					iFriendlyShipsCanEngage++;
+					if (enemyPlot->getEnemyUnit())
+						iFriendlyMeleeDamage += pLoopUnit->GetMaxAttackStrength(NULL, NULL, enemyPlot->getEnemyUnit()) / 10;
+					else
+						iFriendlyMeleeDamage += pLoopUnit->GetMaxAttackStrength(NULL, NULL, NULL) / 10;
+				}
+			}
+
+			if (iFriendlyShipsCanEngage >= 1)
+			{
+				iNavalBonus += 15;
+				iNavalBonus += min(iFriendlyShipsCanEngage * 8, 30);
+
+				int iThisDamage = enemyPlot->isEnemyCity() ? result->iCityDamage : (enemyPlot->getEnemyUnit() ? result->unitDamage.GetValue(enemyPlot->getEnemyUnit()->GetID()) : 0);
+				int iTotalFleetDamage = iThisDamage + iFriendlyRangedDamage + iFriendlyMeleeDamage;
+				int iTargetHP = 0;
+				if (enemyPlot->isEnemyCity())
+				{
+					CvCity* pCity = enemyPlot->getPlot()->getPlotCity();
+					if (pCity)
+						iTargetHP = pCity->GetMaxHitPoints() - pCity->getDamage();
+				}
+				else if (enemyPlot->getEnemyUnit())
+				{
+					iTargetHP = enemyPlot->getEnemyUnit()->GetCurrHitPoints();
+				}
+
+				if (iTargetHP > 0)
+				{
+					if (iTotalFleetDamage >= iTargetHP)
+						iNavalBonus += 40;
+					else if (iTotalFleetDamage >= iTargetHP * 2 / 3)
+						iNavalBonus += 20;
+				}
+
+				if (enemyPlot->getEnemyUnit())
+				{
+					CvUnit* pEnemy = enemyPlot->getEnemyUnit();
+					if (pEnemy->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+						iNavalBonus += 30;
+					else if (pEnemy->GetBaseCombatStrength() > unit.pUnit->GetBaseCombatStrength())
+						iNavalBonus += 15;
+				}
+			}
+		}
+
 		if (iNavalBonus != 0)
 			result->AddScore(0, iNavalBonus, 0);
 	}
@@ -11176,6 +11316,81 @@ static STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, cons
 			if (iASWCount >= 2)
 			{
 				result.iBonusScore += 20; // Pack hunting bonus
+			}
+		}
+		
+		// NAVAL FLEET CONCENTRATION: Naval melee should prioritize targets being attacked by fleet
+		// This creates focus fire coordination where ranged softens and melee finishes
+		if (!IsSubmarineUnit(pUnit)) // Subs have their own coordination logic
+		{
+			int iFriendlyRangedEngaging = 0;
+			int iTotalRangedDamage = 0;
+			int iOtherMeleeEngaging = 0;
+			
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+			{
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (!pLoopUnit || pLoopUnit == pUnit)
+					continue;
+				if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
+					continue;
+				
+				int iDistToTarget = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+				
+				// Count ranged ships that can engage
+				if (pLoopUnit->IsCanAttackRanged())
+				{
+					if (iDistToTarget <= pLoopUnit->GetRange())
+					{
+						iFriendlyRangedEngaging++;
+						iTotalRangedDamage += pLoopUnit->GetMaxRangedCombatStrength(NULL, NULL, true, NULL) / 10;
+					}
+				}
+				// Count other melee that can engage
+				else if (iDistToTarget <= 2)
+				{
+					iOtherMeleeEngaging++;
+				}
+			}
+			
+			// Bonus for attacking targets that ranged fleet is engaging
+			if (iFriendlyRangedEngaging >= 1)
+			{
+				result.iBonusScore += 20; // Base coordination bonus
+				
+				// Extra bonus per ranged ship (up to +40 more)
+				result.iBonusScore += min(iFriendlyRangedEngaging * 12, 40);
+				
+				// Check if ranged fire has already softened the target
+				CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+				if (pEnemyUnit)
+				{
+					int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
+					int iMaxHP = pEnemyUnit->GetMaxHitPoints();
+					
+					// Big bonus if target is already damaged (ranged fire worked)
+					if (iEnemyHP < iMaxHP * 2 / 3)
+					{
+						result.iBonusScore += 35; // Target is softened, move in for kill
+					}
+					else if (iEnemyHP < iMaxHP)
+					{
+						result.iBonusScore += 15; // Target taking damage
+					}
+					
+					// Bonus if our melee damage plus ranged can kill
+					if (iTotalRangedDamage + result.iDamage >= iEnemyHP)
+					{
+						result.iBonusScore += 50; // Combined fleet can kill
+					}
+				}
+			}
+			
+			// Bonus for attacking with multiple melee (coordinated assault)
+			if (iOtherMeleeEngaging >= 1)
+			{
+				result.iBonusScore += 15; // Coordinated melee attack
+				result.iBonusScore += min(iOtherMeleeEngaging * 8, 24); // Up to +24 more
 			}
 		}
 	}
