@@ -11087,6 +11087,7 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		{
 			int iTargetsInRange = 0;
 			int iHighValueTargetsInRange = 0;
+			int iArmorTargetsInRange = 0;
 			
 			for (int iRing = 1; iRing <= iUnitRange; iRing++)
 			{
@@ -11100,7 +11101,23 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 						{
 							iTargetsInRange++;
 							
-							// High-value targets for helicopter
+							// Check for anti-armor bonus (tank hunting)
+							UnitCombatTypes eEnemyCombatType = pEnemy->getUnitCombatType();
+							if (eEnemyCombatType != NO_UNITCOMBAT)
+							{
+								int iAntiArmorBonus = pUnit->unitCombatModifier(eEnemyCombatType);
+								if (iAntiArmorBonus >= 25)
+								{
+									// We have a significant bonus against this unit type
+									iArmorTargetsInRange++;
+									
+									// Modern tanks are especially valuable targets
+									if (pEnemy->GetBaseCombatStrength() >= 60)
+										iArmorTargetsInRange++;
+								}
+							}
+							
+							// Other high-value targets for helicopter
 							if (pEnemy->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
 								iHighValueTargetsInRange += 2; // Siege
 							else if (pEnemy->canIntercept())
@@ -11119,6 +11136,14 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 			// Extra bonus for high-value targets
 			if (iHighValueTargetsInRange > 0)
 				iPlotScore += min(iHighValueTargetsInRange * 3, 12);
+			
+			// TANK HUNTING BONUS: Strong bonus for positions with armor targets in range
+			// This is a primary role for helicopter gunships
+			if (iArmorTargetsInRange > 0)
+			{
+				iPlotScore += iArmorTargetsInRange * 5; // +5 per armor target
+				iPlotScore += 8; // Base bonus for having tank-hunting opportunity
+			}
 		}
 		
 		// 3. DON'T CLUSTER: Helicopters should spread out to avoid area attacks
@@ -11834,9 +11859,34 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 		if (pEnemyUnit && !enemyPlot.isEnemyCity())
 		{
 			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
+			UnitCombatTypes eEnemyCombatType = pEnemyUnit->getUnitCombatType();
 			
-			// PRIORITY A: Siege/Artillery - destroy before they bombard our cities
-			if (eEnemyAI == UNITAI_CITY_BOMBARD)
+			// PRIORITY A: TANK HUNTING - Helicopters have anti-armor bonus
+			// Check if we have a combat modifier bonus against this unit type
+			int iAntiArmorBonus = 0;
+			if (eEnemyCombatType != NO_UNITCOMBAT)
+			{
+				iAntiArmorBonus = unit.pUnit->unitCombatModifier(eEnemyCombatType);
+			}
+			
+			if (iAntiArmorBonus >= 25) // Significant bonus (typically 50%+ vs armor)
+			{
+				// This is a prime target - exploit our anti-armor advantage
+				newAssignment.iBonusScore += 30;
+				
+				// Scale bonus with our advantage
+				newAssignment.iBonusScore += iAntiArmorBonus / 5; // +10 at 50%, +20 at 100%
+				
+				// Extra bonus for killing armor (removes threat, exploits bonus fully)
+				if (bIsKill)
+					newAssignment.iBonusScore += 25;
+				
+				// Even more valuable if it's a modern tank (high strength)
+				if (pEnemyUnit->GetBaseCombatStrength() >= 60)
+					newAssignment.iBonusScore += 15;
+			}
+			// PRIORITY B: Siege/Artillery - destroy before they bombard our cities
+			else if (eEnemyAI == UNITAI_CITY_BOMBARD)
 			{
 				newAssignment.iBonusScore += 25;
 				
@@ -11844,7 +11894,7 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 				if (bIsKill)
 					newAssignment.iBonusScore += 20;
 			}
-			// PRIORITY B: Enemy AA units - eliminate threats to our air operations
+			// PRIORITY C: Enemy AA units - eliminate threats to our air operations
 			else if (pEnemyUnit->canIntercept())
 			{
 				// Very high value target - removing AA opens airspace
@@ -11853,7 +11903,7 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 				if (bIsKill)
 					newAssignment.iBonusScore += 25;
 			}
-			// PRIORITY C: Wounded enemies - surgical finishing
+			// PRIORITY D: Wounded enemies - surgical finishing
 			else
 			{
 				int iEnemyHPPercent = (pEnemyUnit->GetCurrHitPoints() * 100) / pEnemyUnit->GetMaxHitPoints();
@@ -11867,7 +11917,7 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 				}
 			}
 			
-			// PRIORITY D: Isolated targets - helicopter can reach where others can't
+			// PRIORITY E: Isolated targets - helicopter can reach where others can't
 			int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
 			if (iEnemySupport == 0)
 			{
