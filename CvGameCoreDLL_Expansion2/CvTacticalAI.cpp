@@ -3843,11 +3843,32 @@ void CvTacticalAI::UpdateTargetScores()
 				else if (iAirUnitCount >= 2)
 					iAABonus += 8;
 				
-				// Higher bonus if this AA unit is near our target area
-				// Check if any of our cities or units are planning air operations nearby
+				// Check if any of our units (including naval ranged) can attack this AA
+				// Naval ranged units can attack land targets!
 				bool bNearOurForces = (myUnits.size() > 0);
-				if (bNearOurForces)
+				bool bNavalCanAttack = false;
+				
+				// Check for naval ranged units that can strike this land AA target
+				for (list<int>::iterator unitIt = m_CurrentTurnUnits.begin(); unitIt != m_CurrentTurnUnits.end(); ++unitIt)
+				{
+					CvUnit* pUnit = m_pPlayer->getUnit(*unitIt);
+					if (pUnit && pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCanAttackRanged())
+					{
+						// Check if naval unit can range strike this land target
+						if (pUnit->canRangeStrikeAt(pPlot->getX(), pPlot->getY()))
+						{
+							bNavalCanAttack = true;
+							break;
+						}
+					}
+				}
+				
+				if (bNearOurForces || bNavalCanAttack)
 					iAABonus += 10;
+				
+				// Extra bonus if naval can attack - combined arms flexibility
+				if (bNavalCanAttack)
+					iAABonus += 5;
 				
 				// Check interception range - AA units covering critical areas are priority
 				int iInterceptRange = pTargetUnit->GetAirInterceptRange();
@@ -3861,9 +3882,9 @@ void CvTacticalAI::UpdateTargetScores()
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("SEAD target: %s at (%d,%d), AA range %d, priority boosted by %d (air units: %d)",
+					strLogString.Format("SEAD target: %s at (%d,%d), AA range %d, priority boosted by %d (air units: %d, naval can attack: %s)",
 						pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(), 
-						iInterceptRange, iAABonus, iAirUnitCount);
+						iInterceptRange, iAABonus, iAirUnitCount, bNavalCanAttack ? "yes" : "no");
 					LogTacticalMessage(strLogString);
 				}
 			}
