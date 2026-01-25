@@ -7822,6 +7822,42 @@ bool ScoreAttackDamage(const CvTacticalPlot& tactPlot, const CvUnit* pUnit, cons
 			iDamageDealt /= 100;
 		}
 
+		// Naval melee capture bonus: naval melee units attacking coastal cities get a bonus
+		// since they are the only way to capture some cities (island cities, cities with no land access)
+		if (pUnit->getDomainType() == DOMAIN_SEA && !pUnit->IsCanAttackRanged() && pEnemy->isCoastal())
+		{
+			// Base bonus for naval melee attacking a coastal city
+			iExtraScore += 15;
+			
+			// Check if this is a naval-only accessible city (island or heavily defended land approaches)
+			// Count how many land tiles are adjacent vs water tiles
+			int iLandApproaches = 0;
+			int iWaterApproaches = 0;
+			for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+			{
+				CvPlot* pAdj = plotDirection(pTestPlot->getX(), pTestPlot->getY(), (DirectionTypes)iDir);
+				if (pAdj)
+				{
+					if (pAdj->isWater())
+						iWaterApproaches++;
+					else if (!pAdj->isImpassable(pUnit->getTeam()))
+						iLandApproaches++;
+				}
+			}
+			
+			// Extra bonus if water approaches dominate (naval capture more important)
+			if (iWaterApproaches > iLandApproaches)
+				iExtraScore += 10;
+			
+			// Strong bonus for island cities with no land approach
+			if (iLandApproaches == 0)
+				iExtraScore += 25;
+			
+			// Extra bonus if the city is near death - this could be the capture!
+			if (iPrevHitPoints <= pEnemy->GetMaxHitPoints() / 4)
+				iExtraScore += 20;
+		}
+
 		//prefer ranged attacks over melee attacks (except if it's a kill, see below)
 		if (iDamageReceived > 0)
 			bScoreReduction = true;
