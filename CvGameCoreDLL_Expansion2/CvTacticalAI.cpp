@@ -10603,6 +10603,65 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		}
 	}
 
+	// === TERRAIN AWARENESS FOR MOUNTED/FAST UNITS ===
+	// Units with open terrain bonuses should prefer open ground for defense
+	// Units with rough terrain bonuses should prefer rough ground
+	// This applies to cavalry, knights, elephants, camels and units with relevant promotions
+	if (!pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		bool bIsOpenGround = pTestPlot->isOpenGround();
+		bool bIsRoughGround = pTestPlot->isRoughGround();
+		
+		// Check defensive terrain bonuses - important for where to end turn
+		int iOpenDefBonus = pUnit->openDefenseModifier();
+		int iRoughDefBonus = pUnit->roughDefenseModifier();
+		
+		if (iOpenDefBonus != 0 || iRoughDefBonus != 0)
+		{
+			// Unit has terrain-specific defense bonuses
+			if (bIsOpenGround && iOpenDefBonus > 0)
+			{
+				// Bonus for defending on open terrain when unit has open defense bonus
+				iPlotScore += iOpenDefBonus / 5; // +2 to +6 typically
+			}
+			else if (bIsRoughGround && iRoughDefBonus > 0)
+			{
+				// Bonus for defending on rough terrain when unit has rough defense bonus
+				iPlotScore += iRoughDefBonus / 5;
+			}
+			else if (bIsRoughGround && iOpenDefBonus > 0)
+			{
+				// Penalty for cavalry-type unit ending turn on rough terrain
+				// They lose their open terrain bonus and have no defensive bonus
+				iPlotScore -= iOpenDefBonus / 8; // mild penalty
+			}
+			else if (bIsOpenGround && iRoughDefBonus > 0)
+			{
+				// Penalty for rough-terrain unit (e.g., Jaguar) ending on open ground
+				iPlotScore -= iRoughDefBonus / 8;
+			}
+		}
+		
+		// Also consider noDefensiveBonus flag (mounted units without special promotions)
+		// These units should avoid rough terrain when possible as they get no defense bonus there
+		if (pUnit->noDefensiveBonus())
+		{
+			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
+			if (iTerrainDefMod > 0 && bIsRoughGround)
+			{
+				// Unit with noDefensiveBonus is on terrain that would give defense bonus
+				// but they can't use it - mild penalty for not utilizing terrain
+				iPlotScore -= 2;
+			}
+			else if (bIsOpenGround)
+			{
+				// Open ground is neutral for noDefensiveBonus units
+				// At least they're not wasting potential defense bonuses
+				iPlotScore += 1;
+			}
+		}
+	}
+
 	//final score
 	//danger values (typically negative!) are mostly useful as tiebreaker
 	result.iPlotScore = iPlotScore * 10 + iDangerScore;
@@ -11257,13 +11316,13 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 
 	//the plot we're checking right now
 	const CvPlot* pEnemyPlot = enemyPlot.getPlot();
+	const CvUnit* pUnit = unit.pUnit;
 
 	//sanity check
 	if (!enemyPlot.isValid() || !assumedUnitPlot.isValid())
 		return result;
 
 	//this is only for melee attacks - ranged attacks are handled separately
-	const CvUnit* pUnit = unit.pUnit;
 	if (!enemyPlot.isEnemy() || pUnit->IsCanAttackRanged())
 		return result;
 
@@ -11321,6 +11380,45 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 	//flat bonus for a kill
 	if (bIsKill)
 		result.iBonusScore += 1000;
+
+	// === TERRAIN ATTACK AWARENESS ===
+	// Units with open/rough terrain attack bonuses should prefer targets on matching terrain
+	// This is especially important for cavalry, knights, and units with terrain promotions
+	if (pUnit->getDomainType() == DOMAIN_LAND && !enemyPlot.isEnemyCity())
+	{
+		bool bEnemyOnOpen = pEnemyPlot->isOpenGround();
+		bool bEnemyOnRough = pEnemyPlot->isRoughGround();
+		
+		int iOpenAttackBonus = pUnit->openAttackModifier();
+		int iRoughAttackBonus = pUnit->roughAttackModifier();
+		
+		if (iOpenAttackBonus != 0 || iRoughAttackBonus != 0)
+		{
+			// Unit has terrain-specific attack bonuses from promotions or unit type
+			if (bEnemyOnOpen && iOpenAttackBonus > 0)
+			{
+				// Prefer attacking enemies on open terrain when we have open attack bonus
+				// This bonus is already factored into damage, but we want to prioritize such attacks
+				result.iBonusScore += iOpenAttackBonus / 4; // +5 to +7 typically for cavalry
+			}
+			else if (bEnemyOnRough && iRoughAttackBonus > 0)
+			{
+				// Prefer attacking enemies on rough terrain when we have rough attack bonus
+				result.iBonusScore += iRoughAttackBonus / 4;
+			}
+			else if (bEnemyOnRough && iOpenAttackBonus > 0 && iRoughAttackBonus <= 0)
+			{
+				// Cavalry attacking into rough terrain - no bonus applies
+				// Slight penalty to encourage choosing better targets if available
+				result.iBonusScore -= iOpenAttackBonus / 8; // mild penalty
+			}
+			else if (bEnemyOnOpen && iRoughAttackBonus > 0 && iOpenAttackBonus <= 0)
+			{
+				// Unit with rough bonus attacking on open - not ideal
+				result.iBonusScore -= iRoughAttackBonus / 8;
+			}
+		}
+	}
 
 	// Defensive unit clearing priority for melee attacks
 	// If killing this unit would open a path to an enemy city, give bonus
