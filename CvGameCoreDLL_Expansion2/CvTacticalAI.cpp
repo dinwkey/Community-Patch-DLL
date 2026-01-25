@@ -2802,8 +2802,13 @@ bool CvTacticalAI::CheckForEnemiesNearArmy(CvArmyAI* pArmy)
 
 		//can we attack somebody?
 		vector<pair<CvPlot*, bool>> targets = TacticalAIHelpers::GetTargetsInRange(pUnit);
-		//who can attack us?
-		vector<CvUnit*> vEnemyAttackers = m_pPlayer->GetPossibleAttackers(*pUnit->plot(), m_pPlayer->getTeam());
+		
+		//who can attack us? Use cache to avoid redundant lookups
+		int iPlotIndex = pUnit->plot()->GetPlotIndex();
+		if (cachedEnemyAttackers.find(iPlotIndex) == cachedEnemyAttackers.end())
+			cachedEnemyAttackers[iPlotIndex] = m_pPlayer->GetPossibleAttackers(*pUnit->plot(), m_pPlayer->getTeam());
+		
+		vector<CvUnit*>& vEnemyAttackers = cachedEnemyAttackers[iPlotIndex];
 
 		if (targets.empty() && vEnemyAttackers.empty())
 		{
@@ -2813,6 +2818,10 @@ bool CvTacticalAI::CheckForEnemiesNearArmy(CvArmyAI* pArmy)
 
 		//this unit can be attacked, remember it
 		ourUnitsInitial.insert(pUnit);
+
+		// Collect enemy plots for later
+		for (size_t i = 0; i < vEnemyAttackers.size(); i++)
+			allEnemyPlots.insert(vEnemyAttackers[i]->plot());
 
 		for (size_t i = 0; i < vEnemyAttackers.size(); i++)
 		{
@@ -2832,13 +2841,17 @@ bool CvTacticalAI::CheckForEnemiesNearArmy(CvArmyAI* pArmy)
 	//now that we have a set of units find the center of mass
 	int x = 0;
 	int y = 0;
-	set<CvPlot*, PrSortByPlotIndex> allEnemyPlots;
-	for (set<CvUnit*, PrSortByUnitId>::const_iterator it = ourUnitsInitial.begin(); it != ourUnitsInitial.end(); ++it)
+	for (set<CvUnit*, PrSortByUnitId>::iterator it = ourUnitsInitial.begin(); it != ourUnitsInitial.end(); ++it)
 	{
 		x += (*it)->getX();
 		y += (*it)->getY();
 
-		vector<CvUnit*> vEnemyAttackers = m_pPlayer->GetPossibleAttackers(*(*it)->plot(), m_pPlayer->getTeam());
+		// Use cache if available, otherwise fetch and cache
+		int iPlotIndex = (*it)->plot()->GetPlotIndex();
+		if (cachedEnemyAttackers.find(iPlotIndex) == cachedEnemyAttackers.end())
+			cachedEnemyAttackers[iPlotIndex] = m_pPlayer->GetPossibleAttackers(*(*it)->plot(), m_pPlayer->getTeam());
+
+		vector<CvUnit*>& vEnemyAttackers = cachedEnemyAttackers[iPlotIndex];
 		for (size_t i = 0; i < vEnemyAttackers.size(); i++)
 			allEnemyPlots.insert(vEnemyAttackers[i]->plot());
 	}
