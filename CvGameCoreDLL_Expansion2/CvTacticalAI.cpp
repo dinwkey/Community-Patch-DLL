@@ -10284,6 +10284,184 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		iResult += iConcentrationBonus;
 	}
 
+	// CARRIER POSITIONING: Carriers need special positioning logic
+	// They must balance safety (very valuable with cargo) vs. staying in range for air strikes
+	if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+	{
+		int iCarrierBonus = 0;
+		bool bHasCargo = pUnit->hasCargo();
+		int iCargoCount = pUnit->getCargo();
+		
+		// SAFETY FIRST: Carriers with aircraft are extremely valuable and must be protected
+		if (bHasCargo)
+		{
+			// Heavy penalty for being too close to enemies when loaded
+			int iEnemyDist = testPlot.getEnemyDistance(CvTacticalPlot::TD_SEA);
+			if (iEnemyDist <= 1)
+			{
+				iCarrierBonus -= 50 + (iCargoCount * 15); // Very bad - carrier at risk with cargo
+			}
+			else if (iEnemyDist == 2)
+			{
+				iCarrierBonus -= 15 + (iCargoCount * 5); // Risky position
+			}
+			else if (iEnemyDist >= 3 && iEnemyDist <= 5)
+			{
+				iCarrierBonus += 10; // Good safe distance
+			}
+			
+			// Extra bonus for escort coverage when loaded
+			int iEscortCount = 0;
+			for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
+				if (!pLoopPlot)
+					continue;
+				
+				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+				{
+					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+					if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
+						continue;
+					if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
+						continue;
+					if (pLoopUnit == pUnit)
+						continue;
+					
+					int iDist = plotDistance(*testPlot.getPlot(), *pLoopPlot);
+					if (iDist <= 1)
+					{
+						iEscortCount++;
+						// ASW escorts are particularly valuable for carriers
+						if (IsAntiSubmarineUnit(pLoopUnit))
+							iCarrierBonus += 5;
+					}
+				}
+			}
+			
+			// Loaded carriers need escorts
+			if (iEscortCount >= 2)
+				iCarrierBonus += 15;
+			else if (iEscortCount == 1)
+				iCarrierBonus += 5;
+			else if (iEscortCount == 0 && iEnemyDist <= 3)
+				iCarrierBonus -= 20; // No escort near enemies - very risky!
+		}
+		
+		// AIR RANGE OPTIMIZATION: Position to maximize air unit effectiveness
+		// Check if this position keeps carrier within strike range of targets
+		{
+			int iAirRange = 0;
+			
+			// Estimate air unit range (use typical bomber range of 8-10, fighters 6-8)
+			// In practice, we'd check cargo units, but for efficiency use reasonable estimate
+			iAirRange = 8; // Default to typical bomber range
+			
+			// Check if there are enemy targets within air range from this position
+			const CvPlot* pTargetPlot = assumedPosition.getTarget();
+			if (pTargetPlot)
+			{
+				int iDistToTarget = plotDistance(*testPlot.getPlot(), *pTargetPlot);
+				
+				// Optimal: within air range but not too close
+				if (iDistToTarget <= iAirRange && iDistToTarget >= 3)
+				{
+					iCarrierBonus += 25; // Perfect positioning - safe but in range
+				}
+				else if (iDistToTarget <= iAirRange)
+				{
+					iCarrierBonus += 10; // In range but maybe too close
+				}
+				else if (iDistToTarget <= iAirRange + 2)
+				{
+					iCarrierBonus += 5; // Close to range, might reach next turn
+				}
+			}
+			
+			// Also check for any enemy units within air range
+			int iTargetsInAirRange = 0;
+			for (int iRing = 3; iRing <= iAirRange; iRing++)
+			{
+				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[iRing] && i < RING_PLOTS[5]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
+					if (pLoopPlot && pLoopPlot->isVisibleOtherUnit(pUnit->getOwner()))
+					{
+						CvUnit* pEnemyUnit = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemyUnit)
+							iTargetsInAirRange++;
+					}
+					if (pLoopPlot && pLoopPlot->isCity())
+					{
+						CvCity* pCity = pLoopPlot->getPlotCity();
+						if (pCity && GET_PLAYER(pUnit->getOwner()).IsAtWarWith(pCity->getOwner()))
+							iTargetsInAirRange += 2; // Cities are valuable targets
+					}
+				}
+			}
+			
+			// Bonus for having targets in optimal air range
+			if (iTargetsInAirRange > 0 && bHasCargo)
+			{
+				iCarrierBonus += min(iTargetsInAirRange * 4, 20); // Up to +20 for target-rich environment
+			}
+		}
+		
+		// FLEET INTEGRATION: Carriers should stay with the battle group but behind the line
+		{
+			int iCapitalShipsAhead = 0; // Ships between carrier and enemy
+			int iCapitalShipsBehind = 0; // Ships behind carrier
+			
+			for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
+				if (!pLoopPlot)
+					continue;
+				
+				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+				{
+					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+					if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner() || pLoopUnit == pUnit)
+						continue;
+					if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
+						continue;
+					if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+						continue; // Don't count other carriers
+					
+					// Check if this ship is between us and enemies
+					int iFriendlyEnemyDist = 0;
+					for (int j = RING0_PLOTS; j < RING_PLOTS[3]; j++)
+					{
+						CvPlot* pEnemyCheck = iterateRingPlots(pLoopPlot, j);
+						if (pEnemyCheck && pEnemyCheck->isVisibleOtherUnit(pUnit->getOwner()))
+						{
+							iFriendlyEnemyDist = plotDistance(*pLoopPlot, *pEnemyCheck);
+							break;
+						}
+					}
+					
+					int iCarrierEnemyDist = testPlot.getEnemyDistance(CvTacticalPlot::TD_SEA);
+					if (iFriendlyEnemyDist > 0 && iFriendlyEnemyDist < iCarrierEnemyDist)
+					{
+						iCapitalShipsAhead++; // This ship is screening us
+					}
+				}
+			}
+			
+			// Bonus for having ships ahead (screening the carrier)
+			if (iCapitalShipsAhead >= 2)
+			{
+				iCarrierBonus += 15; // Good screening
+			}
+			else if (iCapitalShipsAhead == 1)
+			{
+				iCarrierBonus += 8;
+			}
+		}
+		
+		iResult += iCarrierBonus;
+	}
+
 	//try to occupy enemy citadels!
 	int iImprovementDamage = TacticalAIHelpers::GetOtherPlayerImprovementDamage(pTestPlot, assumedPosition.getPlayer(), true);
 	if (iImprovementDamage > 0)
@@ -11012,6 +11190,50 @@ static STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, con
 						iNavalBonus += 15;
 				}
 			}
+		}
+
+		// CARRIER ATTACK CAUTION: Carriers should rarely attack - let other ships fight
+		if (unit.pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+		{
+			bool bCarrierHasCargo = unit.pUnit->hasCargo();
+			int iCarrierDanger = unit.pUnit->GetDanger(assumedUnitPlot->getPlot());
+			int iCarrierHP = unit.pUnit->GetCurrHitPoints() - result->iSelfDamage;
+			bool bIsSafeAttack = (iCarrierDanger < iCarrierHP / 3);
+
+			if (!bIsSafeAttack)
+			{
+				int iPenalty = 30;
+				if (bCarrierHasCargo)
+					iPenalty += unit.pUnit->getCargo() * 15;
+				iNavalBonus -= iPenalty;
+			}
+
+			// Defer to other ships when they could attack the same target
+			bool bOtherShipsCanAttack = false;
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+			{
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (!pLoopUnit || pLoopUnit == unit.pUnit)
+					continue;
+				if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
+					continue;
+				if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+					continue;
+
+				int iDistToTarget = plotDistance(it->iPlotIndex, enemyPlot->getPlotIndex());
+				if (pLoopUnit->IsCanAttackRanged() && iDistToTarget <= pLoopUnit->GetRange())
+				{
+					bOtherShipsCanAttack = true;
+					break;
+				}
+				else if (!pLoopUnit->IsCanAttackRanged() && iDistToTarget <= 2)
+				{
+					bOtherShipsCanAttack = true;
+					break;
+				}
+			}
+			if (bOtherShipsCanAttack)
+				iNavalBonus -= 20;
 		}
 
 		if (iNavalBonus != 0)
