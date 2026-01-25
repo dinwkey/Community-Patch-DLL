@@ -1837,8 +1837,47 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		if (pEnemyPlot)
 			pCity->rangeStrike(pEnemyPlot->getX(), pEnemyPlot->getY());
 
+		// PROACTIVE GARRISON: Check for enemy military buildup even if city isn't at border
+		// Look at threat value and enemy aggressive posture to detect incoming attacks early
+		int iThreatLevel = pCity->getThreatValue();
+		bool bHighThreat = (iThreatLevel >= 50); // High threat from diplomacy/proximity
+		bool bAggressiveNeighbor = false;
+		
+		// Check for aggressive military posture from nearby players
+		for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS && !bAggressiveNeighbor; iPlayer++)
+		{
+			PlayerTypes eOther = (PlayerTypes)iPlayer;
+			if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive())
+				continue;
+			
+			// Check if this player has aggressive posture toward us
+			if (m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM)
+			{
+				// And they're close enough to threaten this city
+				if (GET_PLAYER(eOther).GetProximityToPlayer(m_pPlayer->GetID()) >= PLAYER_PROXIMITY_CLOSE)
+					bAggressiveNeighbor = true;
+			}
+		}
+		
+		// Count enemy units in wider area (proactive detection)
+		int iNearbyEnemyUnits = 0;
+		for (int i = RING3_PLOTS; i < RING5_PLOTS; i++)
+		{
+			CvPlot* pNearby = iterateRingPlots(pPlot, i);
+			if (pNearby && pNearby->isVisible(m_pPlayer->getTeam()))
+			{
+				CvUnit* pUnit = pNearby->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true);
+				if (pUnit && pUnit->IsCombatUnit())
+					iNearbyEnemyUnits++;
+			}
+		}
+		bool bEnemyBuildupNearby = (iNearbyEnemyUnits >= 3);
+
 		// ignore core cities here (handled by homeland ai)
-		if (!pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && !m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity,NO_PLAYER))
+		// BUT proactively garrison if we detect emerging threat!
+		bool bProactiveThreat = bHighThreat || bAggressiveNeighbor || bEnemyBuildupNearby;
+		if (!pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && 
+		    !m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity,NO_PLAYER) && !bProactiveThreat)
 			continue;
 
 		for (int iI = 0; iI < pPlot->getNumUnits(); iI++)
@@ -2010,10 +2049,38 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 
 		//prefer ranged land units as garrisons ...
 		bool bWantGarrison = (pGarrison == NULL || !pGarrison->isNativeDomain(pPlot) || !pGarrison->IsCanAttackRanged() || pGarrison->GetRange() < 2);
-		if ( bWantGarrison && pCity->NeedsGarrison() )
+		
+		// PROACTIVE: Also want garrison if we detect emerging threat even if current garrison is OK
+		if (!bWantGarrison && bProactiveThreat && pGarrison == NULL)
+			bWantGarrison = true;
+		
+		if ( bWantGarrison && (pCity->NeedsGarrison() || bProactiveThreat) )
 		{
+			// Use longer search range for cities with detected threat
+			// This allows reinforcing a city before the attack arrives
+			int iSearchRange = iNumTurnsAway;
+			if (bProactiveThreat && !pCity->HasGarrison())
+			{
+				// Higher urgency = willing to pull from further away
+				if (bEnemyBuildupNearby)
+					iSearchRange = max(iNumTurnsAway, 4); // Enemy already massing - high urgency
+				else if (bAggressiveNeighbor)
+					iSearchRange = max(iNumTurnsAway, 3); // Aggressive posture - moderate urgency
+				else if (bHighThreat)
+					iSearchRange = max(iNumTurnsAway, 3); // High threat level - moderate urgency
+				
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("Proactive garrison for %s: threat=%d, aggressive=%d, buildup=%d, search=%d turns",
+						pCity->getName().GetCString(), iThreatLevel, bAggressiveNeighbor ? 1 : 0, 
+						iNearbyEnemyUnits, iSearchRange);
+					LogTacticalMessage(strLogString);
+				}
+			}
+			
 			// Grab units that make sense for this move type
-			CvUnit* pUnit = FindUnitForThisMove(AI_TACTICAL_GARRISON, pPlot, iNumTurnsAway);
+			CvUnit* pUnit = FindUnitForThisMove(AI_TACTICAL_GARRISON, pPlot, iSearchRange);
 			if (pUnit)
 			{
 				//move out old garrison if necessary
@@ -5067,6 +5134,18 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 
 				CvCity* pCity = pTarget->getPlotCity();
 				bool bCityInDanger = pCity && (pCity->isInDangerOfFalling() || pCity->getDamage() >= pCity->GetMaxHitPoints() / 2);
+				
+				// PROACTIVE: Higher priority for high-threat cities without garrisons
+				if (pCity && !pCity->HasGarrison())
+				{
+					int iThreat = pCity->getThreatValue();
+					if (iThreat >= 75)
+						iExtraScore += 40; // Very high threat - urgent garrison needed
+					else if (iThreat >= 50)
+						iExtraScore += 25; // High threat - prioritize garrison
+					else if (iThreat >= 25)
+						iExtraScore += 10; // Moderate threat - slight bonus
+				}
 
 				// Want to put ranged units in cities to give them a ranged attack
 				// Siege units can also attack but are better used for offense
