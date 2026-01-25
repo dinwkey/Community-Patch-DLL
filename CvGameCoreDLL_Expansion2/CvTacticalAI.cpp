@@ -3794,6 +3794,20 @@ void CvTacticalAI::DumpTacticalTargets()
 // and try to do as much damage as possible. so we only need a rough scoring here.
 void CvTacticalAI::UpdateTargetScores()
 {
+	// Check if we have air units available for tactical use
+	// If so, we should prioritize clearing enemy AA/interceptors with ground forces first
+	bool bHaveAirUnits = false;
+	int iAirUnitCount = 0;
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+	{
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (pUnit && pUnit->getDomainType() == DOMAIN_AIR && pUnit->canMove() && pUnit->IsCanAttackRanged())
+		{
+			bHaveAirUnits = true;
+			iAirUnitCount++;
+		}
+	}
+
 	for(vector<CvTacticalTarget>::iterator it = m_AllTargets.begin(); it != m_AllTargets.end(); ++it)
 	{
 		CvPlot* pPlot = GC.getMap().plot(it->GetTargetX(), it->GetTargetY());
@@ -3811,10 +3825,52 @@ void CvTacticalAI::UpdateTargetScores()
 				it->SetAuxIntData(it->GetAuxIntData() + iDistScore);
 			}
 			
+			CvUnit* pTargetUnit = it->GetUnitPtr();
+			if (!pTargetUnit)
+				continue;
+			
+			// SEAD (Suppression of Enemy Air Defenses): Prioritize AA units when we have air power
+			// Ground/naval forces should clear interceptors before our bombers go in
+			if (bHaveAirUnits && pTargetUnit->canIntercept() && pTargetUnit->getDomainType() != DOMAIN_AIR)
+			{
+				// This is a land-based AA unit (Mobile SAM, AA Gun, etc.)
+				// Prioritize it so ground forces clear it before air strikes
+				int iAABonus = 20;
+				
+				// Higher bonus if we have more air units waiting
+				if (iAirUnitCount >= 3)
+					iAABonus += 15;
+				else if (iAirUnitCount >= 2)
+					iAABonus += 8;
+				
+				// Higher bonus if this AA unit is near our target area
+				// Check if any of our cities or units are planning air operations nearby
+				bool bNearOurForces = (myUnits.size() > 0);
+				if (bNearOurForces)
+					iAABonus += 10;
+				
+				// Check interception range - AA units covering critical areas are priority
+				int iInterceptRange = pTargetUnit->GetAirInterceptRange();
+				if (iInterceptRange >= 4)
+					iAABonus += 10; // Long-range AA is very dangerous
+				else if (iInterceptRange >= 2)
+					iAABonus += 5;
+				
+				it->SetAuxIntData(it->GetAuxIntData() + iAABonus);
+				
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("SEAD target: %s at (%d,%d), AA range %d, priority boosted by %d (air units: %d)",
+						pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(), 
+						iInterceptRange, iAABonus, iAirUnitCount);
+					LogTacticalMessage(strLogString);
+				}
+			}
+			
 			// COUNTER-BLOCKADE: Prioritize naval units that are blockading our cities
 			// Breaking blockades is critical - it restores city healing and trade income
-			CvUnit* pTargetUnit = it->GetUnitPtr();
-			if (pTargetUnit && pTargetUnit->getDomainType() == DOMAIN_SEA && pPlot->isBlockaded(m_pPlayer->GetID()))
+			if (pTargetUnit->getDomainType() == DOMAIN_SEA && pPlot->isBlockaded(m_pPlayer->GetID()))
 			{
 				// Check if this unit is adjacent to one of our cities (actively blockading)
 				bool bBlockadingOurCity = false;
