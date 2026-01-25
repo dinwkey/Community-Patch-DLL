@@ -1170,6 +1170,99 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					LogTacticalMessage(strLogString);
 				}
 
+				// Coordinated blockade targeting: if city is not blockaded and we can't capture this turn,
+				// try to move units to blockade positions first to prevent city healing
+				if (!bCityBlockaded && iRequiredDamage > iExpectedDamagePerTurn)
+				{
+					// Find unblocked plots adjacent to the city
+					vector<CvPlot*> vBlockadePlots;
+					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+					{
+						CvPlot* pAdjacentPlot = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+						if (!pAdjacentPlot)
+							continue;
+
+						// Skip impassable plots
+						if (pAdjacentPlot->isImpassable(m_pPlayer->getTeam()))
+							continue;
+
+						// Check if this plot is currently unblocked (no enemy unit present/nearby to blockade it)
+						if (!pAdjacentPlot->isBlockaded(pCity->getOwner()))
+							vBlockadePlots.push_back(pAdjacentPlot);
+					}
+
+					// Try to move units to fill blockade positions
+					if (!vBlockadePlots.empty())
+					{
+						int iBlockadesMade = 0;
+						for (size_t iPlot = 0; iPlot < vBlockadePlots.size(); iPlot++)
+						{
+							CvPlot* pBlockadePlot = vBlockadePlots[iPlot];
+							
+							// Find a suitable unit that can move to this plot
+							for (unsigned int iUnit = 0; iUnit < m_CurrentMoveUnits.size(); iUnit++)
+							{
+								CvUnit* pUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[iUnit].GetID());
+								if (!pUnit || !pUnit->canMove() || pUnit->TurnProcessed())
+									continue;
+
+								// Skip ranged units - they should be attacking, not blocking
+								// Also skip very damaged units
+								if (pUnit->IsCanAttackRanged() || pUnit->GetCurrHitPoints() < pUnit->GetMaxHitPoints() / 3)
+									continue;
+
+								// Check if unit can enter the plot
+								if (!pUnit->canMoveInto(*pBlockadePlot, CvUnit::MOVEFLAG_DESTINATION))
+									continue;
+
+								// Check if unit is in the right domain
+								if (!pUnit->isNativeDomain(pBlockadePlot))
+									continue;
+
+								// Check if unit can reach the plot this turn
+								if (pUnit->TurnsToReachTarget(pBlockadePlot, CvUnit::MOVEFLAG_IGNORE_DANGER, 0) > 0)
+									continue;
+
+								// Move the unit to establish blockade
+								pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pBlockadePlot->getX(), pBlockadePlot->getY(), 
+									CvUnit::MOVEFLAG_IGNORE_DANGER, false, false, MISSIONAI_TACTMOVE);
+								
+								if (pUnit->plot() == pBlockadePlot)
+								{
+									pUnit->SetTurnProcessed(true);
+									iBlockadesMade++;
+
+									if (GC.getLogging() && GC.getAILogging())
+									{
+										CvString strLogString;
+										strLogString.Format("Unit %d moved to blockade position (%d,%d) for city %s",
+											pUnit->GetID(), pBlockadePlot->getX(), pBlockadePlot->getY(), pCity->getNameNoSpace().c_str());
+										LogTacticalMessage(strLogString);
+									}
+									break; // Move to next blockade plot
+								}
+							}
+						}
+
+						// Update blockade status after moving units
+						if (iBlockadesMade > 0)
+						{
+							bCityBlockaded = pCity->IsBlockaded(NO_DOMAIN);
+							if (bCityBlockaded)
+							{
+								iCityHealingPerTurn = 0; // City can no longer heal
+								if (GC.getLogging() && GC.getAILogging())
+								{
+									CvString strLogString;
+									strLogString.Format("Successfully established blockade of %s with %d units", 
+										pCity->getNameNoSpace().c_str(), iBlockadesMade);
+									LogTacticalMessage(strLogString);
+								}
+							}
+						}
+					}
+				}
+
 				//finally do the attack. be a bit more careful if we have few melee units
 				ExecuteAttackWithUnits(pPlot, iMeleeCount>2 ? AL_HIGH : AL_MEDIUM);
 
