@@ -1144,6 +1144,8 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				int iMeleeCount = 0;
 				int iTotalMeleeDamage = 0;
 				int iRangedDamageThisTurn = 0;
+				int iNavalMeleeCount = 0;
+				int iLandMeleeCount = 0;
 				
 				// Track melee units that can reach the city and their expected damage
 				for (unsigned int iI = 0; iI < m_CurrentMoveUnits.size(); iI++)
@@ -1156,6 +1158,11 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					if (!pUnit->IsCanAttackRanged())
 					{
 						iMeleeCount++;
+						// Track naval vs land melee for island city detection
+						if (pUnit->getDomainType() == DOMAIN_SEA)
+							iNavalMeleeCount++;
+						else if (pUnit->getDomainType() == DOMAIN_LAND)
+							iLandMeleeCount++;
 						// Calculate expected damage from this melee unit - use stored value if available
 						int iExpectedDamage = m_CurrentMoveUnits[iI].GetExpectedTargetDamage();
 						if (iExpectedDamage > 0)
@@ -1167,6 +1174,44 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 						int iExpectedDamage = m_CurrentMoveUnits[iI].GetExpectedTargetDamage();
 						if (iExpectedDamage > 0)
 							iRangedDamageThisTurn += iExpectedDamage;
+					}
+				}
+
+				// Island city detection: determine if this city requires naval siege
+				// Count land vs water approaches to the city
+				int iLandApproaches = 0;
+				int iWaterApproaches = 0;
+				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+				{
+					CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+					if (pAdj)
+					{
+						if (pAdj->isWater())
+							iWaterApproaches++;
+						else if (!pAdj->isImpassable(m_pPlayer->getTeam()))
+							iLandApproaches++;
+					}
+				}
+				
+				bool bIslandCity = (iLandApproaches == 0);
+				bool bNavalDominatedCity = (iWaterApproaches > iLandApproaches * 2); // Water approaches are dominant
+				
+				// Naval-only siege bonus: if city is primarily naval-accessible and we have naval melee,
+				// boost the expected damage to encourage the siege
+				if ((bIslandCity || bNavalDominatedCity) && iNavalMeleeCount > 0 && pCity->isCoastal())
+				{
+					// Island cities REQUIRE naval melee to capture - give significant damage bonus
+					if (bIslandCity)
+					{
+						// Add bonus damage estimation since naval units are critical here
+						iExpectedDamagePerTurn += iExpectedDamagePerTurn / 4; // +25% damage expectation
+						iMaxSiegeTurns += 3; // More patience for naval-only siege
+					}
+					else if (bNavalDominatedCity)
+					{
+						// Naval-dominated cities benefit from naval siege
+						iExpectedDamagePerTurn += iExpectedDamagePerTurn / 10; // +10% damage expectation
+						iMaxSiegeTurns += 1;
 					}
 				}
 
@@ -1198,11 +1243,13 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d, melee dmg %d, ranged dmg %d, capture opportunity: %s",
+					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d (naval %d, land %d), melee dmg %d, ranged dmg %d, capture opportunity: %s%s%s",
 						pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
 						iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded",
-						iMeleeCount, iTotalMeleeDamage, iRangedDamageThisTurn,
-						bCaptureOpportunityThisTurn ? "YES" : "no");
+						iMeleeCount, iNavalMeleeCount, iLandMeleeCount, iTotalMeleeDamage, iRangedDamageThisTurn,
+						bCaptureOpportunityThisTurn ? "YES" : "no",
+						bIslandCity ? " [ISLAND CITY]" : "",
+						bNavalDominatedCity ? " [NAVAL-DOMINATED]" : "");
 					LogTacticalMessage(strLogString);
 				}
 
