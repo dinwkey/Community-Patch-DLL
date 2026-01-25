@@ -308,6 +308,7 @@ public:
 
 	CvTacticalDominanceZone* GetZoneByIndex(int iIndex);
 	CvTacticalDominanceZone* GetZoneByCity(const CvCity* pCity, bool bWater);
+	CvTacticalDominanceZone* GetZoneByCityNoRefresh(const CvCity* pCity, bool bWater);
 	CvTacticalDominanceZone* GetZoneByID(int iID);
 	CvTacticalDominanceZone* GetZoneByPlot(const CvPlot* pPlot);
 

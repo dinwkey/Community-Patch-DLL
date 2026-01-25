@@ -1224,6 +1224,14 @@ CvTacticalDominanceZone* CvTacticalAnalysisMap::GetZoneByCity(const CvCity* pCit
 	return GetZoneByID(pCity->GetID()*(bWater ? -1 : +1));
 }
 
+CvTacticalDominanceZone* CvTacticalAnalysisMap::GetZoneByCityNoRefresh(const CvCity* pCity, bool bWater)
+{
+	if (!pCity)
+		return NULL;
+
+	return GetZoneByID(pCity->GetID()*(bWater ? -1 : +1));
+}
+
 /// Retrieve a dominance zone by ID
 CvTacticalDominanceZone* CvTacticalAnalysisMap::GetZoneByID(int iID)
 {

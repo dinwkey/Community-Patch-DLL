@@ -4908,6 +4908,10 @@ void CvPlayer::DoRevolutionPlayer(PlayerTypes ePlayer, int iOldCityID)
 void CvPlayer::UpdateCityThreatCriteria()
 {
 	CvTacticalAnalysisMap* pTactMap = GetTacticalAI()->GetTacticalAnalysisMap();
+	if (pTactMap)
+	{
+		pTactMap->RefreshIfOutdated();
+	}
 
 	int iLoopCity = 0;
 	for(CvCity* pLoopCity = firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = nextCity(&iLoopCity))
@@ -4917,8 +4921,8 @@ void CvPlayer::UpdateCityThreatCriteria()
 
 		if (pTactMap)
 		{
-			CvTacticalDominanceZone* pLandZone = pTactMap->GetZoneByCity(pLoopCity,false);
-			CvTacticalDominanceZone* pWaterZone = pTactMap->GetZoneByCity(pLoopCity,true);
+			CvTacticalDominanceZone* pLandZone = pTactMap->GetZoneByCityNoRefresh(pLoopCity,false);
+			CvTacticalDominanceZone* pWaterZone = pTactMap->GetZoneByCityNoRefresh(pLoopCity,true);
 
 			//todo: scale dominance contribution by exposure score?
 			if (pLandZone)
