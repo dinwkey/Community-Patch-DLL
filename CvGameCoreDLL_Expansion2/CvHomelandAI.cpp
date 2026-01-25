@@ -3186,6 +3186,10 @@ static int GetDirectiveWeight(BuilderDirective eDirective, int iBuildTurns, int 
 
 	int iBuildTime = iBuildTurns + iMoveTurns;
 
+	// Sanity check to prevent division by zero (can happen with INT_MAX inputs causing overflow)
+	if (iBuildTime < 0)
+		iBuildTime = INT_MAX;
+
 	// Precomputed square root of INT_MAX
 	const int SQRT_INT_MAX = 46340;
 
