@@ -382,6 +382,7 @@ private:
 	void PlotPlunderTradeUnitMoves(DomainTypes eDomain);
 	void PlotBlockadeMoves();
 	void PlotCounterBlockadeMoves();
+	void PlotCoastalDefenseMoves();
 	void PlotCivilianAttackMoves();
 	void ExecuteCivilianAttackMoves(AITacticalTargetType eTargetType);
 	void PlotHealMoves(bool bFirstPass);

@@ -1017,6 +1017,9 @@ void CvTacticalAI::AssignGlobalLowPrioMoves()
 	//do this last after the units in need have already moved
 	PlotNavalEscortMoves();
 
+	// Position naval units defensively around threatened coastal cities
+	PlotCoastalDefenseMoves();
+
 	//civilians move out of harms way last, when all potential defenders are set in place
 	PlotMovesToSafety(false);
 }
@@ -1850,6 +1853,171 @@ void CvTacticalAI::PlotCounterBlockadeMoves()
 					if (!pAttacker->canMove())
 						UnitProcessed(pAttacker->GetID());
 				}
+			}
+		}
+	}
+}
+
+/// Position naval units defensively around threatened coastal cities
+/// This intercepts incoming naval threats before they can blockade or capture
+void CvTacticalAI::PlotCoastalDefenseMoves()
+{
+	ClearCurrentMoveUnits(AI_TACTICAL_ESCORT);
+	
+	// Find coastal cities that need naval defense
+	int iCityLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
+	{
+		if (!pCity->isCoastal())
+			continue;
+		
+		// Check the water zone for this city
+		CvTacticalDominanceZone* pWaterZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
+		if (!pWaterZone)
+			continue;
+		
+		// Skip if we already dominate the water zone
+		if (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY)
+			continue;
+		
+		// Prioritize cities under threat
+		bool bEnemyNavalPresence = (pWaterZone->GetEnemyNavalUnitCount() > 0);
+		bool bEnemyDominated = (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY);
+		bool bCityDamaged = (pCity->getDamage() > 0);
+		bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+		
+		// Skip if no naval threat
+		if (!bEnemyNavalPresence && !bEnemyDominated && !bBlockaded)
+			continue;
+		
+		// Find water plots adjacent to the city that need defense
+		CvPlot* pCityPlot = pCity->plot();
+		vector<CvPlot*> vDefensePositions;
+		
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pCityPlot->getX(), pCityPlot->getY(), (DirectionTypes)iDir);
+			if (!pAdj || !pAdj->isWater())
+				continue;
+			
+			// Skip if there's already a friendly naval unit here
+			CvUnit* pDefender = pAdj->getBestDefender(m_pPlayer->GetID());
+			if (pDefender && pDefender->getDomainType() == DOMAIN_SEA)
+				continue;
+			
+			// Skip if there's an enemy here (counter-blockade handles that)
+			if (pAdj->isEnemyUnit(m_pPlayer->GetID(), true, true))
+				continue;
+			
+			vDefensePositions.push_back(pAdj);
+		}
+		
+		if (vDefensePositions.empty())
+			continue;
+		
+		// Find naval units to position at these defensive spots
+		// Higher search range for more threatened cities
+		int iSearchRange = 3;
+		if (bBlockaded || bCityDamaged)
+			iSearchRange = 5;
+		else if (bEnemyDominated)
+			iSearchRange = 4;
+		
+		// Look for available naval units
+		for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+		{
+			CvUnit* pUnit = m_pPlayer->getUnit(*it);
+			if (!pUnit || !pUnit->canUseForTacticalAI())
+				continue;
+			
+			// Only naval combat units
+			if (pUnit->getDomainType() != DOMAIN_SEA || !pUnit->IsCombatUnit())
+				continue;
+			
+			// Don't use carriers or submarines for patrol
+			if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA || pUnit->getInvisibleType() != NO_INVISIBLE)
+				continue;
+			
+			// Don't pull from armies
+			if (pUnit->getArmyID() != -1)
+				continue;
+			
+			// Check if unit is close enough
+			if (plotDistance(*pUnit->plot(), *pCityPlot) > iSearchRange * 2)
+				continue;
+			
+			// Don't use heavily damaged units
+			if (pUnit->shouldHeal(false))
+				continue;
+			
+			// Find best defense position this unit can reach
+			CvPlot* pBestPlot = NULL;
+			int iBestScore = 0;
+			
+			for (size_t i = 0; i < vDefensePositions.size(); i++)
+			{
+				CvPlot* pDefPlot = vDefensePositions[i];
+				
+				// Can we reach it?
+				int iTurns = pUnit->TurnsToReachTarget(pDefPlot, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF, iSearchRange);
+				if (iTurns == MAX_INT)
+					continue;
+				
+				// Score: closer is better, prefer positions that block likely attack vectors
+				int iScore = 100 - iTurns * 20;
+				
+				// Bonus for positions that face enemy territory
+				for (int iDir2 = 0; iDir2 < NUM_DIRECTION_TYPES; iDir2++)
+				{
+					CvPlot* pCheck = plotDirection(pDefPlot->getX(), pDefPlot->getY(), (DirectionTypes)iDir2);
+					if (pCheck && pCheck->isVisible(m_pPlayer->getTeam()))
+					{
+						if (pCheck->isEnemyUnit(m_pPlayer->GetID(), true, false))
+							iScore += 30; // Block enemy approach
+						else if (pCheck->getOwner() != NO_PLAYER && m_pPlayer->IsAtWarWith(pCheck->getOwner()))
+							iScore += 15; // Face enemy territory
+					}
+				}
+				
+				// Prefer ranged units slightly back, melee up front
+				if (pUnit->IsCanAttackRanged() && iTurns == 0)
+					iScore -= 10; // Ranged don't need to be right next to city
+				else if (!pUnit->IsCanAttackRanged() && iTurns == 0)
+					iScore += 20; // Melee should be up front
+				
+				if (iScore > iBestScore)
+				{
+					iBestScore = iScore;
+					pBestPlot = pDefPlot;
+				}
+			}
+			
+			if (pBestPlot)
+			{
+				// Move to the defensive position
+				if (pUnit->plot() != pBestPlot)
+				{
+					pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pBestPlot->getX(), pBestPlot->getY());
+				}
+				
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("Coastal defense: Unit %d moving to defend %s at (%d,%d)%s%s",
+						pUnit->GetID(), pCity->getName().GetCString(), pBestPlot->getX(), pBestPlot->getY(),
+						bBlockaded ? " [BLOCKADED]" : "", bEnemyDominated ? " [ENEMY DOMINATED]" : "");
+					LogTacticalMessage(strLogString);
+				}
+				
+				// Remove this position from available list
+				vDefensePositions.erase(std::remove(vDefensePositions.begin(), vDefensePositions.end(), pBestPlot), vDefensePositions.end());
+				
+				if (!pUnit->canMove())
+					UnitProcessed(pUnit->GetID());
+				
+				// Stop if all positions filled
+				if (vDefensePositions.empty())
+					break;
 			}
 		}
 	}
