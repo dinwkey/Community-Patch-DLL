@@ -2218,10 +2218,45 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			}
 		}
 		bool bEnemyBuildupNearby = (iNearbyEnemyUnits >= 3);
+		
+		// COASTAL THREAT: Check for naval threats to coastal cities
+		bool bCoastalThreat = false;
+		int iNearbyEnemyNaval = 0;
+		if (pCity->isCoastal())
+		{
+			// Check water zone dominance
+			CvTacticalDominanceZone* pWaterZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
+			if (pWaterZone)
+			{
+				// Enemy dominates our water zone or has significant naval presence
+				if (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY)
+					bCoastalThreat = true;
+				else if (pWaterZone->GetEnemyNavalUnitCount() > pWaterZone->GetFriendlyNavalUnitCount())
+					bCoastalThreat = true;
+			}
+			
+			// Also count enemy naval units in wider rings (proactive detection)
+			for (int i = RING2_PLOTS; i < RING5_PLOTS; i++)
+			{
+				CvPlot* pNearby = iterateRingPlots(pPlot, i);
+				if (pNearby && pNearby->isWater() && pNearby->isVisible(m_pPlayer->getTeam()))
+				{
+					CvUnit* pUnit = pNearby->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true);
+					if (pUnit && pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_SEA)
+						iNearbyEnemyNaval++;
+				}
+			}
+			if (iNearbyEnemyNaval >= 2)
+				bCoastalThreat = true;
+			
+			// Blockaded = definitely under coastal threat
+			if (pCity->GetCityCitizens()->AnyPlotBlockaded())
+				bCoastalThreat = true;
+		}
 
 		// ignore core cities here (handled by homeland ai)
 		// BUT proactively garrison if we detect emerging threat!
-		bool bProactiveThreat = bHighThreat || bAggressiveNeighbor || bEnemyBuildupNearby;
+		bool bProactiveThreat = bHighThreat || bAggressiveNeighbor || bEnemyBuildupNearby || bCoastalThreat;
 		if (!pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && 
 		    !m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity,NO_PLAYER) && !bProactiveThreat)
 			continue;
@@ -2410,6 +2445,8 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				// Higher urgency = willing to pull from further away
 				if (bEnemyBuildupNearby)
 					iSearchRange = max(iNumTurnsAway, 4); // Enemy already massing - high urgency
+				else if (bCoastalThreat)
+					iSearchRange = max(iNumTurnsAway, 4); // Naval threat to coastal city - high urgency
 				else if (bAggressiveNeighbor)
 					iSearchRange = max(iNumTurnsAway, 3); // Aggressive posture - moderate urgency
 				else if (bHighThreat)
@@ -2418,9 +2455,9 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Proactive garrison for %s: threat=%d, aggressive=%d, buildup=%d, search=%d turns",
+					strLogString.Format("Proactive garrison for %s: threat=%d, aggressive=%d, buildup=%d, coastal=%d (naval=%d), search=%d turns",
 						pCity->getName().GetCString(), iThreatLevel, bAggressiveNeighbor ? 1 : 0, 
-						iNearbyEnemyUnits, iSearchRange);
+						iNearbyEnemyUnits, bCoastalThreat ? 1 : 0, iNearbyEnemyNaval, iSearchRange);
 					LogTacticalMessage(strLogString);
 				}
 			}
