@@ -1097,30 +1097,67 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 			{
 				int iRequiredDamage = pCity->GetMaxHitPoints() - pCity->getDamage();
 				int iExpectedDamagePerTurn = ComputeTotalExpectedDamage(*pTarget);
+				// Dynamic siege threshold based on situation assessment
+				int iMaxSiegeTurns = 10; // base value
 
-				if (iExpectedDamagePerTurn < iRequiredDamage)
+				// Factor 1: Blockade status - if city is blockaded it can't heal, so we can take longer
+				bool bCityBlockaded = pCity->IsBlockadedWaterAndLand();
+				if (bCityBlockaded)
+					iMaxSiegeTurns += 5;
+
+				// Factor 2: Zone dominance - if we dominate we can be more patient
+				if (pZone)
 				{
-					//actual siege will typically be longer because not all units actually attack the city each turn
-					int iMaxSiegeTurns = 13; //do we even need a limit here or is this handled through the tactical posture?
+					if (pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY)
+						iMaxSiegeTurns += 4;
+					else if (pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_EVEN)
+						iMaxSiegeTurns += 2;
+					// If enemy dominated but city is in danger of falling, still allow attack (handled later)
+				}
 
-					int iCityHealRate = !pCity->IsBlockadedWaterAndLand() ? /*20 in CP, 8 in VP*/ GD_INT_GET(CITY_HIT_POINTS_HEALED_PER_TURN) : 0;
+				// Factor 3: Garrison strength - stronger garrison means more counterattack damage, so act faster
+				if (pCity->HasGarrison())
+					iMaxSiegeTurns -= 2;
 
+				// Factor 4: City strength affects how cautious we should be
+				int iCityStrength = pCity->getStrengthValue() / 100;
+				if (iCityStrength > 50)
+					iMaxSiegeTurns -= 2;
+				else if (iCityStrength < 25)
+					iMaxSiegeTurns += 2;
+
+				// Clamp to reasonable bounds
+				iMaxSiegeTurns = max(5, min(20, iMaxSiegeTurns));
+
+				// Calculate effective healing and required damage - blockaded cities don't heal
+				int iCityHealingPerTurn = 0;
+				if (!bCityBlockaded)
+				{
+					iCityHealingPerTurn = /*20 in CP, 8 in VP*/ GD_INT_GET(CITY_HIT_POINTS_HEALED_PER_TURN);
 					if (MOD_BALANCE_VP)
-						iCityHealRate += pCity->getPopulation();
+						iCityHealingPerTurn += pCity->getPopulation();
 
-					//assume the city heals each turn ...
-					if ((iExpectedDamagePerTurn - iCityHealRate) * iMaxSiegeTurns < iRequiredDamage)
+					CvUnit* pGarrison = pCity->GetGarrisonedUnit();
+					if (pGarrison)
 					{
-						if (GC.getLogging() && GC.getAILogging() && pZone)
-						{
-							CvString strLogString;
-							strLogString.Format("Zone %d, too early for attacking %s, required damage %d, expected max damage per turn %d",
-								pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn);
-							LogTacticalMessage(strLogString);
-						}
-
-						continue;
+						iCityHealingPerTurn += pGarrison->ActualHealRate(pPlot, false);
+						iRequiredDamage += pGarrison->GetMaxHitPoints() - pGarrison->getDamage();
+						// TODO, a city can now have two garrisoned units..
 					}
+				}
+
+				//assume the city heals each turn (unless blockaded)
+				if (iExpectedDamagePerTurn < iRequiredDamage && (iExpectedDamagePerTurn - iCityHealingPerTurn) * iMaxSiegeTurns < iRequiredDamage)
+				{
+					if (GC.getLogging() && GC.getAILogging() && pZone)
+					{
+						CvString strLogString;
+						strLogString.Format("Zone %d, too early for attacking %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, heal/turn %d", 
+							pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
+							iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded", iCityHealingPerTurn);
+						LogTacticalMessage(strLogString);
+					}
+					continue;
 				}
 
 				//see whether we have melee units for capturing
@@ -1151,8 +1188,9 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected max damage per turn %d",
-						pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn);
+					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s",
+						pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
+						iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded");
 					LogTacticalMessage(strLogString);
 				}
 
