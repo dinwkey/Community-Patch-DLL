@@ -5872,6 +5872,103 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_ICBM ||
 			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR));
 		
+		// MISSILE-SPECIFIC REBASING: Missiles should go to bases near targets for immediate use
+		bool bIsMissile = (pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR);
+		int iBestMissileScore = -1;
+		CvPlot* pBestMissileBase = NULL;
+		
+		if (bIsMissile)
+		{
+			// For missiles, we want to be at a base within range of high-value targets
+			// Re-score bases based on missile-specific criteria
+			int iMissileRange = pUnit->GetRange();
+			const vector<CvTacticalTarget>& allTargets = m_pPlayer->GetTacticalAI()->GetTacticalTargets();
+			
+			for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
+			{
+				if (it->score < 0)
+					continue;
+				if (!pUnit->canRebaseAt(it->pPlot->getX(), it->pPlot->getY()))
+					continue;
+				if (!HomelandAIHelpers::IsGoodUnitMix(it->pPlot, pUnit))
+					continue;
+				
+				int iMissileBaseScore = it->score;
+				
+				// Count high-value targets within missile range from this base
+				int iTargetsInRange = 0;
+				int iHighValueTargets = 0;
+				for (unsigned int iTarget = 0; iTarget < allTargets.size(); iTarget++)
+				{
+					int iDistToTarget = plotDistance(allTargets[iTarget].GetTargetX(), allTargets[iTarget].GetTargetY(), 
+						it->pPlot->getX(), it->pPlot->getY());
+					
+					if (iDistToTarget <= iMissileRange)
+					{
+						iTargetsInRange++;
+						
+						// Bonus for cities (can hit garrisoned units)
+						if (allTargets[iTarget].GetTargetType() == AI_TACTICAL_TARGET_ENEMY_CITY)
+							iHighValueTargets += 2;
+						else if (allTargets[iTarget].GetTargetType() == AI_TACTICAL_TARGET_ENEMY_COMBAT_UNIT)
+							iHighValueTargets++;
+					}
+				}
+				
+				// Missiles want bases with targets in range
+				iMissileBaseScore += iTargetsInRange * 5;
+				iMissileBaseScore += iHighValueTargets * 10;
+				
+				// For carriers: check resupply capability
+				if (!it->pPlot->isCity())
+				{
+					CvCity* pNearestCity = m_pPlayer->GetClosestCityByPlots(it->pPlot);
+					int iDistToCity = pNearestCity ? plotDistance(*it->pPlot, *pNearestCity->plot()) : 999;
+					
+					if (iDistToCity > 10)
+					{
+						// Carrier can't easily get more missiles - penalize if few targets
+						if (iTargetsInRange < 2)
+							iMissileBaseScore -= 20;
+					}
+					else
+					{
+						// Carrier can resupply - slight bonus
+						iMissileBaseScore += 5;
+					}
+				}
+				
+				// No targets in range? Bad choice for a missile
+				if (iTargetsInRange == 0)
+					iMissileBaseScore -= 50;
+				
+				if (iMissileBaseScore > iBestMissileScore)
+				{
+					iBestMissileScore = iMissileBaseScore;
+					pBestMissileBase = it->pPlot;
+				}
+			}
+			
+			// Use missile-specific best base if found and better than current
+			if (pBestMissileBase && iBestMissileScore > scoreLookup[pUnit->plot()->GetPlotIndex()])
+			{
+				pNewBase = pBestMissileBase;
+				
+				if(GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to %d,%d (missile score %d) - optimized for targets in range", 
+						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
+						pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
+					LogHomelandMessage(strLogString);
+				}
+				
+				pUnit->PushMission(CvTypes::getMISSION_REBASE(), pNewBase->getX(), pNewBase->getY());
+				UnitProcessed(pUnit->GetID());
+				continue; // Skip normal rebasing logic
+			}
+		}
+		
 		for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
 		{
 			//unsuitable - we want to fight!
@@ -7020,6 +7117,8 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 
 	int iOffensive = 0;
 	int iDefensive = 0;
+	int iMissiles = 0;
+	int iBombers = 0;
 
 	// Loop through all units on this plot
 	IDInfo* pUnitNode = pBasePlot->headUnitNode();
@@ -7033,15 +7132,80 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 			iDefensive++;
 			break;
 		case UNITAI_ATTACK_AIR:
+			iOffensive++;
+			iBombers++;
+			break;
 		case UNITAI_ICBM:
 		case UNITAI_MISSILE_AIR:
 			iOffensive++;
+			iMissiles++;
 			break;
 		default:
 			break;
 		}
 
 		pUnitNode = pBasePlot->nextUnitNode(pUnitNode);
+	}
+
+	// Check if this is a carrier (not a city)
+	bool bIsCarrier = !pBasePlot->isCity();
+	
+	if (bIsCarrier)
+	{
+		CvUnit* pCarrier = pBasePlot->getBestDefender(pUnit->getOwner());
+		if (pCarrier && pCarrier->domainCargo() == DOMAIN_AIR)
+		{
+			int iCarrierSlots = pCarrier->cargoSpace();
+			int iCurrentCargo = iOffensive + iDefensive;
+			
+			// MISSILE VS BOMBER CARRIER LOADING STRATEGY
+			// Consider carrier's ability to resupply missiles
+			
+			// Check distance to nearest friendly city for resupply
+			CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
+			int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
+			bool bCanResupplyMissiles = (iDistToCity <= 10); // Within reasonable rebase range
+			
+			UnitAITypes eUnitAI = pUnit->getUnitInfo().GetDefaultUnitAIType();
+			
+			if (eUnitAI == UNITAI_MISSILE_AIR)
+			{
+				// MISSILE LOADING CONSIDERATIONS:
+				// 1. Carriers far from cities can't easily reload missiles after use
+				// 2. Missiles are one-time use - carrier should have enough bombers for sustained ops
+				// 3. Limit missiles on carriers that can't resupply
+				
+				if (!bCanResupplyMissiles)
+				{
+					// Carrier is far from cities - limit missiles
+					// Want mostly bombers for sustained operations
+					int iMaxMissileRatio = iCarrierSlots / 4; // Max 25% missiles when can't resupply
+					if (iMissiles >= iMaxMissileRatio)
+						return false;
+				}
+				else
+				{
+					// Can resupply - allow more missiles but still keep bombers majority
+					int iMaxMissileRatio = iCarrierSlots / 3; // Max 33% missiles when can resupply
+					if (iMissiles >= iMaxMissileRatio)
+						return false;
+				}
+				
+				// Always ensure at least some bombers for sustained operations
+				if (iCurrentCargo > 0 && iBombers == 0)
+				{
+					// No bombers yet - don't add missiles until we have bombers
+					return false;
+				}
+			}
+			else if (eUnitAI == UNITAI_ATTACK_AIR)
+			{
+				// Bombers are preferred for carriers - they're reusable
+				// Allow bombers more freely
+				if (iBombers >= iCarrierSlots - 1)
+					return false; // Leave at least 1 slot for fighters/missiles
+			}
+		}
 	}
 
 	//don't count free slots etc ...
