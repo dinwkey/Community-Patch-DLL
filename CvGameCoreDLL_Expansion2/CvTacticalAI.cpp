@@ -1954,6 +1954,11 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			CvPlot* pBestPlot = NULL;
 			int iBestScore = 0;
 			
+			// COMBINED ARMS DEFENSE: Check what city/garrison can attack for coordination
+			CvUnit* pCityTarget = NULL;
+			if (pCity->canRangeStrike() && !pCity->isMadeAttack())
+				pCityTarget = pCity->getBestRangedStrikeTarget();
+			
 			for (size_t i = 0; i < vDefensePositions.size(); i++)
 			{
 				CvPlot* pDefPlot = vDefensePositions[i];
@@ -1976,6 +1981,40 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 							iScore += 30; // Block enemy approach
 						else if (pCheck->getOwner() != NO_PLAYER && m_pPlayer->IsAtWarWith(pCheck->getOwner()))
 							iScore += 15; // Face enemy territory
+					}
+				}
+				
+				// COORDINATED FIRE: If ranged, prefer positions where we can attack targets
+				// the city is NOT targeting (spread damage) or CAN be killed with combined fire
+				if (pUnit->IsCanAttackRanged() && pUnit->canRangeStrikeAt(pDefPlot->getX(), pDefPlot->getY()))
+				{
+					// Check what enemies we can reach from this position
+					for (int iRing = 1; iRing <= pUnit->GetRange(); iRing++)
+					{
+						for (int iIdx = RING_PLOTS[iRing-1]; iIdx < RING_PLOTS[iRing]; iIdx++)
+						{
+							CvPlot* pTargetPlot = iterateRingPlots(pDefPlot, iIdx);
+							if (!pTargetPlot)
+								continue;
+							
+							CvUnit* pEnemy = pTargetPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true);
+							if (pEnemy)
+							{
+								// Bonus if we can attack a target the city is NOT attacking
+								if (pCityTarget != pEnemy)
+									iScore += 15;
+								
+								// Bonus if combined fire with city could kill
+								if (pCityTarget == pEnemy)
+								{
+									int iCityDmg = pCity->rangeCombatDamage(pEnemy, false, NULL);
+									int iUnused = 0;
+									int iNavalDmg = pUnit->GetRangeCombatDamage(pEnemy, NULL, 0, iUnused, false);
+									if (iCityDmg + iNavalDmg >= pEnemy->GetCurrHitPoints())
+										iScore += 25; // Coordinated kill!
+								}
+							}
+						}
 					}
 				}
 				
@@ -2601,6 +2640,25 @@ void CvTacticalAI::PlotAirPatrolMoves()
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_AIRPATROL);
 	std::vector<CvPlot*> checkedPlotList;
+	
+	// COMBINED ARMS AIR DEFENSE: Track cities under threat for priority interception
+	std::vector<CvCity*> vThreatenedCities;
+	int iCityLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
+	{
+		// Check if city is under siege or threatened
+		bool bThreatened = pCity->isUnderSiege() || pCity->getDamage() > 0 || pCity->isInDangerOfFalling();
+		if (!bThreatened)
+		{
+			// Check for nearby enemy air units that could attack this city
+			int iEnemyAir = m_pPlayer->GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pCity->plot(), 10, true, true);
+			if (iEnemyAir > 0)
+				bThreatened = true;
+		}
+		
+		if (bThreatened)
+			vThreatenedCities.push_back(pCity);
+	}
 
 	// Loop through all recruited units
 	for(list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); it++)
@@ -2619,9 +2677,37 @@ void CvTacticalAI::PlotAirPatrolMoves()
 				// To at least intercept once if only one bomber found.
 				if (iNumNearbyBombers == 1)
 					iNumNearbyBombers++;
+				
+				// CITY DEFENSE COORDINATION: Boost interception priority for fighters at threatened cities
+				// This ensures air cover prioritizes protecting cities under siege
+				bool bProtectingThreatenedCity = false;
+				for (size_t i = 0; i < vThreatenedCities.size(); i++)
+				{
+					CvCity* pThreatCity = vThreatenedCities[i];
+					// Fighter can protect this city if based there or within interception range
+					if (pUnitPlot->getPlotCity() == pThreatCity ||
+						plotDistance(*pUnitPlot, *pThreatCity->plot()) <= pUnit->GetAirInterceptRange())
+					{
+						bProtectingThreatenedCity = true;
+						
+						// Extra interceptors wanted for threatened cities
+						if (pThreatCity->isUnderSiege())
+							iNumNearbyBombers += 3; // More air cover for cities under siege
+						else if (pThreatCity->getDamage() > 0)
+							iNumNearbyBombers += 2; // Damaged city needs protection
+						else
+							iNumNearbyBombers += 1; // General threat
+						break;
+					}
+				}
 
 				// TODO: we should not just use any interceptor but the best one (depending on promotions etc)
 				int maxInterceptorsWanted = (iNumNearbyBombers / 2) + (iNumNearbyFighters / 4);
+				
+				// Minimum interceptors for locations protecting threatened cities
+				if (bProtectingThreatenedCity && maxInterceptorsWanted < 2)
+					maxInterceptorsWanted = 2;
+				
 				if (iNumPlotNumAlreadySet < maxInterceptorsWanted)
 				{
 					checkedPlotList.push_back(pUnitPlot);
@@ -7597,6 +7683,54 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 				if (pUnit->IsGarrisoned())
 				{
 					CvCity* pCity = pUnit->plot()->getPlotCity();
+					
+					// COMBINED ARMS DEFENSE COORDINATION:
+					// Check what the city is likely to target and avoid overlapping
+					// City attack happens before garrison ranged, so coordinate
+					CvUnit* pCityTarget = NULL;
+					if (pCity && pCity->canRangeStrike() && !pCity->isMadeAttack())
+					{
+						pCityTarget = pCity->getBestRangedStrikeTarget();
+					}
+					
+					// Count other friendly defenders for coordinated fire assessment
+					int iFriendlyNavalRanged = 0;
+					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+					{
+						CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+						if (pAdj && pAdj->isWater())
+						{
+							CvUnit* pNaval = pAdj->getBestDefender(pUnit->getOwner());
+							if (pNaval && pNaval->getDomainType() == DOMAIN_SEA && pNaval->IsCanAttackRanged())
+								iFriendlyNavalRanged++;
+						}
+					}
+					
+					// If city is targeting this unit, consider spreading fire to other threats
+					// Unless this target can be killed with combined fire
+					if (pCityTarget == pOtherUnit)
+					{
+						int iCityDamage = pCity->rangeCombatDamage(pOtherUnit, false, NULL);
+						int iCombinedDamage = iDamage + iCityDamage;
+						
+						if (iCombinedDamage >= pOtherUnit->GetCurrHitPoints())
+						{
+							// Combined fire CAN kill - coordinate for the kill!
+							iDamage += 60;
+						}
+						else
+						{
+							// Can't kill with combined fire - spread damage to other targets
+							// unless there are no other valid targets
+							iDamage -= 20;
+						}
+					}
+					else if (pCityTarget != NULL)
+					{
+						// City is targeting someone else - bonus for attacking different unit
+						// This spreads damage across multiple threats
+						iDamage += 15;
+					}
 					
 					// Priority 1: Enemy siege units - biggest threat to city walls
 					if (pOtherUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)

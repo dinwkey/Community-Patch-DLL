@@ -32772,6 +32772,62 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 
 	int iBestScore = 0;
 	CvUnit* pBestTarget = NULL;
+	
+	// COMBINED ARMS DEFENSE COORDINATION
+	// Check what friendly defenders can contribute to coordinated fire
+	bool bHasGarrison = HasGarrison();
+	bool bGarrisonCanAttack = false;
+	CvUnit* pGarrison = NULL;
+	int iGarrisonRange = 0;
+	if (bHasGarrison)
+	{
+		pGarrison = GetGarrisonedUnit();
+		if (pGarrison && pGarrison->IsCanAttackRanged() && pGarrison->canMove() && !pGarrison->isOutOfAttacks())
+		{
+			bGarrisonCanAttack = true;
+			iGarrisonRange = pGarrison->GetRange();
+		}
+	}
+	
+	// Count friendly naval ranged defenders that can provide fire support
+	int iFriendlyNavalRanged = 0;
+	for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+	{
+		CvPlot* pAdj = plotDirection(getX(), getY(), (DirectionTypes)iDir);
+		if (pAdj && pAdj->isWater())
+		{
+			CvUnit* pNaval = pAdj->getBestDefender(getOwner());
+			if (pNaval && pNaval->getDomainType() == DOMAIN_SEA && pNaval->IsCanAttackRanged() && 
+				pNaval->canMove() && !pNaval->isOutOfAttacks())
+			{
+				iFriendlyNavalRanged++;
+			}
+		}
+	}
+	
+	// Check for air support from nearby airbases/carriers
+	bool bAirSupportAvailable = false;
+	CvPlayer& kOwner = GET_PLAYER(getOwner());
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
+	{
+		if (pLoopUnit->getDomainType() == DOMAIN_AIR && pLoopUnit->IsCanAttackRanged() && 
+			pLoopUnit->canMove() && !pLoopUnit->isOutOfAttacks())
+		{
+			// Check if air unit can reach any plot in our bombardment range
+			if (plotDistance(pLoopUnit->getX(), pLoopUnit->getY(), getX(), getY()) <= pLoopUnit->GetRange() + iRange)
+			{
+				bAirSupportAvailable = true;
+				break;
+			}
+		}
+	}
+	
+	// Track total friendly firepower for threat assessment
+	int iTotalFriendlyFirepower = 1; // City counts as 1
+	if (bGarrisonCanAttack) iTotalFriendlyFirepower++;
+	iTotalFriendlyFirepower += iFriendlyNavalRanged;
+	if (bAirSupportAvailable) iTotalFriendlyFirepower++;
 
 	CvPlot* pPlot = plot();
 	for (int iRing=1; iRing<=min(5,iRange); iRing++)
@@ -32792,6 +32848,35 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 
 				int iDamage = rangeCombatDamage(pTarget, false, NULL);
 				int iScore = iDamage;
+				
+				// COMBINED ARMS DEFENSE: Calculate if this target can be killed with coordinated fire
+				int iCombinedDamage = iDamage;
+				bool bGarrisonCanReachTarget = (bGarrisonCanAttack && iRing <= iGarrisonRange);
+				
+				// Estimate garrison damage if it can attack this target
+				if (bGarrisonCanReachTarget && pGarrison->canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+				{
+					int iUnused = 0;
+					int iGarrisonDamage = pGarrison->GetRangeCombatDamage(pTarget, NULL, 0, iUnused, false);
+					iCombinedDamage += iGarrisonDamage;
+				}
+				
+				// Check if naval ranged can contribute
+				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES && iFriendlyNavalRanged > 0; iDir++)
+				{
+					CvPlot* pAdj = plotDirection(getX(), getY(), (DirectionTypes)iDir);
+					if (pAdj && pAdj->isWater())
+					{
+						CvUnit* pNaval = pAdj->getBestDefender(getOwner());
+						if (pNaval && pNaval->getDomainType() == DOMAIN_SEA && pNaval->IsCanAttackRanged() &&
+							pNaval->canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+						{
+							int iUnused = 0;
+							int iNavalDamage = pNaval->GetRangeCombatDamage(pTarget, NULL, 0, iUnused, false);
+							iCombinedDamage += iNavalDamage;
+						}
+					}
+				}
 
 				// Big bonus for kills - eliminating a unit is very valuable
 				int iTargetHP = pTarget->GetCurrHitPoints();
@@ -32800,10 +32885,22 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					// Can kill this unit! High priority.
 					iScore += 200;
 				}
+				else if (iCombinedDamage >= iTargetHP && iDamage >= iTargetHP / 2)
+				{
+					// COORDINATED KILL: City can't kill alone but combined arms can!
+					// Only prioritize if city does meaningful damage (at least half HP)
+					// This encourages focus-firing high-value targets
+					iScore += 150;
+				}
 				else if (iDamage >= iTargetHP * 2 / 3)
 				{
 					// Can heavily wound - good target
 					iScore += 50;
+				}
+				else if (iCombinedDamage >= iTargetHP * 2 / 3)
+				{
+					// Combined arms can heavily wound - coordinate fire
+					iScore += 30;
 				}
 
 				// Priority bonus for siege and ranged units - they threaten the city without taking damage
