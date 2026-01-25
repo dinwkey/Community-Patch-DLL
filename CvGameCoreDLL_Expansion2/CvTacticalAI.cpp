@@ -7852,6 +7852,15 @@ int ScorePlotForPotentialAttacks(const CvUnit* pUnit, const CvTacticalPlot& test
 				temp.iBonusScore = max(temp.iBonusScore, (short)23);
 			}
 
+			// Siege unit positioning bonus: siege weapons get extra score for being able to hit cities
+			if (targetPlot.isEnemyCity() && pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+			{
+				temp.iBonusScore += 15; // encourage siege units to position where they can bombard cities
+				CvCity* pTargetCity = targetPlot.getPlot()->getPlotCity();
+				if (pTargetCity && pTargetCity->getDamage() > 0)
+					temp.iBonusScore += 10; // extra bonus for continuing an ongoing siege
+			}
+
 			iBestAttackScore = max(temp.iBonusScore, iBestAttackScore);
 		}
 	}
@@ -8280,6 +8289,40 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 	//consider visibility as well
 	iDangerScore += ScorePlotForVisibility(pUnit, testPlot);
 
+	// Siege unit positioning bonus: encourage UNITAI_CITY_BOMBARD units to position within range of enemy cities
+	// This helps siege weapons get into optimal firing positions faster
+	if (pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD && pUnit->IsCanAttackRanged())
+	{
+		// Check if there's an enemy city within range from this position
+		int iUnitRange = pUnit->GetRange();
+		const CvPlot* pTarget = assumedPosition.getTarget();
+		if (pTarget && pTarget->isCity())
+		{
+			CvCity* pTargetCity = pTarget->getPlotCity();
+			if (pTargetCity && GET_PLAYER(assumedPosition.getPlayer()).IsAtWarWith(pTargetCity->getOwner()))
+			{
+				int iDistToCity = plotDistance(*pTestPlot, *pTarget);
+				
+				// Strong bonus for being in range to attack the city
+				if (iDistToCity <= iUnitRange && iDistToCity > 0)
+				{
+					iPlotScore += 20; // significant bonus for being in firing range
+					
+					// Prefer max range to stay safer from counterattacks
+					if (iDistToCity == iUnitRange)
+						iPlotScore += 8;
+					else if (iDistToCity == iUnitRange - 1 && iUnitRange > 1)
+						iPlotScore += 4;
+				}
+				// Smaller bonus for being close but not yet in range - encourage moving closer
+				else if (iDistToCity <= iUnitRange + 2)
+				{
+					iPlotScore += 8;
+				}
+			}
+		}
+	}
+
 	//final score
 	//danger values (typically negative!) are mostly useful as tiebreaker
 	result.iPlotScore = iPlotScore * 10 + iDangerScore;
@@ -8543,6 +8586,23 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 	//a slight boost for attacking the "real" target
 	if ( enemyPlot.getPlotIndex()==assumedPosition.getTarget()->GetPlotIndex() )
 		newAssignment.iBonusScore += 2;
+
+	// Siege unit positioning bonus: UNITAI_CITY_BOMBARD units get a significant bonus for attacking cities
+	// This encourages siege weapons to prioritize their intended targets and position optimally
+	if (enemyPlot.isEnemyCity() && unit.pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+	{
+		// Base bonus for siege unit attacking a city
+		newAssignment.iBonusScore += 25;
+		
+		// Extra bonus if the city is damaged (siege is working)
+		CvCity* pTargetCity = enemyPlot.getPlot()->getPlotCity();
+		if (pTargetCity && pTargetCity->getDamage() > 0)
+			newAssignment.iBonusScore += 15;
+		
+		// Even more bonus if city is near death - prioritize finishing the siege
+		if (pTargetCity && pTargetCity->isInDangerOfFalling())
+			newAssignment.iBonusScore += 30;
+	}
 
 	return newAssignment;
 }
