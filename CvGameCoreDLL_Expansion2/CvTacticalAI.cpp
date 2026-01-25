@@ -10688,6 +10688,122 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 				}
 			}
 		}
+		
+		// === MODERN ARMOR (TANK) POSITIONING ===
+		// Tanks (high-strength fast melee) use different tactics than cavalry:
+		// - Lead assaults as spearhead (not flanking)
+		// - Need infantry support for combined arms
+		// - Position for breakthrough attacks on defensive lines
+		// - Can absorb damage, so less concerned about escape routes
+		int iOurStrength = pUnit->GetBaseCombatStrength();
+		bool bIsModernArmor = (pUnit->baseMoves(false) >= 4 && iOurStrength >= 60);
+		
+		if (bIsModernArmor && assumedPosition.haveEnemies())
+		{
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			int iAdjacentFriendlies = testPlot.getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
+			
+			// 1. SPEARHEAD POSITIONING: Tanks should lead the assault
+			// Position at the front of friendly formations
+			if (iEnemyDist <= 2)
+			{
+				// Count friendly non-tank melee nearby (infantry support)
+				int iFriendlyInfantry = 0;
+				for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+						if (pFriendly && !pFriendly->IsCanAttackRanged() &&
+							pFriendly->baseMoves(false) <= 3 &&
+							pFriendly->GetBaseCombatStrength() < iOurStrength)
+						{
+							iFriendlyInfantry++;
+						}
+					}
+				}
+				
+				// Bonus for having infantry support (combined arms)
+				if (iFriendlyInfantry >= 2)
+				{
+					iPlotScore += 10; // Excellent combined arms position
+				}
+				else if (iFriendlyInfantry == 1)
+				{
+					iPlotScore += 5;
+				}
+				
+				// Tanks are happier on the front line than cavalry
+				// They can absorb hits and break through
+				if (iEnemyDist == 1)
+				{
+					// Adjacent to enemy - assault position
+					// Good for tanks, unlike cavalry
+					iPlotScore += 4;
+					
+					// Extra bonus for having support
+					if (iAdjacentFriendlies >= 2)
+						iPlotScore += 4;
+				}
+			}
+			
+			// 2. BREAKTHROUGH CORRIDOR: Position toward enemy cities
+			const CvPlot* pTarget = assumedPosition.getTarget();
+			if (pTarget && pTarget->isCity())
+			{
+				CvCity* pTargetCity = pTarget->getPlotCity();
+				if (pTargetCity && GET_PLAYER(assumedPosition.getPlayer()).IsAtWarWith(pTargetCity->getOwner()))
+				{
+					int iDistToCity = plotDistance(*pTestPlot, *pTarget);
+					
+					// Tanks should push toward the objective
+					if (iDistToCity <= 3)
+					{
+						iPlotScore += 8; // Close to objective
+					}
+					else if (iDistToCity <= 5)
+					{
+						iPlotScore += 4;
+					}
+				}
+			}
+			
+			// 3. AVOID TERRAIN THAT NEGATES ARMOR ADVANTAGE
+			// Tanks dislike rough terrain even more than cavalry
+			// But for different reasons: reduces mobility, not defense
+			if (pTestPlot->isRoughGround())
+			{
+				// Tanks struggle in rough terrain
+				iPlotScore -= 3;
+				
+				// Worse if near enemies (can't maneuver)
+				if (iEnemyDist <= 2)
+					iPlotScore -= 2;
+			}
+			else if (pTestPlot->isOpenGround())
+			{
+				// Open terrain - tank country
+				iPlotScore += 4;
+				
+				// Extra bonus for open terrain near enemies (can exploit mobility)
+				if (iEnemyDist <= 2)
+					iPlotScore += 2;
+			}
+			
+			// 4. MASS CONCENTRATION: Tanks work best in groups
+			// Unlike cavalry which spreads out for flanking
+			if (iAdjacentFriendlies >= 2)
+			{
+				// Good formation - mutual support
+				iPlotScore += 4;
+			}
+			else if (iAdjacentFriendlies == 0 && iEnemyDist <= 2)
+			{
+				// Isolated tank near enemies - vulnerable
+				iPlotScore -= 4;
+			}
+		}
 	}
 
 	// === FAST RANGED UNIT POSITIONING (Skirmishers, Mounted Archers) ===
@@ -11957,8 +12073,168 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 							   pUnit->getUnitInfo().GetUnitAIType(UNITAI_FAST_ATTACK));
 			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
 			
-			// Target prioritization for fast melee units (cavalry, lancers, etc.)
-			if (bIsFastMelee || bIsCavalry)
+			// Distinguish modern armor (tanks) from ancient/medieval cavalry
+			// Tanks have high base combat strength (60+) and typically 5+ moves
+			// They use different tactics: breakthrough vs hit-and-run
+			int iOurStrength = pUnit->GetBaseCombatStrength();
+			bool bIsModernArmor = (bIsFastMelee && iOurStrength >= 60);
+			
+			// === MODERN ARMOR (TANKS) TACTICS ===
+			// Tanks excel at: breakthrough attacks, combined arms, absorbing damage
+			// Tanks struggle with: urban combat, anti-tank weapons, fighting alone
+			if (bIsModernArmor)
+			{
+				int iEnemyStrength = pEnemyUnit->GetBaseCombatStrength();
+				
+				// 1. BREAKTHROUGH PRIORITY: Tanks should break through defensive lines
+				// Target units blocking the path to objectives (cities)
+				CvCity* pNearbyEnemyCity = pEnemyPlot->GetAdjacentCity();
+				if (!pNearbyEnemyCity)
+				{
+					// Check if enemy is near any enemy city (within 3 tiles)
+					for (int iRing = 1; iRing <= 3 && !pNearbyEnemyCity; iRing++)
+					{
+						for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+						{
+							CvPlot* pLoopPlot = iterateRingPlots(pEnemyPlot, i);
+							if (pLoopPlot && pLoopPlot->isCity())
+							{
+								CvCity* pCity = pLoopPlot->getPlotCity();
+								if (pCity && GET_PLAYER(assumedPosition.getPlayer()).IsAtWarWith(pCity->getOwner()))
+								{
+									pNearbyEnemyCity = pCity;
+									break;
+								}
+							}
+						}
+					}
+				}
+				
+				if (pNearbyEnemyCity)
+				{
+					// Enemy is defending near a city - breakthrough value
+					result.iBonusScore += 20;
+					
+					// Extra bonus for killing defenders blocking city assault
+					if (bIsKill)
+						result.iBonusScore += 15;
+					
+					// Adjacent to city = highest priority breach point
+					if (pNearbyEnemyCity->plot()->isAdjacent(pEnemyPlot))
+						result.iBonusScore += 10;
+				}
+				
+				// 2. COMBINED ARMS: Tanks benefit from infantry support
+				// Check for friendly infantry nearby (protects from AT threats)
+				int iFriendlyInfantryNearby = 0;
+				CvTacticalPlot::eTactPlotDomain eUnitDomain = CvTacticalPlot::TD_LAND;
+				int iAdjacentFriendlies = enemyPlot.getNumAdjacentFriendlies(eUnitDomain, unit.iPlotIndex);
+				
+				// Estimate infantry support (non-fast-attack melee friendlies)
+				for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pEnemyPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+						if (pFriendly && !pFriendly->IsCanAttackRanged() && 
+							pFriendly->AI_getUnitAIType() != UNITAI_FAST_ATTACK &&
+							pFriendly->baseMoves(false) <= 3)
+						{
+							iFriendlyInfantryNearby++;
+						}
+					}
+				}
+				
+				// Bonus for attacking with infantry support (combined arms)
+				if (iFriendlyInfantryNearby >= 2)
+				{
+					result.iBonusScore += 15; // Well-supported tank assault
+				}
+				else if (iFriendlyInfantryNearby == 1)
+				{
+					result.iBonusScore += 8;
+				}
+				else if (iAdjacentFriendlies == 0)
+				{
+					// Unsupported tank - vulnerable to AT ambush
+					// Mild penalty unless it's a sure kill
+					if (!bIsKill)
+						result.iBonusScore -= 5;
+				}
+				
+				// 3. ARMOR ADVANTAGE: Tanks can engage other heavy units
+				// Unlike cavalry, tanks don't need to avoid armored enemies
+				if (!pEnemyUnit->IsCanAttackRanged() && !pEnemyUnit->IsCivilianUnit())
+				{
+					// Can we overpower this enemy with our armor advantage?
+					if (iOurStrength > iEnemyStrength * 1.2)
+					{
+						// We outclass them - press the attack
+						result.iBonusScore += 10;
+					}
+					else if (iEnemyStrength > iOurStrength * 1.2)
+					{
+						// They're stronger - might be super-heavy or have AT bonus
+						// Caution unless we have support
+						if (iFriendlyInfantryNearby == 0 && !bIsKill)
+							result.iBonusScore -= 8;
+					}
+				}
+				
+				// 4. PRIORITY TARGETS: Modern context priorities
+				// Anti-tank units (AT guns, tank destroyers) are dangerous
+				// Siege is still valuable but tanks are better at direct assault
+				if (eEnemyAI == UNITAI_CITY_BOMBARD)
+				{
+					// Siege units - less critical for tanks (they assault cities directly)
+					// but still valuable to eliminate
+					result.iBonusScore += 12;
+					if (bIsKill)
+						result.iBonusScore += 8;
+				}
+				else if (pEnemyUnit->IsCanAttackRanged())
+				{
+					// Ranged units - tanks can absorb their fire, but still good to silence
+					result.iBonusScore += 8;
+					if (bIsKill)
+						result.iBonusScore += 10;
+					
+					// Artillery is especially valuable to destroy
+					if (pEnemyUnit->GetRange() >= 3)
+						result.iBonusScore += 5;
+				}
+				
+				// 5. WOUNDED TARGETS: Exploitation
+				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
+				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
+				int iEnemyHPPercent = (iEnemyHP * 100) / iEnemyMaxHP;
+				
+				if (iEnemyHPPercent <= 50)
+				{
+					// Exploit weakness - tanks are good at finishing
+					result.iBonusScore += (100 - iEnemyHPPercent) / 6;
+					if (bIsKill)
+						result.iBonusScore += 10;
+				}
+				
+				// 6. SPEARHEAD ROLE: Tanks lead the assault
+				// Bonus for being first to engage (breaking the line)
+				if (iAdjacentFriendlies >= 1 && enemyPlot.getNumAdjacentEnemies(eUnitDomain) >= 2)
+				{
+					// Multiple enemies - tank is breaking through
+					result.iBonusScore += 8;
+				}
+				
+				// Civilians - tanks can capture but it's not their specialty
+				if (pEnemyUnit->IsCivilianUnit())
+				{
+					result.iBonusScore += 10; // Lower than cavalry - not their focus
+				}
+			}
+			// === TRADITIONAL CAVALRY TACTICS (non-tank fast melee) ===
+			// Original cavalry logic for knights, lancers, hussars, etc.
+			else if (bIsFastMelee || bIsCavalry)
 			{
 				// PRIORITY 1: Siege units - cavalry's historical counter
 				// Siege units are slow, fragile, and devastating - perfect cavalry targets
