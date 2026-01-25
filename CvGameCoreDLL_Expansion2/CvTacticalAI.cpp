@@ -10690,6 +10690,222 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		}
 	}
 
+	// === FAST RANGED UNIT POSITIONING (Skirmishers, Mounted Archers) ===
+	// Fast ranged units have unique tactical needs compared to melee cavalry:
+	// - Maintain kiting distance (stay at max range from melee threats)
+	// - Prefer positions with multiple escape routes (avoid getting cornered)
+	// - Maximize targets in range while minimizing exposure
+	// - Avoid positions where enemy melee can close distance next turn
+	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		int iUnitRange = pUnit->GetRange();
+		int iBaseMoves = pUnit->baseMoves(false);
+		bool bCanMoveAfterAttack = pUnit->canMoveAfterAttacking();
+		bool bIsSkirmisher = (pUnit->AI_getUnitAIType() == UNITAI_SKIRMISHER ||
+							  pUnit->getUnitInfo().GetUnitAIType(UNITAI_SKIRMISHER));
+		bool bIsFastRanged = (iBaseMoves >= 3);
+		
+		// Only apply these bonuses to fast ranged units (not slow siege or archers)
+		if (bIsFastRanged || bIsSkirmisher)
+		{
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			int iAdjacentEnemies = testPlot.getNumAdjacentEnemies(eRelevantDomain);
+			
+			// 1. KITING DISTANCE: Prefer positions at optimal range from enemies
+			// Fast ranged wants to be at range 2 (can shoot, enemy can't close gap easily)
+			if (iUnitRange >= 2)
+			{
+				if (iEnemyDist == 2)
+				{
+					// Perfect kiting distance - in range to attack but enemy needs 2 moves to reach
+					iPlotScore += 8;
+					
+					// Extra bonus for skirmishers who specialize in this
+					if (bIsSkirmisher)
+						iPlotScore += 4;
+				}
+				else if (iEnemyDist == 1 && iAdjacentEnemies > 0)
+				{
+					// Too close! Enemy melee can attack us next turn
+					// Heavy penalty unless we can move after attacking
+					if (!bCanMoveAfterAttack)
+						iPlotScore -= 12; // Very dangerous for static ranged
+					else
+						iPlotScore -= 4; // Risky but we can escape after shooting
+				}
+				else if (iEnemyDist == iUnitRange && iEnemyDist > 2)
+				{
+					// At max range - good standoff position for long-range units
+					iPlotScore += 5;
+				}
+			}
+			
+			// 2. ESCAPE ROUTE AWARENESS: Fast ranged need multiple retreat paths
+			// Count passable adjacent plots that are further from enemies
+			if (bCanMoveAfterAttack || bIsFastRanged)
+			{
+				int iEscapeRoutes = 0;
+				int iBlockedSides = 0;
+				
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (!pAdj)
+						continue;
+					
+					// Check if this adjacent plot is a valid escape route
+					if (pUnit->canMoveInto(*pAdj, CvUnit::MOVEFLAG_DESTINATION))
+					{
+						// Check if it's further from enemies (safe direction)
+						int iAdjEnemyDist = assumedPosition.getTactPlot(pAdj->GetPlotIndex()).getEnemyDistance(eRelevantDomain);
+						if (iAdjEnemyDist > iEnemyDist)
+						{
+							iEscapeRoutes++;
+						}
+						else if (iAdjEnemyDist < iEnemyDist)
+						{
+							// This direction leads toward enemies
+							iBlockedSides++;
+						}
+					}
+					else if (pAdj->isImpassable(pUnit->getTeam()) || pAdj->isWater())
+					{
+						iBlockedSides++;
+					}
+				}
+				
+				// Bonus for having multiple escape routes
+				if (iEscapeRoutes >= 3)
+				{
+					iPlotScore += 6; // Many escape options - excellent skirmisher position
+				}
+				else if (iEscapeRoutes >= 2)
+				{
+					iPlotScore += 3;
+				}
+				else if (iEscapeRoutes == 0 && iEnemyDist <= 2)
+				{
+					// No escape routes and close to enemies - very bad for mobile ranged
+					iPlotScore -= 8;
+				}
+				
+				// Penalty for being cornered (blocked by terrain on multiple sides)
+				if (iBlockedSides >= 4 && iEnemyDist <= 2)
+				{
+					iPlotScore -= 6; // Getting pinned is death for skirmishers
+				}
+			}
+			
+			// 3. FIRING ARC OPTIMIZATION: Prefer positions with targets in range
+			// Fast ranged should position where they can hit enemies while staying mobile
+			{
+				int iTargetsInRange = 0;
+				
+				// Check how many enemies we can hit from this position
+				for (int iRing = 1; iRing <= iUnitRange; iRing++)
+				{
+					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (pLoopPlot)
+						{
+							CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+							if (pEnemy && !pEnemy->IsCivilianUnit())
+							{
+								iTargetsInRange++;
+								
+								// Bonus for having high-value targets in range (siege, ranged)
+								if (pEnemy->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+									iTargetsInRange++; // Siege counts double
+								else if (pEnemy->IsCanAttackRanged())
+									iTargetsInRange++; // Enemy ranged counts extra
+							}
+						}
+					}
+				}
+				
+				// Bonus for having multiple targets in range
+				if (iTargetsInRange >= 2)
+				{
+					iPlotScore += min(iTargetsInRange * 2, 8); // Up to +8 for many targets
+				}
+				
+				// Penalty if we have no targets in range (wasted turn for skirmisher)
+				if (iTargetsInRange == 0 && assumedPosition.haveEnemies())
+				{
+					iPlotScore -= 4;
+				}
+			}
+			
+			// 4. AVOID MELEE THREATS: Fast ranged should stay away from fast enemy melee
+			// Chariot archers should fear enemy cavalry, etc.
+			if (iAdjacentEnemies > 0)
+			{
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (!pAdj)
+						continue;
+					
+					CvUnit* pAdjEnemy = pAdj->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+					if (pAdjEnemy && !pAdjEnemy->IsCanAttackRanged())
+					{
+						// Adjacent enemy melee - check if they're fast enough to be a threat
+						int iEnemyMoves = pAdjEnemy->baseMoves(false);
+						
+						if (iEnemyMoves >= iBaseMoves)
+						{
+							// Enemy is as fast or faster - big danger!
+							iPlotScore -= 8;
+							
+							// Extra penalty if we can't move after attacking
+							if (!bCanMoveAfterAttack)
+								iPlotScore -= 4;
+						}
+						else if (iEnemyMoves >= 3)
+						{
+							// Fast enemy melee nearby - moderate danger
+							iPlotScore -= 4;
+						}
+					}
+				}
+			}
+			
+			// 5. OPEN TERRAIN PREFERENCE: Fast ranged prefer open terrain for mobility
+			// Rough terrain slows down escape and pursuit
+			if (pTestPlot->isOpenGround())
+			{
+				// Open ground - easier to maneuver and escape
+				iPlotScore += 3;
+				
+				// Extra bonus for very fast units (4+ moves)
+				if (iBaseMoves >= 4)
+					iPlotScore += 2;
+			}
+			else if (pTestPlot->isRoughGround())
+			{
+				// Rough terrain - harder to kite effectively
+				if (iEnemyDist <= 2)
+				{
+					iPlotScore -= 2; // Mild penalty when near enemies
+				}
+			}
+			
+			// 6. STAY MOBILE: Skirmishers should avoid positions that end their movement
+			// Fortifying or garrisoning negates their mobility advantage
+			if (bIsSkirmisher && (pTestPlot->isCity() || TacticalAIHelpers::IsPlayerCitadel(pTestPlot, pUnit->getOwner())))
+			{
+				// Skirmishers in cities/citadels waste their mobility
+				// (Unless wounded and need to heal)
+				int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+				if (iHealthPercent > 60)
+				{
+					iPlotScore -= 5; // Healthy skirmisher shouldn't garrison
+				}
+			}
+		}
+	}
+
 	//final score
 	//danger values (typically negative!) are mostly useful as tiebreaker
 	result.iPlotScore = iPlotScore * 10 + iDangerScore;
