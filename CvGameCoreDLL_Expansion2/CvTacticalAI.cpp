@@ -10660,6 +10660,34 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 				iPlotScore += 1;
 			}
 		}
+		
+		// === FLANKING POSITIONING FOR MELEE UNITS ===
+		// Units with high FlankAttackModifier should position to enable flanking attacks
+		int iFlankMod = pUnit->GetFlankAttackModifier();
+		if (iFlankMod >= 15 && testPlot.getEnemyDistance(eRelevantDomain) <= 2)
+		{
+			// Count enemies this plot is adjacent to (potential flanking targets)
+			int iAdjacentEnemies = testPlot.getNumAdjacentEnemies(eRelevantDomain);
+			
+			if (iAdjacentEnemies > 0)
+			{
+				// We're adjacent to enemies - good flanking position if friendlies are also nearby
+				int iAdjacentFriendlies = testPlot.getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
+				
+				// Bonus for being in position to flank with friendlies
+				if (iAdjacentFriendlies > 0)
+				{
+					// Good flanking position - we can support friendlies or be supported
+					iPlotScore += 2 + (iFlankMod / 15); // +3 to +4 for high flank modifier
+				}
+				
+				// Extra bonus if multiple enemies are adjacent (cavalry charge opportunity)
+				if (iAdjacentEnemies >= 2 && iFlankMod >= 25)
+				{
+					iPlotScore += 2; // Cavalry likes targets of opportunity
+				}
+			}
+		}
 	}
 
 	//final score
@@ -11417,6 +11445,64 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 				// Unit with rough bonus attacking on open - not ideal
 				result.iBonusScore -= iRoughAttackBonus / 8;
 			}
+		}
+	}
+
+	// === FLANKING BONUS AWARENESS ===
+	// Units with high FlankAttackModifier (cavalry, lancers) should prioritize flanking attacks
+	// Also consider existing friendly adjacencies to maximize flanking damage
+	if (!enemyPlot.isEnemyCity())
+	{
+		int iFlankMod = pUnit->GetFlankAttackModifier();
+		CvTacticalPlot::eTactPlotDomain eUnitDomain = pUnit->getDomainType() == DOMAIN_SEA ? CvTacticalPlot::TD_SEA : CvTacticalPlot::TD_LAND;
+		
+		// Count friendly units adjacent to the enemy (not including us since we're the attacker)
+		int iAdjacentFriendlies = enemyPlot.getNumAdjacentFriendlies(eUnitDomain, unit.iPlotIndex);
+		
+		// Count enemy units adjacent to target (enemy support)
+		int iAdjacentEnemies = enemyPlot.getNumAdjacentEnemies(eUnitDomain);
+		
+		// Net flanking advantage: more friendlies than enemies = flanking bonus
+		int iFlankingAdvantage = iAdjacentFriendlies - iAdjacentEnemies;
+		
+		if (iFlankingAdvantage > 0)
+		{
+			// We have flanking advantage - bonus scales with unit's FlankAttackModifier
+			// Base flanking is 10% per adjacent friend (BONUS_PER_ADJACENT_FRIEND)
+			// FlankAttackModifier adds to this, so cavalry with +25% gets 35% per flanker
+			
+			int iBaseFlankBonus = iFlankingAdvantage * 3; // +3 per net flanker for all melee
+			int iFlankModBonus = (iFlankMod * iFlankingAdvantage) / 10; // Extra for high flank modifier
+			
+			result.iBonusScore += iBaseFlankBonus + iFlankModBonus;
+			
+			// Extra bonus for cavalry-type units with high flank modifier
+			// These units should strongly prefer flanking attacks
+			if (iFlankMod >= 25)
+			{
+				result.iBonusScore += 5; // cavalry/lancer bonus for any flanking situation
+				
+				// Big bonus for multiple flankers - cavalry excels at concentrated charges
+				if (iAdjacentFriendlies >= 2)
+					result.iBonusScore += iFlankMod / 5; // +5 to +10 for multiple flankers
+			}
+		}
+		else if (iFlankingAdvantage < 0 && iFlankMod >= 25)
+		{
+			// Cavalry attacking without flanking support against supported enemy
+			// This is not cavalry's strong suit - mild penalty
+			result.iBonusScore -= 5;
+		}
+		
+		// Units with high FlankAttackModifier should avoid attacking isolated enemies
+		// when there are flanking opportunities elsewhere
+		// (This is a soft preference - isolated enemies are still valid targets)
+		if (iAdjacentFriendlies == 0 && iFlankMod >= 25)
+		{
+			// No flanking support - cavalry prefers to wait for better positioning
+			// But don't penalize too much since kills are still valuable
+			if (!bIsKill)
+				result.iBonusScore -= 3;
 		}
 	}
 
