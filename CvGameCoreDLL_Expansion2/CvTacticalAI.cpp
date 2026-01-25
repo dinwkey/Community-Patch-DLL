@@ -7505,6 +7505,52 @@ bool ScoreAttackDamage(const CvTacticalPlot& tactPlot, const CvUnit* pUnit, cons
 			result.iKillOrNearKillId = pEnemy->GetID();
 			iExtraScore += pUnit->GetExtraXPOnKill();
 		}
+
+		// Defensive unit clearing priority: bonus for attacking units adjacent to enemy cities
+		// This helps clear the path for city assault and removes counterattack threats
+		CvCity* pAdjacentEnemyCity = pTestPlot->GetAdjacentCity();
+		if (pAdjacentEnemyCity && GET_PLAYER(assumedPosition.getPlayer()).IsAtWarWith(pAdjacentEnemyCity->getOwner()))
+		{
+			// Check if the enemy unit actually poses a threat or blocks our attack
+			// Naval melee units can't threaten land attackers, so skip them unless:
+			// 1. Our attacker is also naval (same domain combat)
+			// 2. The enemy unit has ranged attacks (can hit land units)
+			// 3. It's a garrison (always relevant)
+			bool bRelevantThreat = true;
+			if (pEnemy->getDomainType() == DOMAIN_SEA && !pEnemy->IsCanAttackRanged() && !pEnemy->IsGarrisoned())
+			{
+				// Naval melee unit - only relevant if attacker is also naval
+				if (pUnit->getDomainType() != DOMAIN_SEA)
+					bRelevantThreat = false;
+			}
+			
+			if (bRelevantThreat)
+			{
+				// Base bonus for attacking a unit adjacent to an enemy city
+				iExtraScore += 15;
+				
+				// Extra bonus if this is a kill - clearing defenders is very valuable
+				if (iDamageDealt >= iPrevHitPoints - 10)
+					iExtraScore += 25;
+				
+				// Extra bonus if the enemy unit can ranged attack (threatens our siege)
+				if (pEnemy->IsCanAttackRanged())
+					iExtraScore += 10;
+				
+				// Extra bonus if this kill would open a blockade position
+				// Check if killing this unit would allow us to blockade the city from this plot
+				if (iDamageDealt >= iPrevHitPoints - 10 && !pAdjacentEnemyCity->IsBlockaded(NO_DOMAIN))
+					iExtraScore += 20;
+				
+				// Extra bonus if the city is already damaged - we're in the final assault phase
+				if (pAdjacentEnemyCity->getDamage() > 0)
+					iExtraScore += 10;
+				
+				// Strong bonus if this is a garrison unit - removing the garrison is critical
+				if (pEnemy->IsGarrisoned())
+					iExtraScore += 30;
+			}
+		}
 	}
 
 	if (!pUnit->GetPromotionsWithSameAttackBonus().empty())
@@ -8678,6 +8724,35 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 	//flat bonus for a kill
 	if (bIsKill)
 		result.iBonusScore += 1000;
+
+	// Defensive unit clearing priority for melee attacks
+	// If killing this unit would open a path to an enemy city, give bonus
+	if (bIsKill && !enemyPlot.isEnemyCity())
+	{
+		CvCity* pAdjacentEnemyCity = pEnemyPlot->GetAdjacentCity();
+		if (pAdjacentEnemyCity && GET_PLAYER(assumedPosition.getPlayer()).IsAtWarWith(pAdjacentEnemyCity->getOwner()))
+		{
+			// Check domain relevance - naval melee doesn't block land assault
+			CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+			bool bRelevantDefender = true;
+			if (pEnemyUnit && pEnemyUnit->getDomainType() == DOMAIN_SEA && !pEnemyUnit->IsCanAttackRanged())
+			{
+				// Naval melee unit - only relevant bonus if our attacker is also naval
+				if (pUnit->getDomainType() != DOMAIN_SEA)
+					bRelevantDefender = false;
+			}
+			
+			if (bRelevantDefender)
+			{
+				// Killing a defender near a city is valuable - opens assault paths
+				result.iBonusScore += 50;
+				
+				// Extra bonus if the city is the primary target
+				if (assumedPosition.getTarget() == pAdjacentEnemyCity->plot())
+					result.iBonusScore += 30;
+			}
+		}
+	}
 
 	return result;
 }
