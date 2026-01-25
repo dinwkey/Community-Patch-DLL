@@ -4596,8 +4596,30 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						// Calculate target value based on unit type and situation
 						UnitAITypes eDefenderAI = pDefender->AI_getUnitAIType();
 						
+						// HIGH PRIORITY: Enemy AA units - missiles can't be intercepted!
+						// Killing AA clears the way for our bombers
+						bool bTargetIsAA = (pDefender->GetAirInterceptRange() > 0 || pDefender->canIntercept());
+						if (bTargetIsAA)
+						{
+							// Base bonus for AA
+							iTargetValue += 90;
+							
+							// Extra bonus if we have bombers that would benefit
+							int iOurBombers = m_pPlayer->GetNumUnitsWithUnitAI(UNITAI_ATTACK_AIR, true);
+							int iOurFighters = m_pPlayer->GetNumUnitsWithUnitAI(UNITAI_DEFENSE_AIR, true);
+							if (iOurBombers + iOurFighters >= 2)
+							{
+								iTargetValue += 40; // We have air units that benefit from AA removal
+							}
+							
+							// Even more bonus for strong AA
+							if (pDefender->interceptionProbability() >= 50)
+							{
+								iTargetValue += 30; // High intercept chance - priority kill
+							}
+						}
 						// High-value targets: siege, ranged, carriers, generals
-						if (eDefenderAI == UNITAI_CITY_BOMBARD)
+						else if (eDefenderAI == UNITAI_CITY_BOMBARD)
 						{
 							iTargetValue += 80; // Siege units are critical to eliminate
 						}
