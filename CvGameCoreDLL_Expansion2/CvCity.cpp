@@ -32887,6 +32887,82 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 							iScore += 30;
 					}
 				}
+				
+				// ESCORT PROTECTION CHECK - bonus for killing naval units protecting embarked units
+				// When a naval unit escorts embarked units, killing the escort exposes them
+				if (pTarget->getDomainType() == DOMAIN_SEA && !pTarget->isEmbarked())
+				{
+					// Check if there are embarked units on the same plot being protected
+					bool bProtectingEmbarked = false;
+					int iEmbarkedOnPlot = 0;
+					for (int iUnit = 0; iUnit < pTargetPlot->getNumUnits(); iUnit++)
+					{
+						CvUnit* pOtherUnit = pTargetPlot->getUnitByIndex(iUnit);
+						if (pOtherUnit && pOtherUnit != pTarget && pOtherUnit->isEmbarked() &&
+							GET_TEAM(pOtherUnit->getTeam()).isAtWar(getTeam()))
+						{
+							bProtectingEmbarked = true;
+							iEmbarkedOnPlot++;
+						}
+					}
+					
+					if (bProtectingEmbarked && iDamage >= iTargetHP)
+					{
+						// We can kill this escort and expose the embarked units!
+						iScore += 50 + (iEmbarkedOnPlot * 20); // Bonus per embarked unit exposed
+						
+						// Adjacent escort protecting invasion force - high priority
+						if (iRing == 1)
+							iScore += 40;
+					}
+				}
+				
+				// EMBARKED UNIT PRIORITY - embarked units are extremely vulnerable!
+				// They have drastically reduced combat strength and are easy kills
+				// Note: This only applies when the embarked unit IS the best defender
+				// (i.e., no naval escort on the same plot protecting it)
+				if (pTarget->isEmbarked())
+				{
+					// Embarked units are high-value targets - eliminate invasion forces in transit
+					int iEmbarkedBonus = 60;
+					
+					// Can we kill it? Embarked units die easily
+					if (iDamage >= iTargetHP)
+					{
+						iEmbarkedBonus += 80; // Easy kill - definitely prioritize!
+					}
+					else if (iDamage >= iTargetHP / 2)
+					{
+						// Can heavily damage - good target
+						iEmbarkedBonus += 40;
+					}
+					
+					// Adjacent embarked unit is immediate landing threat
+					if (iRing == 1)
+					{
+						iEmbarkedBonus += 50; // Could land and attack next turn!
+						
+						// If city is low HP, adjacent embarked melee is capture threat
+						int iCityHP = GetMaxHitPoints() - getDamage();
+						int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
+						if (iCityHPPercent <= 25 && !pTarget->IsCanAttackRanged())
+						{
+							iEmbarkedBonus += 60; // Could land and capture!
+						}
+					}
+					else if (iRing == 2)
+					{
+						iEmbarkedBonus += 20; // Will reach soon
+					}
+					
+					// Embarked siege units are particularly dangerous if they land
+					if (eUnitAI == UNITAI_CITY_BOMBARD)
+					{
+						iEmbarkedBonus += 40; // Kill siege before it can unload and bombard
+					}
+					
+					iScore += iEmbarkedBonus;
+				}
 
 				// Small bonus for wounded units we can't quite kill - finish them off later
 				if (iTargetHP < pTarget->GetMaxHitPoints() && iDamage < iTargetHP)
