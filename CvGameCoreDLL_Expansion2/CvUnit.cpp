@@ -7442,9 +7442,46 @@ bool CvUnit::canUseForTacticalAI() const
 	if (!canMove() || TurnProcessed())
 		return false;
 
-	//handled by homeland AI for stupid reasons
+	// Recon units (scouts, explorers) are normally handled by homeland AI for exploration
+	// However, they should be available for tactical AI when:
+	// 1. They're in danger from enemies
+	// 2. There are enemy units nearby they could engage
+	// 3. We're at war and they could be useful
+	// This allows scouts to be used tactically in early game combat
 	if (AI_getUnitAIType() == UNITAI_EXPLORE || AI_getUnitAIType() == UNITAI_EXPLORE_SEA)
+	{
+		// Allow tactical use if the unit is in danger
+		if (GetDanger() > 0)
+			return true;
+		
+		// Allow tactical use if there are visible enemy units within 3 tiles
+		// This lets scouts participate in nearby battles
+		for (int iRing = 1; iRing <= 3; iRing++)
+		{
+			for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(plot(), i);
+				if (pLoopPlot && pLoopPlot->isVisible(getTeam()))
+				{
+					// Check for enemy combat units
+					CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, getOwner(), NULL, true);
+					if (pEnemy && pEnemy->IsCombatUnit() && !pEnemy->isInvisible(getTeam(), false))
+					{
+						return true; // Nearby enemy - use for tactical AI
+					}
+					
+					// Check for enemy city under siege
+					if (pLoopPlot->isCity() && GET_PLAYER(getOwner()).IsAtWarWith(pLoopPlot->getOwner()))
+					{
+						return true; // Near enemy city during war
+					}
+				}
+			}
+		}
+		
+		// No tactical need - let homeland AI handle exploration
 		return false;
+	}
 
 	//these are only used for operations
 	if (AI_getUnitAIType() == UNITAI_CARRIER_SEA || AI_getUnitAIType() == UNITAI_ICBM)

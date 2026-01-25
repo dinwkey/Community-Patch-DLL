@@ -6320,7 +6320,8 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 			if(!pLoopUnit->canMove() || !pLoopUnit->IsCanAttack() || !pLoopUnit->canMoveInto(*pTarget,CvUnit::MOVEFLAG_DESTINATION))
 				continue;
 
-			if(pLoopUnit->AI_getUnitAIType() == UNITAI_EXPLORE || pLoopUnit->AI_getUnitAIType() == UNITAI_EXPLORE_SEA || pLoopUnit->getArmyID() != -1)
+			// Units in armies are controlled by operational AI
+			if(pLoopUnit->getArmyID() != -1)
 				continue;
 
 			if (pLoopUnit->IsCoveringFriendlyCivilian())
