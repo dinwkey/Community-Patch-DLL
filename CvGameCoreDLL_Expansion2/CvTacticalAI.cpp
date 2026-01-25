@@ -3932,6 +3932,89 @@ void CvTacticalAI::UpdateTargetScores()
 					}
 				}
 			}
+			
+			// COASTAL BOMBARDMENT COORDINATION: Prioritize units defending enemy coastal cities under land siege
+			// Naval ranged should prioritize clearing garrison/defenders when land forces are assaulting from shore
+			if (pTargetUnit->getDomainType() == DOMAIN_LAND || pTargetUnit->IsGarrisoned())
+			{
+				// Check if target is in or adjacent to an enemy coastal city
+				CvCity* pEnemyCity = pPlot->getPlotCity();
+				if (!pEnemyCity)
+				{
+					// Check adjacent plots for enemy city
+					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES && !pEnemyCity; iDir++)
+					{
+						CvPlot* pAdj = plotDirection(pPlot->getX(), pPlot->getY(), (DirectionTypes)iDir);
+						if (pAdj && pAdj->isCity() && pAdj->getPlotCity()->getTeam() != m_pPlayer->getTeam())
+							pEnemyCity = pAdj->getPlotCity();
+					}
+				}
+				
+				if (pEnemyCity && pEnemyCity->isCoastal())
+				{
+					// Check if we have land forces adjacent to this coastal city (land siege ongoing)
+					bool bLandSiegeOngoing = false;
+					int iOurLandUnits = 0;
+					bool bWeHaveNavalRanged = false;
+					
+					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+					{
+						CvPlot* pAdj = plotDirection(pEnemyCity->getX(), pEnemyCity->getY(), (DirectionTypes)iDir);
+						if (pAdj)
+						{
+							// Count our land units adjacent to enemy city
+							if (!pAdj->isWater())
+							{
+								CvUnit* pOurUnit = pAdj->getBestDefender(m_pPlayer->GetID());
+								if (pOurUnit && pOurUnit->getDomainType() == DOMAIN_LAND)
+								{
+									bLandSiegeOngoing = true;
+									iOurLandUnits++;
+								}
+							}
+							
+							// Check if we have naval ranged nearby that can support
+							if (pAdj->isWater())
+							{
+								CvUnit* pOurUnit = pAdj->getBestDefender(m_pPlayer->GetID());
+								if (pOurUnit && pOurUnit->getDomainType() == DOMAIN_SEA && pOurUnit->IsCanAttackRanged())
+									bWeHaveNavalRanged = true;
+							}
+						}
+					}
+					
+					// If land siege is ongoing and we have naval fire support, prioritize this target
+					if (bLandSiegeOngoing && bWeHaveNavalRanged)
+					{
+						int iCoastalBombardBonus = 15;
+						
+						// More land attackers = more value in clearing defenders
+						if (iOurLandUnits >= 3)
+							iCoastalBombardBonus += 12;
+						else if (iOurLandUnits >= 2)
+							iCoastalBombardBonus += 6;
+						
+						// Garrison is priority - it adds city defense and counterattack
+						if (pTargetUnit->IsGarrisoned())
+							iCoastalBombardBonus += 15;
+						
+						// City already damaged = assault in progress, high priority
+						if (pEnemyCity->getDamage() > 0)
+							iCoastalBombardBonus += 10;
+						
+						it->SetAuxIntData(it->GetAuxIntData() + iCoastalBombardBonus);
+						
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("Coastal bombardment target: %s at (%d,%d), defending %s, priority boosted by %d (land units: %d)",
+								pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(),
+								pEnemyCity->getNameNoSpace().c_str(), iCoastalBombardBonus, iOurLandUnits);
+							LogTacticalMessage(strLogString);
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -6131,6 +6214,58 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 					// Give ranged units a significant priority boost vs cities
 					// This effectively doubles their priority in the sort order
 					iAttackStrength = iAttackStrength * 3 / 2;
+					
+					// Coastal bombardment coordination: naval ranged units get extra priority
+					// when bombarding coastal cities that have land siege ongoing
+					// This ensures combined arms fire support from the sea
+					if (pLoopUnit->getDomainType() == DOMAIN_SEA)
+					{
+						CvCity* pCity = pTarget->getPlotCity();
+						if (pCity && pCity->isCoastal())
+						{
+							// Check if city is under land siege (has adjacent enemy land units)
+							bool bLandSiegeOngoing = false;
+							int iLandAttackers = 0;
+							for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+							{
+								CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+								if (pAdj && !pAdj->isWater())
+								{
+									// Count our land units adjacent to the city
+									CvUnit* pAdjUnit = pAdj->getBestDefender(m_pPlayer->GetID());
+									if (pAdjUnit && pAdjUnit->getDomainType() == DOMAIN_LAND)
+									{
+										bLandSiegeOngoing = true;
+										iLandAttackers++;
+									}
+								}
+							}
+							
+							if (bLandSiegeOngoing)
+							{
+								// Naval bombardment coordination bonus
+								// More land attackers = more important for naval fire support
+								int iNavalBombardBonus = 20;
+								if (iLandAttackers >= 3)
+									iNavalBombardBonus += 15;
+								else if (iLandAttackers >= 2)
+									iNavalBombardBonus += 8;
+								
+								// Extra bonus if city is damaged (siege already in progress)
+								if (pCity->getDamage() > 0)
+									iNavalBombardBonus += 10;
+								
+								// Bonus for cities under active assault (low HP)
+								int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
+								if (iCityHPPercent <= 50)
+									iNavalBombardBonus += 15;
+								else if (iCityHPPercent <= 75)
+									iNavalBombardBonus += 5;
+								
+								iAttackStrength += iAttackStrength * iNavalBombardBonus / 100;
+							}
+						}
+					}
 				}
 				
 				unit.SetAttackStrength(iAttackStrength);
