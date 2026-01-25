@@ -33108,6 +33108,61 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						}
 					}
 
+					// ESCORT PROTECTION CHECK - bonus for killing naval units protecting embarked units
+					// When a naval unit escorts embarked units, killing the escort exposes them
+					if (pTarget->getDomainType() == DOMAIN_SEA && !pTarget->isEmbarked())
+					{
+						bool bProtectingEmbarked = false;
+						int iEmbarkedOnPlot = 0;
+						for (int iUnit = 0; iUnit < pTargetPlot->getNumUnits(); iUnit++)
+						{
+							CvUnit* pOtherUnit = pTargetPlot->getUnitByIndex(iUnit);
+							if (pOtherUnit && pOtherUnit != pTarget && pOtherUnit->isEmbarked() && GET_TEAM(pOtherUnit->getTeam()).isAtWar(getTeam()))
+							{
+								bProtectingEmbarked = true;
+								iEmbarkedOnPlot++;
+							}
+						}
+
+						if (bProtectingEmbarked && iDamage >= iTargetHP)
+						{
+							iScore += 50 + (iEmbarkedOnPlot * 20);
+
+							if (iRing == 1)
+								iScore += 40;
+						}
+					}
+
+					// EMBARKED UNIT PRIORITY - embarked units are extremely vulnerable!
+					if (pTarget->isEmbarked())
+					{
+						int iEmbarkedBonus = 60;
+
+						if (iDamage >= iTargetHP)
+							iEmbarkedBonus += 80;
+						else if (iDamage >= iTargetHP / 2)
+							iEmbarkedBonus += 40;
+
+						if (iRing == 1)
+						{
+							iEmbarkedBonus += 50;
+
+							int iCityHP = GetMaxHitPoints() - getDamage();
+							int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
+							if (iCityHPPercent <= 25 && !pTarget->IsCanAttackRanged())
+								iEmbarkedBonus += 60;
+						}
+						else if (iRing == 2)
+						{
+							iEmbarkedBonus += 20;
+						}
+
+						if (eUnitAI == UNITAI_CITY_BOMBARD)
+							iEmbarkedBonus += 40;
+
+						iScore += iEmbarkedBonus;
+					}
+
 					// It's generally not useful to bombard civilians
 					if (pTarget->IsCivilianUnit())
 					{
