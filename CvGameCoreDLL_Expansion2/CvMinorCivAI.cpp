@@ -4580,7 +4580,8 @@ void CvMinorCivAI::SetBullyUnit(UnitClassTypes eUnitClassType)
 {
 	if (eUnitClassType == NO_UNITCLASS)
 	{
-		CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(GetMinorCivType());
+		MinorCivTypes eMinorCivType = GetMinorCivType();
+		CvMinorCivInfo* pkMinorCivInfo = (eMinorCivType != NO_MINORCIV) ? GC.getMinorCivInfo(eMinorCivType) : NULL;
 		if (pkMinorCivInfo)
 		{
 			if ((UnitClassTypes)pkMinorCivInfo->GetBullyUnit() != NO_UNITCLASS)
@@ -4610,7 +4611,8 @@ void CvMinorCivAI::DoPickPersonality()
 {
 	MinorCivPersonalityTypes ePersonality = NO_MINOR_CIV_PERSONALITY_TYPE;
 	MinorCivPersonalityTypes eFixedPersonality = NO_MINOR_CIV_PERSONALITY_TYPE;
-	CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(GetMinorCivType());
+	MinorCivTypes eMinorCivType = GetMinorCivType();
+	CvMinorCivInfo* pkMinorCivInfo = (eMinorCivType != NO_MINORCIV) ? GC.getMinorCivInfo(eMinorCivType) : NULL;
 	if (pkMinorCivInfo)
 		eFixedPersonality = pkMinorCivInfo->GetFixedPersonality();
 
@@ -4681,7 +4683,11 @@ void CvMinorCivAI::DoPickPersonality()
 /// What is this civ's trait?
 MinorCivTraitTypes CvMinorCivAI::GetTrait() const
 {
-	CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(GetMinorCivType());
+	MinorCivTypes eMinorCivType = GetMinorCivType();
+	if (eMinorCivType == NO_MINORCIV)
+		return NO_MINOR_CIV_TRAIT_TYPE;
+
+	CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(eMinorCivType);
 	if(pkMinorCivInfo)
 	{
 		return (MinorCivTraitTypes) pkMinorCivInfo->GetMinorCivTrait();
@@ -11056,6 +11062,10 @@ UnitTypes CvMinorCivAI::GetBestUnitGiftFromPlayer(PlayerTypes ePlayer)
 			continue;
 
 		int iValue = 11;
+
+		// If the City-State has no ranged units, bias toward ranged gifts
+		if (!bHasRanged && pkUnitInfo->GetRange() > 0 && pkUnitInfo->GetRangedCombat() > 0)
+			iValue += 6;
 
 		// If this is a UU, add extra value so that the unique unit is more likely to get picked
 		if (eLoopUnit != pkUnitClassInfo->getDefaultUnitIndex())
