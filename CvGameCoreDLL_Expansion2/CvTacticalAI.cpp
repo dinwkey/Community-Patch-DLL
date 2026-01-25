@@ -4627,6 +4627,67 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					// No interceptors (sweeps cleared them or none existed) - full value!
 				}
 
+				// LAND-BASED AA CHECK: Mobile SAM, AA Gun, etc. can intercept without being air units
+				// These are more dangerous than fighters because ground forces must clear them
+				int iLandAACount = 0;
+				int iLandAAMaxDamage = 0;
+				int iInterceptRange = pUnit->GetAirInterceptRange(); // Use our range as reference
+				
+				for (int iDX = -iInterceptRange; iDX <= iInterceptRange; iDX++)
+				{
+					for (int iDY = -iInterceptRange; iDY <= iInterceptRange; iDY++)
+					{
+						CvPlot* pLoopPlot = plotXYWithRangeCheck(pTestPlot->getX(), pTestPlot->getY(), iDX, iDY, iInterceptRange);
+						if (!pLoopPlot)
+							continue;
+						
+						for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+						{
+							CvUnit* pAAUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+							if (!pAAUnit || pAAUnit->getOwner() == pUnit->getOwner())
+								continue;
+							if (!GET_TEAM(pUnit->getTeam()).isAtWar(pAAUnit->getTeam()))
+								continue;
+							
+							// Check if this is a land-based AA unit (not an air interceptor)
+							if (pAAUnit->getDomainType() != DOMAIN_AIR && pAAUnit->canIntercept())
+							{
+								// Verify it can reach this plot
+								if (plotDistance(*pLoopPlot, *pTestPlot) <= pAAUnit->GetAirInterceptRange())
+								{
+									iLandAACount++;
+									// Calculate potential damage
+									int iAADamage = pAAUnit->GetInterceptionDamage(pUnit, false, pTestPlot);
+									if (iAADamage > iLandAAMaxDamage)
+										iLandAAMaxDamage = iAADamage;
+								}
+							}
+						}
+					}
+				}
+				
+				// Penalize targets protected by land-based AA
+				if (iLandAACount > 0)
+				{
+					int iUnitHP = pUnit->GetCurrHitPoints();
+					
+					// High threat: AA could kill us
+					if (iLandAAMaxDamage >= iUnitHP)
+					{
+						iValue /= 4; // Very dangerous - almost skip unless critical target
+					}
+					// Moderate threat: multiple AA or significant damage
+					else if (iLandAACount >= 2 || iLandAAMaxDamage > iUnitHP / 2)
+					{
+						iValue /= 2; // Risky - needs SEAD support
+					}
+					// Low threat: single AA with manageable damage
+					else
+					{
+						iValue = iValue * 2 / 3; // Some risk but acceptable
+					}
+				}
+
 				// AIR-GROUND COORDINATION: Adjust value based on ground combat needs
 				// Goal: Air should soften targets that ground forces will engage
 				
