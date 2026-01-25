@@ -9045,6 +9045,18 @@ bool ScoreAttackDamage(const CvTacticalPlot& tactPlot, const CvUnit* pUnit, cons
 				iExtraScore += 20;
 			else if (iEnemySupport >= 3)
 				iExtraScore -= 15;
+			
+			// SUBMARINE FIRST-STRIKE: Bonus for attacking targets not yet damaged this turn
+			// This encourages submarines to strike first while still undetected
+			if (iPrevDamage == 0)
+			{
+				// Target hasn't been hit yet - submarine gets first-strike advantage
+				iExtraScore += 25; // Significant bonus for being the first to attack
+				
+				// Extra bonus if we're invisible to the target (stealth attack)
+				if (!pTestPlot->IsKnownVisibleToEnemy(pUnit->getOwner()))
+					iExtraScore += 15;
+			}
 		}
 
 		//problem is flanking bonus affects combat strength, not damage, so the effect is nonlinear. anyway just assume 10% per adjacent unit
@@ -10412,15 +10424,114 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 			}
 		}
 		
-		// Submarine first-strike bonus: submarines should attack before surface fleet
-		// when the target hasn't detected them (maximize stealth advantage)
-		if (IsSubmarineUnit(unit.pUnit) && bHaveNavalMelee)
+		// SUBMARINE FIRST-STRIKE COORDINATION
+		// Submarines should attack before surface fleet to maximize stealth advantage
+		// Surface ships should slightly defer when friendly subs are available
+		if (IsSubmarineUnit(unit.pUnit))
 		{
-			// If target is a surface ship and we're undetected, attack first to weaken it
-			if (enemyPlot.getEnemyUnit() && !enemyPlot.getPlot()->IsKnownVisibleToEnemy(unit.pUnit->getOwner()))
+			CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+			bool bIsUndetected = !assumedUnitPlot.getPlot()->IsKnownVisibleToEnemy(unit.pUnit->getOwner());
+			
+			// Check if we have surface ships that could follow up
+			bool bHaveSurfaceFleet = false;
+			int iSurfaceDamage = 0;
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
 			{
-				// Bonus for sub striking first while hidden
-				newAssignment.iBonusScore += 15;
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (!pLoopUnit || IsSubmarineUnit(pLoopUnit))
+					continue;
+				if (pLoopUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsCombatUnit())
+				{
+					bHaveSurfaceFleet = true;
+					// Estimate surface fleet damage
+					if (pLoopUnit->IsCanAttackRanged())
+						iSurfaceDamage += pLoopUnit->GetMaxRangedCombatStrength(NULL, NULL, true, NULL) / 10;
+					else
+						iSurfaceDamage += pLoopUnit->GetMaxAttackStrength(NULL, NULL, pEnemyUnit) / 10;
+				}
+			}
+			
+			if (pEnemyUnit && bIsUndetected)
+			{
+				// Big bonus for submarine striking first while hidden
+				newAssignment.iBonusScore += 35;
+				
+				// Extra bonus if target hasn't taken damage yet (we're literally first)
+				int iTargetHP = pEnemyUnit->GetCurrHitPoints();
+				int iTargetMaxHP = pEnemyUnit->GetMaxHitPoints();
+				if (iTargetHP == iTargetMaxHP)
+					newAssignment.iBonusScore += 20; // First blood bonus
+				
+				// Bonus for coordinated attack with surface fleet
+				if (bHaveSurfaceFleet)
+				{
+					int iHPAfterSubAttack = iTargetHP - newAssignment.iDamage;
+					
+					// Perfect setup: sub weakens, surface finishes
+					if (iHPAfterSubAttack > 0 && iHPAfterSubAttack <= iSurfaceDamage)
+					{
+						newAssignment.iBonusScore += 40; // Sets up the kill for surface fleet
+					}
+					// Good damage that helps surface fleet
+					else if (newAssignment.iDamage > iTargetHP / 3)
+					{
+						newAssignment.iBonusScore += 20;
+					}
+				}
+				
+				// Priority target bonus: submarines should prioritize high-value targets
+				// that they can alpha-strike before detection
+				if (pEnemyUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+				{
+					newAssignment.iBonusScore += 50; // Carriers are prime sub targets
+				}
+				else if (pEnemyUnit->GetBaseCombatStrength() > unit.pUnit->GetBaseCombatStrength())
+				{
+					newAssignment.iBonusScore += 25; // Capital ships
+				}
+			}
+			// Even if detected, subs have torpedo bonus - but prioritize hit-and-run
+			else if (pEnemyUnit && unit.pUnit->canMoveAfterAttacking())
+			{
+				// Detected but can retreat - moderate bonus
+				newAssignment.iBonusScore += 10;
+			}
+		}
+		// SURFACE SHIP DEFERENCE: When friendly subs are present and undetected,
+		// surface ships should slightly defer to let subs strike first
+		else if (!IsSubmarineUnit(unit.pUnit) && unit.pUnit->getDomainType() == DOMAIN_SEA)
+		{
+			// Check for friendly submarines that could strike first
+			bool bHaveUndetectedSubs = false;
+			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
+			{
+				const CvUnit* pLoopUnit = it->pUnit;
+				if (!pLoopUnit || !IsSubmarineUnit(pLoopUnit))
+					continue;
+				
+				// Check if sub could attack this target and is undetected
+				int iSubDistance = plotDistance(it->iPlotIndex, enemyPlot.getPlotIndex());
+				if (iSubDistance <= pLoopUnit->GetRange())
+				{
+					CvPlot* pSubPlot = GC.getMap().plotByIndexUnchecked(it->iPlotIndex);
+					if (pSubPlot && !pSubPlot->IsKnownVisibleToEnemy(pLoopUnit->getOwner()))
+					{
+						bHaveUndetectedSubs = true;
+						break;
+					}
+				}
+			}
+			
+			// If we have subs that should strike first, small penalty for surface attacking early
+			// This is a mild effect - don't want to completely prevent surface attacks
+			if (bHaveUndetectedSubs && enemyPlot.getEnemyUnit())
+			{
+				CvUnit* pEnemy = enemyPlot.getEnemyUnit();
+				// Only defer if target is at full HP (hasn't been hit by subs yet)
+				if (pEnemy->GetCurrHitPoints() == pEnemy->GetMaxHitPoints())
+				{
+					newAssignment.iBonusScore -= 15; // Mild deferral to let subs strike first
+				}
 			}
 		}
 	}
