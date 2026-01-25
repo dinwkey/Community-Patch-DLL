@@ -871,6 +871,7 @@ void CvLuaPlayer::PushMethods(lua_State* L, int t)
 	Method(GetNumResourceUsed);
 	Method(GetNumResourceTotal);
 	Method(GetNumResourceFromBuildings);
+	Method(GetNumResourceFromEvents);
 	Method(ChangeNumResourceTotal);
 	Method(GetNumResourceAvailable);
 
@@ -10237,6 +10238,12 @@ int CvLuaPlayer::lGetNumResourceUsed(lua_State* L)
 int CvLuaPlayer::lGetNumResourceFromBuildings(lua_State* L)
 {
 	return BasicLuaMethod(L, &CvPlayerAI::getNumResourceFromBuildings);
+}
+//------------------------------------------------------------------------------
+//int getNumResourceFromEvents(ResourceTypes  iIndex);
+int CvLuaPlayer::lGetNumResourceFromEvents(lua_State* L)
+{
+	return BasicLuaMethod(L, &CvPlayerAI::getNumResourceFromEvents);
 }
 //------------------------------------------------------------------------------
 //int getNumResourceTotal(ResourceTypes  iIndex, bool bIncludeImport);

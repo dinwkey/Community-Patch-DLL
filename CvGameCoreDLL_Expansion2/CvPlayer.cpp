@@ -37470,6 +37470,14 @@ int CvPlayer::getNumResourceFromBuildings(ResourceTypes eIndex) const
 	return m_paiNumResourceFromBuildings[eIndex];
 }
 
+int CvPlayer::getNumResourceFromEvents(ResourceTypes eIndex) const
+{
+	PRECONDITION(eIndex >= 0, "eIndex is expected to be non-negative (invalid Index)");
+	PRECONDITION(eIndex < GC.getNumResourceInfos(), "eIndex is expected to be within maximum bounds (invalid Index)");
+
+	return m_paiNumResourceFromEvents[eIndex];
+}
+
 int CvPlayer::getNumResourceTotal(ResourceTypes eIndex, bool bIncludeImport) const
 {
 	PRECONDITION(eIndex >= 0, "eIndex is expected to be non-negative (invalid Index)");

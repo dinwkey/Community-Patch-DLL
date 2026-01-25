@@ -945,6 +945,7 @@ protected:
 	static int lGetNumResourceUnimproved(lua_State* L);
 	static int lGetNumResourceUsed(lua_State* L);
 	static int lGetNumResourceFromBuildings(lua_State* L);
+	static int lGetNumResourceFromEvents(lua_State* L);
 	static int lGetNumResourceTotal(lua_State* L);
 	static int lChangeNumResourceTotal(lua_State* L);
 	static int lGetNumResourceAvailable(lua_State* L);
