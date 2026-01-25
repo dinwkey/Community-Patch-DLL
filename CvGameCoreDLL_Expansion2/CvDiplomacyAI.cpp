@@ -5602,11 +5602,12 @@ AggressivePostureTypes CvDiplomacyAI::GetExpansionAggressivePosture(PlayerTypes 
 	int iCityLoop2 = 0;
 	int iMinDistance = INT_MAX;
 
-	CvCity* pTheirCapital = GET_PLAYER(ePlayer).getCapitalCity();
+	CvPlayer& kPlayer = GET_PLAYER(ePlayer);
+	CvCity* pTheirCapital = kPlayer.getCapitalCity();
 	if (!pTheirCapital || !pTheirCapital->plot())
 		return AGGRESSIVE_POSTURE_NONE;
 
-	for (CvCity* pOtherCity = GET_PLAYER(ePlayer).firstCity(&iCityLoop); pOtherCity != NULL; pOtherCity = GET_PLAYER(ePlayer).nextCity(&iCityLoop))
+	for (CvCity* pOtherCity = kPlayer.firstCity(&iCityLoop); pOtherCity != NULL; pOtherCity = kPlayer.nextCity(&iCityLoop))
 	{
 		CvPlot* pCityPlot = pOtherCity->plot();
 		if (!pCityPlot)
@@ -5621,7 +5622,7 @@ AggressivePostureTypes CvDiplomacyAI::GetExpansionAggressivePosture(PlayerTypes 
 			continue;
 
 		// Only count settled cities, not conquered ones
-		if (GET_PLAYER(pOtherCity->getOriginalOwner()).getTeam() != GET_PLAYER(ePlayer).getTeam())
+		if (GET_PLAYER(pOtherCity->getOriginalOwner()).getTeam() != kPlayer.getTeam())
 			continue;
 
 		int iTurnFounded = pOtherCity->getGameTurnFounded();
@@ -9287,6 +9288,7 @@ void CvDiplomacyAI::DoUpdateConquestStats()
 	for (int iPlayerLoop = 0; iPlayerLoop < MAX_CIV_PLAYERS; iPlayerLoop++)
 	{
 		PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
 
 		if (IsHasMet(eLoopPlayer, true))
 		{
@@ -9296,7 +9298,7 @@ void CvDiplomacyAI::DoUpdateConquestStats()
 			}
 		}
 
-		for (CvCity* pLoopCity = GET_PLAYER(eLoopPlayer).firstCity(&iLoop); pLoopCity != NULL; pLoopCity = GET_PLAYER(eLoopPlayer).nextCity(&iLoop))
+		for (CvCity* pLoopCity = kLoopPlayer.firstCity(&iLoop); pLoopCity != NULL; pLoopCity = kLoopPlayer.nextCity(&iLoop))
 		{
 			CvPlot* pCityPlot = pLoopCity->plot();
 			if (pCityPlot == NULL || !pLoopCity->isRevealed(GetTeam(),false,false))

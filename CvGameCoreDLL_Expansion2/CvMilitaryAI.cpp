@@ -4024,11 +4024,12 @@ void CvMilitaryAI::UpdateWarType()
 	for(int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 	{	
 		PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
-		if(eLoopPlayer != NO_PLAYER && GET_PLAYER(eLoopPlayer).isAlive() && eLoopPlayer != m_pPlayer->GetID() && !GET_PLAYER(eLoopPlayer).isMinorCiv())
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+		if(eLoopPlayer != NO_PLAYER && kLoopPlayer.isAlive() && eLoopPlayer != m_pPlayer->GetID() && !kLoopPlayer.isMinorCiv())
 		{
-			if(GET_TEAM(GET_PLAYER(eLoopPlayer).getTeam()).isAtWar(m_pPlayer->getTeam()) || m_pPlayer->GetDiplomacyAI()->GetCivApproach(eLoopPlayer) == CIV_APPROACH_WAR)
+			if(GET_TEAM(kLoopPlayer.getTeam()).isAtWar(m_pPlayer->getTeam()) || m_pPlayer->GetDiplomacyAI()->GetCivApproach(eLoopPlayer) == CIV_APPROACH_WAR)
 			{
-				for(CvUnit* pLoopUnit = GET_PLAYER(eLoopPlayer).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(eLoopPlayer).nextUnit(&iLoop))
+				for(CvUnit* pLoopUnit = kLoopPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kLoopPlayer.nextUnit(&iLoop))
 				{
 					if (pLoopUnit->IsCombatUnit())
 					{
@@ -4086,7 +4087,7 @@ void CvMilitaryAI::UpdateWarType()
 				}
 				CvCity* pLoopCity = NULL;
 				int iLoopCity = 0;
-				for(pLoopCity = GET_PLAYER(eLoopPlayer).firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = GET_PLAYER(eLoopPlayer).nextCity(&iLoopCity))
+				for(pLoopCity = kLoopPlayer.firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = kLoopPlayer.nextCity(&iLoopCity))
 				{
 					if (pLoopCity->IsInDanger(m_pPlayer->GetID()))
 					{

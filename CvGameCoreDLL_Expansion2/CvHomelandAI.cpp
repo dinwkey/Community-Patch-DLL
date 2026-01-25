@@ -265,7 +265,8 @@ CvPlot* CvHomelandAI::GetBestExploreTarget(const CvUnit* pUnit, int nMinCandidat
 	//find all other explorer plots/target plots
 	std::vector<pair<int, int>> vOtherExplorerCoordinates;
 	int iLoop;
-	for (CvUnit* pLoopUnit = GET_PLAYER(pUnit->getOwner()).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(pUnit->getOwner()).nextUnit(&iLoop))
+	CvPlayer& kOwner = GET_PLAYER(pUnit->getOwner());
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
 	{
 		if (pLoopUnit == pUnit)
 			continue;
@@ -2981,7 +2982,8 @@ bool CvHomelandAI::ExecuteExplorerMoves(CvUnit* pUnit)
 			// Add a penalty based on how many other explorers are at or are moving towards the vicinity of this plot
 			int iNearbyPenalty = 0;
 			int iLoop;
-			for (CvUnit* pLoopUnit = GET_PLAYER(pUnit->getOwner()).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(pUnit->getOwner()).nextUnit(&iLoop))
+			CvPlayer& kOwner = GET_PLAYER(pUnit->getOwner());
+			for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
 			{
 				if (pLoopUnit == pUnit)
 					continue;

@@ -463,14 +463,15 @@ int CvAIOperation::GrabUnitsFromTheReserves(CvPlot* pMusterPlot, CvPlot* pTarget
 	//this is just a rough indication so we don't need to do pathfinding for all our units
 	SPathFinderUserData data(m_eOwner, PT_ARMY_MIXED, m_eEnemy, GetMaximumRecruitTurns()*4);
 	//cast a wide net for recruiting - land units may come from anywhere and mixed naval ops include land units
-	if (!GET_PLAYER(m_eOwner).CanCrossOcean())
+	CvPlayer& kOwner = GET_PLAYER(m_eOwner);
+	if (!kOwner.CanCrossOcean())
 		data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
 
 	vector<OptionWithScore<int>> choices;
-	vector<PlayerTypes> vUnfriendlyMajors = GET_PLAYER(m_eOwner).GetUnfriendlyMajors();
+	vector<PlayerTypes> vUnfriendlyMajors = kOwner.GetUnfriendlyMajors();
 	ReachablePlots turnsFromMuster = GC.GetStepFinder().GetPlotsInReach(pMusterPlot, data);
 	int iLoop = 0;
-	for (CvUnit* pLoopUnit = GET_PLAYER(m_eOwner).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(m_eOwner).nextUnit(&iLoop))
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
 	{
 		if (OperationalAIHelpers::IsUnitSuitableForRecruitment(pLoopUnit, turnsFromMuster, pTargetPlot, IsNavalOperation(), bOcean, freeSlotInfo) >= 0)
 		{
@@ -1887,7 +1888,8 @@ void CvAIOperationCivilian::UnitWasRemoved(int iArmyID, int iSlotID)
 CvUnit* CvAIOperationCivilian::FindBestCivilian()
 {
 	int iUnitLoop = 0;
-	for (CvUnit* pLoopUnit = GET_PLAYER(m_eOwner).firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(m_eOwner).nextUnit(&iUnitLoop))
+	CvPlayer& kOwner = GET_PLAYER(m_eOwner);
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iUnitLoop))
 	{
 		if (pLoopUnit->AI_getUnitAIType() == GetCivilianType())
 		{
@@ -1929,7 +1931,8 @@ bool CvAIOperationCivilian::RetargetCivilian(CvUnit* pCivilian, CvArmyAI* pArmy)
 CvUnit* CvAIOperationCivilianFoundCity::FindBestCivilian()
 {
 	int iUnitLoop = 0;
-	for (CvUnit* pLoopUnit = GET_PLAYER(m_eOwner).firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(m_eOwner).nextUnit(&iUnitLoop))
+	CvPlayer& kOwner = GET_PLAYER(m_eOwner);
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iUnitLoop))
 	{
 		if (pLoopUnit->getArmyID() != -1)
 			continue;
@@ -2320,7 +2323,8 @@ void CvAIOperationCarrierGroup::Init(CvCity* /*pTarget*/, CvCity* /*pMuster*/)
 	//find ourselves an idle carrier
 	CvUnit* pCarrier = NULL;
 	int iLoop = 0;
-	for (CvUnit* pLoopUnit = GET_PLAYER(m_eOwner).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(m_eOwner).nextUnit(&iLoop))
+	CvPlayer& kOwner = GET_PLAYER(m_eOwner);
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
 	{
 		if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA && pLoopUnit->getArmyID() == -1 && !pLoopUnit->shouldHeal(false))
 		{
@@ -3504,13 +3508,15 @@ bool CvAIOperation::PreconditionsAreMet(CvPlot* pMusterPlot, CvPlot* pTargetPlot
 		//this is just a rough indication so we don't need to do pathfinding for all our units
 		SPathFinderUserData data(m_eOwner, PT_ARMY_MIXED, m_eEnemy, GetMaximumRecruitTurns()*4);
 		//cast a wide net for recruiting - land units may come from anywhere and mixed naval ops include land units
-		if (!GET_PLAYER(m_eOwner).CanCrossOcean())
+		CvPlayer& kOwner = GET_PLAYER(m_eOwner);
+		if (!kOwner.CanCrossOcean())
 			data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
 		turnsFromMuster = GC.GetStepFinder().GetPlotsInReach(pMusterPlot, data);
 	}
 
+	CvPlayer& kOwnerRef = GET_PLAYER(m_eOwner);
 	int iLoop = 0;
-	for (CvUnit* pLoopUnit = GET_PLAYER(m_eOwner).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(m_eOwner).nextUnit(&iLoop))
+	for (CvUnit* pLoopUnit = kOwnerRef.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwnerRef.nextUnit(&iLoop))
 	{
 		//if we pass an empty turnsFromMuster, all units will be eligible no matter where they are
 		int iIndex = OperationalAIHelpers::IsUnitSuitableForRecruitment(pLoopUnit, turnsFromMuster, pTargetPlot, IsNavalOperation(), bOcean, freeSlots);
