@@ -1878,18 +1878,125 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			if (pGarrison->AI_getUnitAIType() == UNITAI_EXPLORE || pGarrison->isDelayedDeath() || pGarrison->TurnProcessed() || pGarrison->getArmyID()!=-1)
 				continue;
 
-			//first check how many enemies are around
+			//first check how many enemies are around and look for vulnerable targets
 			int iEnemyCount = 0;
+			int iWoundedEnemyCount = 0;
+			int iEnemyRangedCount = 0; // includes both siege and ranged units
+			int iEstimatedRangedDamage = 0;
 			for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
 			{
 				CvPlot* pNeighbor = iterateRingPlots(pPlot, i);
 				if (pNeighbor && pNeighbor->isEnemyUnit(m_pPlayer->GetID(), true, true))
+				{
 					iEnemyCount++;
+					CvUnit* pEnemy = pNeighbor->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), pGarrison, true);
+					if (pEnemy)
+					{
+						if (pEnemy->IsHurt() && pEnemy->GetCurrHitPoints() < pEnemy->GetMaxHitPoints() / 2)
+							iWoundedEnemyCount++;
+						
+						// Both siege and ranged units can attack the city/garrison without retaliation
+						// Melee garrison must account for this incoming damage
+						if (pEnemy->IsCanAttackRanged())
+						{
+							iEnemyRangedCount++;
+							if (pEnemy->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+							{
+								// Siege does heavy damage to cities/garrisons
+								iEstimatedRangedDamage += 25;
+							}
+							else
+							{
+								// Regular ranged units do moderate damage
+								iEstimatedRangedDamage += 15;
+							}
+						}
+					}
+				}
 			}
 
-			//note: ranged garrisons are also used in ExecuteDestroyUnit etc if they can hit a target without moving
-			//here we have more advanced logic and allow some movement if it's safe (and it's not our last stand)
-			TacticalAIHelpers::PerformOpportunityAttack(pGarrison, iEnemyCount < 2 && m_pPlayer->getNumCities() > 1 );
+			bool bCityInDanger = pCity->isInDangerOfFalling();
+			bool bIsRangedGarrison = pGarrison->IsCanAttackRanged();
+			bool bAllowLeaveCity = false;
+
+			if (bIsRangedGarrison)
+			{
+				// Ranged garrisons can attack safely without taking damage
+				// Allow leaving city only if few enemies and not last city
+				bAllowLeaveCity = (iEnemyCount < 2 && m_pPlayer->getNumCities() > 1);
+				TacticalAIHelpers::PerformOpportunityAttack(pGarrison, bAllowLeaveCity);
+			}
+			else
+			{
+				// Melee garrisons CAN attack from inside the city (adjacent enemies only)
+				// They take damage but stay garrisoned if they kill or don't kill
+				// This is valuable for finishing off wounded enemies!
+				
+				// IMPORTANT: Consider total risk = combat damage + incoming ranged/siege damage
+				// If attacking would leave us too weak to survive bombardment, don't attack
+				int iSafeHPThreshold = iEstimatedRangedDamage + 20; // buffer for survival
+				bool bCanSafelyAttack = (pGarrison->GetCurrHitPoints() > iSafeHPThreshold);
+				
+				// Leaving the city is risky - it becomes vulnerable
+				// Only leave if: few enemies, not in danger, not last city, and good opportunity
+				bAllowLeaveCity = (iWoundedEnemyCount > 0 && iEnemyCount < 2 && !bCityInDanger && m_pPlayer->getNumCities() > 1);
+				
+				if (bCityInDanger && m_pPlayer->getNumCities() > 1)
+				{
+					// City is falling - consider escaping to preserve the unit
+					// But first try attacking from garrison - might get a kill and survive
+					// Only escape if there's actually a safe place to go
+					CvPlot* pEscapePlot = TacticalAIHelpers::FindSafestPlotInReach(pGarrison, false, false);
+					if (pEscapePlot && pEscapePlot != pPlot && pGarrison->GetDanger(pEscapePlot) < pGarrison->GetCurrHitPoints() / 2)
+					{
+						// Try attacking from garrison first - might get a valuable kill
+						// Pass bAllowMovement=false so we stay garrisoned
+						bool bAttacked = TacticalAIHelpers::PerformOpportunityAttack(pGarrison, false);
+						
+						// If we didn't attack or still have moves, escape
+						if (pGarrison->canMove())
+						{
+							if (GC.getLogging() && GC.getAILogging())
+							{
+								CvString strLogString;
+								strLogString.Format("Melee garrison %d escaping from falling city %s to (%d,%d)%s",
+									pGarrison->GetID(), pCity->getName().GetCString(), pEscapePlot->getX(), pEscapePlot->getY(),
+									bAttacked ? " after attacking" : "");
+								LogTacticalMessage(strLogString);
+							}
+							ExecuteMoveToPlot(pGarrison, pEscapePlot);
+							UnitProcessed(pGarrison->GetID());
+							continue;
+						}
+					}
+					else
+					{
+						// No safe escape - attack from garrison if possible (last stand)
+						TacticalAIHelpers::PerformOpportunityAttack(pGarrison, false);
+					}
+				}
+				else if (bCanSafelyAttack || iEnemyRangedCount == 0)
+				{
+					// City not in immediate danger AND either:
+					// - No ranged/siege threat, so safe to attack from garrison
+					// - We have enough HP to survive combat + ranged bombardment
+					// Allow attacking FROM the garrison (bAllowMovement=false means adjacent only, stays garrisoned)
+					// But only allow LEAVING the garrison if conditions are right
+					TacticalAIHelpers::PerformOpportunityAttack(pGarrison, bAllowLeaveCity);
+				}
+				else
+				{
+					// Ranged/siege threat present and attacking would leave us too weak
+					// Skip attacking to preserve HP for surviving bombardment
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						strLogString.Format("Melee garrison %d in %s skipping attack - %d ranged units threaten ~%d damage, HP=%d",
+							pGarrison->GetID(), pCity->getName().GetCString(), iEnemyRangedCount, iEstimatedRangedDamage, pGarrison->GetCurrHitPoints());
+						LogTacticalMessage(strLogString);
+					}
+				}
+			}
 
 			//no need to call SetProcessed() because the unit was never in currentTurnUnits
 			//do not call finishMoves() else the garrison will not heal!
@@ -4964,30 +5071,36 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				// Want to put ranged units in cities to give them a ranged attack
 				// Siege units can also attack but are better used for offense
 				// Melee units can't attack from inside - only their combat strength helps city defense
+				// CRITICAL: Ranged/siege garrisons can attack enemy siege without taking damage,
+				// melee garrisons cannot effectively counter siege - strongly prefer ranged!
 				switch (pLoopUnit->AI_getUnitAIType())
 				{
 				case UNITAI_RANGED:
+					// Best garrison type - can attack freely without taking damage
 					if (pLoopUnit->GetRange() > 1)
-						iExtraScore += 30 + pCity->getGarrisonRangedAttackModifier();
+						iExtraScore += 80 + pCity->getGarrisonRangedAttackModifier();
+					else
+						iExtraScore += 50; // range 1 ranged still much better than melee
 					break;
 				case UNITAI_DEFENSE_AIR:
-					iExtraScore += 20;
+					iExtraScore += 60; // can intercept and attack
 					break;
 				case UNITAI_CITY_BOMBARD:
-					// Siege units can attack from cities but are better used for offense
-					// Still preferred over melee since they CAN attack from inside
-					iExtraScore -= 10;
+					// Siege units can attack from cities - better than melee but wanted for offense
+					// Still useful as garrison since they CAN attack enemy siege safely
+					iExtraScore += 20;
 					break;
 				case UNITAI_DEFENSE:
 				case UNITAI_ATTACK:
 				case UNITAI_FAST_ATTACK:
 				case UNITAI_COUNTER:
 					// All melee units can't attack from inside cities
-					// When city is in danger, higher combat strength helps prevent capture
+					// They provide defense bonus but cannot counter enemy siege without taking damage
+					// Only use as garrison if no ranged/siege available
 					if (bCityInDanger)
-						iExtraScore += pLoopUnit->GetBaseCombatStrength() / 5; // stronger units = better defense
+						iExtraScore += pLoopUnit->GetBaseCombatStrength() / 5 - 40; // slight bonus for strength, but still prefer ranged
 					else
-						iExtraScore -= 20; // not ideal garrison - can't attack
+						iExtraScore -= 60; // strongly discourage melee garrison when ranged available
 					break;
 				default:
 					//nothing
@@ -6311,7 +6424,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 			if (!pUnit->canRangeStrikeAt(pLoopPlot->getX(), pLoopPlot->getY()))
 				continue;
 
-			//don't blindly attack the first one we find, check how much damage we can do
+				//don't blindly attack the first one we find, check how much damage we can do
 			CvUnit* pOtherUnit = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), pUnit, true /*testWar*/);
 			if (pOtherUnit && !pOtherUnit->isDelayedDeath())
 			{
@@ -6322,6 +6435,32 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 				//kill bonus
 				if (iDamage >= pOtherUnit->GetCurrHitPoints())
 					iDamage += 30;
+
+				// Ranged garrisons should prioritize targets intelligently
+				if (pUnit->IsGarrisoned())
+				{
+					CvCity* pCity = pUnit->plot()->getPlotCity();
+					
+					// Priority 1: Enemy siege units - biggest threat to city walls
+					if (pOtherUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+					{
+						iDamage += 40;
+					}
+					// Priority 2: Enemy ranged units - can damage city without retaliation
+					else if (pOtherUnit->IsCanAttackRanged())
+					{
+						iDamage += 25;
+					}
+					// Priority 3: Adjacent wounded melee - immediate capture threat!
+					// If melee is next to city and wounded, they might capture next turn
+					else if (pCity && plotDistance(*pLoopPlot, *pCity->plot()) == 1 && 
+							 pOtherUnit->GetCurrHitPoints() < pOtherUnit->GetMaxHitPoints() / 2)
+					{
+						// Wounded melee adjacent to city is an urgent capture threat
+						iDamage += 35;
+					}
+					// Regular melee further away - lowest priority (no bonus)
+				}
 
 				if (iDamage > iMaxDamage)
 				{
