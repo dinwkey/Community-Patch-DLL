@@ -33058,6 +33058,41 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					}
 					// Regular melee units are lower priority - they take damage when attacking the city
 
+					// NAVAL MELEE CAPTURE THREAT - for coastal cities at critical HP
+					// Naval ranged are generally higher priority (they damage city without taking damage)
+					// BUT if city HP is critical, naval melee becomes the imminent capture threat!
+					if (isCoastal() && pTarget->getDomainType() == DOMAIN_SEA && !pTarget->IsCanAttackRanged())
+					{
+						// This is a naval melee unit that can capture our city
+						int iCityHP = GetMaxHitPoints() - getDamage();
+						int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
+						int iNavalMeleeBonus = 0;
+
+						if (iCityHPPercent <= 25)
+						{
+							// CRITICAL: City could be captured soon - naval melee is now top priority!
+							iNavalMeleeBonus = 100;
+
+							if (iRing == 1)
+								iNavalMeleeBonus += 80;
+							else if (iRing == 2)
+								iNavalMeleeBonus += 40;
+						}
+						else if (iCityHPPercent <= 50 && iRing == 1)
+						{
+							iNavalMeleeBonus = 80;
+						}
+						else
+						{
+							iNavalMeleeBonus = 30;
+						}
+
+						if (iDamage >= iTargetHP)
+							iNavalMeleeBonus += 25;
+
+						iScore += iNavalMeleeBonus;
+					}
+
 					// Blockade breaker bonus - prioritize naval units that are blockading us
 					// Killing them restores city healing which is critical during a siege
 					if (GetCityCitizens()->AnyPlotBlockaded() && pTarget->getDomainType() == DOMAIN_SEA)
