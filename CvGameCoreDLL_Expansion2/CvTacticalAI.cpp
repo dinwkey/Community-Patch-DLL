@@ -11361,6 +11361,26 @@ static STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, con
 
 		//a bonus the further we can disengage after attacking
 		iBonusScore += (result->iRemainingMoves * 2) / GD_INT_GET(MOVE_DENOMINATOR);
+
+		// === RANGED HIT-AND-RUN (Skirmishers, Mounted Archers) ===
+		if (unit.pUnit->canMoveAfterAttacking() && result->iRemainingMoves > 0)
+		{
+			bool bHasSafePlot = (gSafePlotCount[unit.iUnitID] > 0);
+			int iRetreatMoves = result->iRemainingMoves / GD_INT_GET(MOVE_DENOMINATOR);
+
+			if (bHasSafePlot)
+			{
+				iBonusScore += 10;
+				if (iRetreatMoves >= 2)
+					iBonusScore += iRetreatMoves * 2;
+				if (unit.pUnit->baseMoves(false) >= 4 && iRetreatMoves >= 2)
+					iBonusScore += 8;
+			}
+
+			int iCurrentDanger = unit.pUnit->GetDanger(assumedUnitPlot->getPlot());
+			if (iCurrentDanger > 0 && bHasSafePlot && iRetreatMoves >= 1)
+				iBonusScore += 5;
+		}
 	}
 
 	//a slight boost for attacking the "real" target
@@ -11618,6 +11638,79 @@ static STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, cons
 		int iMoveCost = unit.iMovesLeft - iAssumedMovesLeft;
 		int iAttackCost = pUnit->IsFreeAttackMoves() ? 0 : max(iMoveCost, GD_INT_GET(MOVE_DENOMINATOR));
 		result->iRemainingMoves = max(0,unit.iMovesLeft - iAttackCost);
+	}
+
+	// === HIT-AND-RUN TACTICS ===
+	// Units that can move after attacking should leverage this for safer attacks
+	// This is especially valuable for fast units with high moves remaining
+	bool bCanMoveAfterAttack = pUnit->canMoveAfterAttacking() && result.iRemainingMoves > 0;
+	bool bHasSafePlot = (gSafePlotCount[unit.iUnitID] > 0);
+	
+	if (bCanMoveAfterAttack)
+	{
+		// Calculate retreat potential based on remaining moves
+		int iRetreatMoves = result.iRemainingMoves / GD_INT_GET(MOVE_DENOMINATOR);
+		
+		// Bonus for having escape route - scaled by remaining movement
+		if (bHasSafePlot)
+		{
+			// Base hit-and-run bonus - unit can attack and escape
+			result.iBonusScore += 8;
+			
+			// Extra bonus per movement point available for retreat
+			result.iBonusScore += iRetreatMoves * 3;
+			
+			// Fast units (3+ moves after attack) are excellent at hit-and-run
+			if (iRetreatMoves >= 3)
+			{
+				result.iBonusScore += 10; // cavalry charge & retreat
+				
+				// If unit has high base moves, it's a dedicated fast unit
+				if (pUnit->baseMoves(false) >= 4)
+					result.iBonusScore += 5; // cavalry/lancer/mounted archer bonus
+			}
+		}
+		else
+		{
+			// Can move but nowhere safe to go - risky hit-and-run
+			// Still slightly better than being stuck, but not by much
+			result.iBonusScore += 2;
+		}
+		
+		// Hit-and-run units prefer wounded targets they can finish quickly
+		// Attack, kill, retreat before enemy can respond
+		if (bIsKill && bHasSafePlot)
+		{
+			result.iBonusScore += 15; // Safe kill - ideal hit-and-run
+			
+			// Extra bonus for killing ranged/siege units that threaten our lines
+			CvUnit* pEnemy = enemyPlot.getEnemyUnit();
+			if (pEnemy && pEnemy->IsCanAttackRanged())
+			{
+				result.iBonusScore += 10; // Silencing enemy ranged is valuable
+			}
+		}
+		
+		// Penalize attacks that leave us in danger with no escape
+		if (!bHasSafePlot && !bIsKill)
+		{
+			int iDanger = pUnit->GetDanger(assumedUnitPlot.getPlot(), assumedPosition.getKilledEnemies(), result.iSelfDamage);
+			if (iDanger > pUnit->GetCurrHitPoints() / 2)
+			{
+				// High danger attack with no escape - discourage unless it's a kill
+				result.iBonusScore -= 10;
+			}
+		}
+	}
+	else if (!pUnit->canMoveAfterAttacking() && pUnit->baseMoves(false) >= 3)
+	{
+		// Fast unit without hit-and-run capability (no promotion yet)
+		// Slight penalty for risky attacks where retreat would be valuable
+		int iAdjacentEnemies = enemyPlot.getNumAdjacentEnemies(DomainForUnit(pUnit));
+		if (iAdjacentEnemies >= 2 && !bIsKill)
+		{
+			result.iBonusScore -= 3; // Would benefit from hit-and-run but can't do it
+		}
 	}
 
 	//don't break formation if there are many enemies around
