@@ -8670,6 +8670,22 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		}
 	}
 
+	// Wounded unit damage rotation - heavily wounded units should avoid front line
+	// This encourages healthier units to take hits while wounded units heal
+	int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints());
+	if (iHealthPercent < 35 && testPlot->getEnemyDistance(eRelevantDomain) <= 1)
+	{
+		// Heavily wounded on front line is bad - they might die and be lost
+		// Exception: citadels and cities are safer
+		if (!bIsFrontlineCitadelOrCity)
+			iResult -= 15;
+	}
+	else if (iHealthPercent > 80 && testPlot->getEnemyDistance(eRelevantDomain) <= 1 && !pUnit->IsCanAttackRanged())
+	{
+		// Healthy melee units should take the front line
+		iResult += 5;
+	}
+
 	if (bOnlyCheckImpossible)
 		return 1;
 
@@ -8980,6 +8996,71 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 		if (evalMode == EM_INTERMEDIATE)
 			iBonusScore += unit.iMaxMoves - unit.iMovesLeft;
 		result->iRemainingMoves = pUnit->baseMoves(false);
+	}
+
+	// === DEFENSIVE POSITIONING IMPROVEMENTS ===
+	// When defending friendly territory, use terrain and positioning smartly
+	{
+		const CvPlot* pDefTarget = assumedPosition.getTarget();
+		bool bDefendingFriendlyCity = pDefTarget && pDefTarget->isCity() && pDefTarget->isFriendlyCity(*pUnit);
+
+		if (bDefendingFriendlyCity && pTestPlot->IsFriendlyTerritory(pUnit->getOwner()))
+		{
+			CvCity* pFriendlyCity = pDefTarget->getPlotCity();
+			int iDistToCity = plotDistance(*pTestPlot, *pDefTarget);
+
+			// 1. Defensive terrain bonus - prefer hills, forests for defensive bonuses
+			if (!pUnit->IsCanAttackRanged() || pUnit->GetRange() == 1) // melee and skirmishers benefit most
+			{
+				int iDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
+				if (iDefMod > 0)
+					iPlotScore += iDefMod / 10; // +2 for 20% defense, +5 for 50% defense
+			}
+
+			// 2. Chokepoint bonus for melee units - block enemy advance routes
+			if (!pUnit->IsCanAttackRanged() && pTestPlot->IsChokePoint())
+				iPlotScore += 8;
+
+			// 3. Wounded unit rotation - heavily wounded units should fall back
+			int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+			if (iHealthPercent < 40)
+			{
+				int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
+				if (iEnemyDist >= 2)
+					iPlotScore += 4;
+				else if (iEnemyDist <= 1 && !pTestPlot->isCity())
+					iPlotScore -= 6;
+			}
+
+			// 4. City proximity bonus when city is threatened
+			if (pFriendlyCity && (pFriendlyCity->isUnderSiege() || pFriendlyCity->isInDangerOfFalling()))
+			{
+				if (iDistToCity <= 2)
+					iPlotScore += 6;
+				else if (iDistToCity <= 3)
+					iPlotScore += 3;
+				else if (iDistToCity > 4)
+					iPlotScore -= 4;
+			}
+
+			// 5. Melee screening for ranged - melee should position between ranged and enemies
+			if (!pUnit->IsCanAttackRanged())
+			{
+				int iAdjacentFriendlyRanged = 0;
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (pAdj)
+					{
+						CvUnit* pAdjUnit = pAdj->getBestDefender(pUnit->getOwner());
+						if (pAdjUnit && pAdjUnit->IsCanAttackRanged() && pAdjUnit->GetRange() > 1)
+							iAdjacentFriendlyRanged++;
+					}
+				}
+				if (iAdjacentFriendlyRanged > 0 && testPlot->getEnemyDistance(eRelevantDomain) <= 2)
+					iPlotScore += iAdjacentFriendlyRanged * 3;
+			}
+		}
 	}
 
 	//final score
