@@ -5924,6 +5924,136 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 		{
 			int iAttackStrength = pLoopUnit->GetMaxAttackStrength(NULL, pTarget, bIsCityTarget ? NULL : pDefender, true, true);
 
+			// Domain prioritization for city capture
+			// Different domains have different advantages when capturing cities
+			if (bIsCityTarget && pTarget->getPlotCity())
+			{
+				CvCity* pCity = pTarget->getPlotCity();
+				bool bCoastalCity = pCity->isCoastal();
+				int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
+				
+				// Check if this is an island city (no land approaches)
+				bool bIslandCity = true;
+				int iLandApproaches = 0;
+				int iWaterApproaches = 0;
+				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+				{
+					CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+					if (pAdj)
+					{
+						if (pAdj->isWater())
+							iWaterApproaches++;
+						else if (!pAdj->isImpassable(pLoopUnit->getTeam()))
+						{
+							iLandApproaches++;
+							bIslandCity = false;
+						}
+					}
+				}
+				
+				if (pLoopUnit->getDomainType() == DOMAIN_SEA)
+				{
+					// Naval melee capture bonuses
+					if (bIslandCity)
+					{
+						// Island city REQUIRES naval capture - major priority boost
+						iAttackStrength = iAttackStrength * 3 / 2;
+					}
+					else if (bCoastalCity && iWaterApproaches > iLandApproaches)
+					{
+						// Naval-dominated coastal city - naval has advantage
+						iAttackStrength = iAttackStrength * 5 / 4;
+					}
+					
+					// When city is low HP, naval melee should be prioritized for capture
+					// because garrison bonus often doesn't apply to naval attackers
+					if (iCityHPPercent <= 25)
+					{
+						iAttackStrength = iAttackStrength * 5 / 4; // Extra boost for capture attempt
+					}
+				}
+				else if (pLoopUnit->getDomainType() == DOMAIN_LAND)
+				{
+					// Check if unit has amphibious promotion (no penalty for water->land attacks)
+					bool bIsAmphibious = pLoopUnit->isAmphibious();
+					
+					// Check if unit is currently on water (would need amphibious attack)
+					bool bOnWater = pLoopUnit->plot()->isWater();
+					
+					// Land melee capture considerations
+					if (bIslandCity)
+					{
+						// Island city has no land approaches
+						if (bIsAmphibious)
+						{
+							// Amphibious unit can attack from water without penalty!
+							// Good alternative to naval melee
+							iAttackStrength = iAttackStrength * 5 / 4;
+							
+							// At critical HP, amphibious land unit is excellent for capture
+							if (iCityHPPercent <= 25)
+								iAttackStrength = iAttackStrength * 5 / 4;
+						}
+						else if (iCityHPPercent <= 15)
+						{
+							// Non-amphibious but city is nearly dead
+							// Even with -50% penalty, might be worth capturing
+							// Don't heavily penalize - combat sim will handle actual damage
+							iAttackStrength = iAttackStrength * 3 / 4;
+						}
+						else
+						{
+							// Non-amphibious attacking island city at decent HP - bad idea
+							iAttackStrength = iAttackStrength / 4;
+						}
+					}
+					else if (bCoastalCity && iWaterApproaches > iLandApproaches * 2)
+					{
+						// Very naval-heavy coastal city
+						if (bIsAmphibious && bOnWater)
+						{
+							// Amphibious unit on water can attack without penalty
+							// This is actually good - land unit without normal land approach
+							iAttackStrength = iAttackStrength * 11 / 10;
+						}
+						else if (!bOnWater)
+						{
+							// Land unit on land attacking - limited approaches
+							iAttackStrength = iAttackStrength * 9 / 10;
+						}
+						else
+						{
+							// Non-amphibious on water - penalty applies
+							// But if city HP very low, still consider it
+							if (iCityHPPercent <= 20)
+								iAttackStrength = iAttackStrength * 4 / 5; // Moderate penalty
+							else
+								iAttackStrength = iAttackStrength / 2; // Heavy penalty
+						}
+					}
+					else
+					{
+						// Land-accessible city - land melee is standard choice
+						if (bOnWater && !bIsAmphibious)
+						{
+							// Land unit on water attacking land-accessible city
+							// Prefer attacking from land unless city is nearly dead
+							if (iCityHPPercent <= 20)
+								iAttackStrength = iAttackStrength * 3 / 4; // Worth the risk
+							else
+								iAttackStrength = iAttackStrength / 2; // Use land approaches instead
+						}
+						else
+						{
+							// Normal land attack or amphibious from water
+							// Small boost when city has a garrison (land can tank garrison damage)
+							if (pCity->HasGarrison())
+								iAttackStrength = iAttackStrength * 11 / 10;
+						}
+					}
+				}
+			}
+
 			CvTacticalUnit unit(pLoopUnit->GetID());
 			unit.SetAttackStrength(iAttackStrength);
 			unit.SetHealthPercent(pLoopUnit->GetCurrHitPoints(), pLoopUnit->GetMaxHitPoints());
