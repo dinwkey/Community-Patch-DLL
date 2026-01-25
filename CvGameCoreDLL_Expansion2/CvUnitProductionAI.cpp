@@ -851,9 +851,11 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			{
 				// MISSILES: Compete for limited air slots with reusable units
 				// Missiles are one-time use, so they need to justify taking a slot
+				// But they have unique value: guaranteed damage, can hit garrisoned units
 				
-				// Base bonus reduced - missiles need to prove their worth
-				int iMissileBonus = 500;
+				// Base bonus - start competitive with bombers/fighters
+				// Bombers get 2000 + emptySlots*100, so missiles need similar base
+				int iMissileBonus = 1500;
 				
 				// =====================================================
 				// EMERGENCY OVERRIDES: Missiles have unique tactical value
@@ -1020,7 +1022,9 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					iMissileBonus -= 50;
 				}
 				
-				iBonus += max(0, iMissileBonus);
+				// Don't cap at zero - allow proper competition with bombers
+				// Negative values will be handled by the overall production system
+				iBonus += iMissileBonus;
 				break;
 			}
 			}
