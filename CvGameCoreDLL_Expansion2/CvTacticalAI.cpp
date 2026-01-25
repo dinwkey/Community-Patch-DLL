@@ -11002,6 +11002,121 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 			newAssignment.iBonusScore += 30;
 	}
 
+	// === SKIRMISHER/MOUNTED ARCHER TARGET PRIORITIZATION ===
+	// Fast ranged units (chariot archers, horse archers, Keshiks, Camel Archers) should prioritize:
+	// 1. Siege units - can kite and destroy them safely
+	// 2. Slow melee units - can shoot and retreat before they close
+	// 3. Wounded units - finish them off with ranged fire
+	// 4. Isolated targets - no supporting fire to worry about
+	if (!enemyPlot.isEnemyCity() && unit.pUnit->getDomainType() == DOMAIN_LAND && unit.pUnit->IsCanAttackRanged())
+	{
+		CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+		if (pEnemyUnit)
+		{
+			// Identify skirmisher-type units: ranged with high mobility or move-after-attack
+			bool bIsSkirmisher = (unit.pUnit->AI_getUnitAIType() == UNITAI_SKIRMISHER ||
+								  unit.pUnit->getUnitInfo().GetUnitAIType(UNITAI_SKIRMISHER));
+			bool bIsFastRanged = (unit.pUnit->baseMoves(false) >= 3);
+			bool bCanKite = unit.pUnit->canMoveAfterAttacking();
+			
+			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
+			
+			// Target prioritization for skirmishers and mounted archers
+			if (bIsSkirmisher || (bIsFastRanged && bCanKite))
+			{
+				// PRIORITY 1: Siege units - skirmishers can safely harass slow siege
+				if (eEnemyAI == UNITAI_CITY_BOMBARD)
+				{
+					newAssignment.iBonusScore += 20; // High priority - siege can't catch us
+					
+					// Bonus for killing siege - removes major threat
+					if (bIsKill)
+						newAssignment.iBonusScore += 15;
+					
+					// Extra bonus if we can move after attack (perfect kiting)
+					if (bCanKite && newAssignment.iRemainingMoves > 0)
+						newAssignment.iBonusScore += 10;
+				}
+				// PRIORITY 2: Slow melee units (infantry, pikemen)
+				// Skirmishers excel at kiting slow melee units
+				else if (!pEnemyUnit->IsCanAttackRanged())
+				{
+					int iEnemyMoves = pEnemyUnit->baseMoves(false);
+					
+					// Slow enemy (2 moves or less) - easy to kite
+					if (iEnemyMoves <= 2)
+					{
+						newAssignment.iBonusScore += 12;
+						
+						// Perfect target if we have more mobility
+						if (unit.pUnit->baseMoves(false) > iEnemyMoves + 1)
+							newAssignment.iBonusScore += 5;
+					}
+					// Fast melee (cavalry, knights) - dangerous, be cautious
+					else if (iEnemyMoves >= 4)
+					{
+						// Enemy cavalry can catch us - only attack if safe
+						if (!bCanKite || newAssignment.iRemainingMoves == 0)
+							newAssignment.iBonusScore -= 8; // Risky without escape
+					}
+				}
+				// Counter-skirmisher warfare - enemy ranged units
+				else if (pEnemyUnit->IsCanAttackRanged())
+				{
+					// Against other ranged, kills are valuable
+					if (bIsKill)
+						newAssignment.iBonusScore += 10;
+					
+					// Caution against long-range ranged (crossbows, gatling guns)
+					if (pEnemyUnit->GetRange() >= unit.pUnit->GetRange())
+					{
+						// Enemy has equal or better range - careful
+						if (!bCanKite)
+							newAssignment.iBonusScore -= 5;
+					}
+				}
+				
+				// PRIORITY 3: Wounded enemies - finish them with ranged fire
+				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
+				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
+				int iEnemyHPPercent = (iEnemyHP * 100) / iEnemyMaxHP;
+				
+				if (iEnemyHPPercent <= 50)
+				{
+					// Wounded enemy - opportunistic kill
+					newAssignment.iBonusScore += (100 - iEnemyHPPercent) / 8; // Up to +6 for nearly dead
+					
+					// Big bonus for finishing wounded targets
+					if (bIsKill)
+						newAssignment.iBonusScore += 12;
+				}
+				
+				// PRIORITY 4: Isolated enemies - safe to harass
+				int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
+				if (iEnemySupport == 0)
+				{
+					newAssignment.iBonusScore += 8; // No friends to help them
+				}
+				else if (iEnemySupport >= 2)
+				{
+					// Multiple enemies nearby - careful of being caught
+					if (!bCanKite || !gSafePlotCount[unit.iUnitID])
+						newAssignment.iBonusScore -= 5;
+				}
+				
+				// Workers and settlers - easy targets for mounted raiders
+				if (pEnemyUnit->IsCivilianUnit())
+				{
+					newAssignment.iBonusScore += 15;
+					
+					// Settlers are extremely valuable
+					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
+						newAssignment.iBonusScore += 20;
+				}
+			}
+		}
+	}
+
 	// NAVAL RANGED SOFTENING: Naval ranged units should prioritize targets that naval melee can capture/finish
 	// This creates proper combined arms: frigates/battleships soften, then destroyers/privateers capture
 	if (unit.pUnit->getDomainType() == DOMAIN_SEA && unit.pUnit->IsCanAttackRanged())
@@ -11607,6 +11722,120 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 			// But don't penalize too much since kills are still valuable
 			if (!bIsKill)
 				result.iBonusScore -= 3;
+		}
+	}
+
+	// === CAVALRY TARGET PRIORITIZATION ===
+	// Fast melee units (cavalry, lancers, hussars) should prioritize specific target types:
+	// 1. Siege units - devastating to armies, fragile when caught
+	// 2. Ranged units - can be killed before they fire, especially with hit-and-run
+	// 3. Isolated enemies - safer to attack without support
+	// 4. Low-defense targets - cavalry excels at destroying weak enemies
+	if (!enemyPlot.isEnemyCity() && pUnit->getDomainType() == DOMAIN_LAND)
+	{
+		CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+		if (pEnemyUnit)
+		{
+			bool bIsFastMelee = (pUnit->baseMoves(false) >= 3 && !pUnit->IsCanAttackRanged());
+			bool bIsCavalry = (pUnit->AI_getUnitAIType() == UNITAI_FAST_ATTACK || 
+							   pUnit->getUnitInfo().GetUnitAIType(UNITAI_FAST_ATTACK));
+			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
+			
+			// Target prioritization for fast melee units (cavalry, lancers, etc.)
+			if (bIsFastMelee || bIsCavalry)
+			{
+				// PRIORITY 1: Siege units - cavalry's historical counter
+				// Siege units are slow, fragile, and devastating - perfect cavalry targets
+				if (eEnemyAI == UNITAI_CITY_BOMBARD)
+				{
+					result.iBonusScore += 25; // High priority - cripples enemy sieges
+					
+					// Extra bonus for killing siege - removes threat permanently
+					if (bIsKill)
+						result.iBonusScore += 20;
+					
+					// Cavalry with hit-and-run can safely raid siege lines
+					if (pUnit->canMoveAfterAttacking() && result.iRemainingMoves > 0)
+						result.iBonusScore += 10; // Can hit and escape
+				}
+				// PRIORITY 2: Ranged units - can't fight back effectively in melee
+				else if (pEnemyUnit->IsCanAttackRanged())
+				{
+					// Ranged units are vulnerable to cavalry charges
+					result.iBonusScore += 15;
+					
+					// Extra bonus for killing - silences their firepower
+					if (bIsKill)
+						result.iBonusScore += 15;
+					
+					// Archers and crossbowmen are especially vulnerable
+					if (eEnemyAI == UNITAI_RANGED)
+						result.iBonusScore += 5;
+				}
+				// PRIORITY 3: Isolated enemies - no supporting fire
+				// Cavalry excels at picking off lone units
+				int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
+				if (iEnemySupport == 0)
+				{
+					result.iBonusScore += 12; // Isolated target - safe approach
+					
+					// Hit-and-run units can safely engage isolated targets
+					if (pUnit->canMoveAfterAttacking())
+						result.iBonusScore += 5;
+				}
+				else if (iEnemySupport >= 3)
+				{
+					// Well-supported enemy - cavalry should be cautious
+					// Unless it's a high-value target worth the risk
+					if (eEnemyAI != UNITAI_CITY_BOMBARD && !bIsKill)
+						result.iBonusScore -= 8;
+				}
+				
+				// PRIORITY 4: Low-defense targets (wounded or weak)
+				// Cavalry can rapidly exploit weaknesses in enemy lines
+				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
+				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
+				int iEnemyHPPercent = (iEnemyHP * 100) / iEnemyMaxHP;
+				
+				if (iEnemyHPPercent <= 50)
+				{
+					// Wounded enemy - easy kill potential
+					result.iBonusScore += (100 - iEnemyHPPercent) / 5; // Up to +10 for nearly dead
+					
+					// Cavalry should finish off wounded targets
+					if (bIsKill)
+						result.iBonusScore += 8;
+				}
+				
+				// PRIORITY 5: Workers and settlers - raiders' delight
+				if (pEnemyUnit->IsCivilianUnit())
+				{
+					// Cavalry raids on workers/settlers are devastating economically
+					result.iBonusScore += 20;
+					
+					// Settlers are extremely valuable targets
+					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
+						result.iBonusScore += 30;
+				}
+				
+				// Penalty for attacking heavily armored units without advantage
+				// Cavalry historically struggled against prepared heavy infantry
+				if (!pEnemyUnit->IsCanAttackRanged() && !pEnemyUnit->IsCivilianUnit())
+				{
+					int iEnemyDefense = pEnemyUnit->getDefenseModifier();
+					if (iEnemyDefense >= 25 && !bIsKill && iEnemySupport > 0)
+					{
+						// Heavily armored, supported melee unit - not ideal cavalry target
+						result.iBonusScore -= 10;
+					}
+					
+					// Fortified infantry is tough for cavalry
+					if (pEnemyUnit->IsFortified() && !bIsKill)
+					{
+						result.iBonusScore -= pEnemyUnit->fortifyModifier() / 5; // -2 to -5
+					}
+				}
+			}
 		}
 	}
 
