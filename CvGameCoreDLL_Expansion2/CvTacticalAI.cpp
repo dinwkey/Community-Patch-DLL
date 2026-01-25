@@ -13029,6 +13029,97 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 					}
 				}
 			}
+			
+			// === RECON UNIT TACTICS (scouts, explorers) ===
+			// Recon units are weaker than cavalry but still fast (3 moves).
+			// They should:
+			// 1. Prioritize survival over kills
+			// 2. Finish off wounded enemies (safe kills)
+			// 3. Target siege/ranged units (fragile, high value)
+			// 4. Avoid strong/fortified enemies
+			// 5. Capture undefended workers/settlers
+			bool bIsRecon = (pUnit->AI_getUnitAIType() == UNITAI_EXPLORE || 
+							 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE);
+			
+			if (bIsRecon && !bIsCavalry) // Don't double-apply if already counted as cavalry
+			{
+				int iEnemyStrength = pEnemyUnit->GetBaseCombatStrength();
+				int iOurStrength = pUnit->GetBaseCombatStrength();
+				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
+				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
+				int iEnemyHPPercent = (iEnemyHP * 100) / max(iEnemyMaxHP, 1);
+				
+				// 1. SAFE KILLS: Recon excels at finishing wounded enemies
+				// This is their primary combat role - cleanup duty
+				if (bIsKill)
+				{
+					// Big bonus for kills - this is what recon should do
+					result.iBonusScore += 15;
+					
+					// Extra bonus for killing badly wounded targets (almost guaranteed success)
+					if (iEnemyHPPercent <= 25)
+						result.iBonusScore += 10;
+					else if (iEnemyHPPercent <= 50)
+						result.iBonusScore += 5;
+				}
+				else
+				{
+					// Non-kill attacks are risky for weak recon units
+					// Penalty scales with how much stronger the enemy is
+					if (iEnemyStrength > iOurStrength * 1.2f)
+						result.iBonusScore -= 10;
+				}
+				
+				// 2. HIGH-VALUE SOFT TARGETS: Siege and ranged units
+				// These are valuable and fragile - good recon targets
+				if (eEnemyAI == UNITAI_CITY_BOMBARD)
+				{
+					result.iBonusScore += 15; // Siege is high priority but less than cavalry
+					if (bIsKill)
+						result.iBonusScore += 10; // Killing siege is great
+				}
+				else if (pEnemyUnit->IsCanAttackRanged())
+				{
+					result.iBonusScore += 10; // Ranged units can't fight back well in melee
+					if (bIsKill)
+						result.iBonusScore += 8;
+				}
+				
+				// 3. CIVILIANS: Easy captures
+				if (pEnemyUnit->IsCivilianUnit())
+				{
+					result.iBonusScore += 15; // Workers/settlers are easy pickings
+					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
+						result.iBonusScore += 20; // Settlers are extremely valuable
+				}
+				
+				// 4. SURVIVAL PRIORITY: Avoid dangerous situations
+				// Recon units are too valuable for exploration to throw away
+				int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
+				
+				// Isolated targets are safe
+				if (iEnemySupport == 0)
+				{
+					result.iBonusScore += 8;
+				}
+				else if (iEnemySupport >= 2 && !bIsKill)
+				{
+					// Multiple enemies nearby and we can't get a kill - very risky
+					result.iBonusScore -= 15;
+				}
+				
+				// Avoid fortified strong enemies
+				if (pEnemyUnit->IsFortified() && !bIsKill)
+				{
+					result.iBonusScore -= 12;
+				}
+				
+				// Penalize attacking units much stronger than us
+				if (!pEnemyUnit->IsCivilianUnit() && iEnemyStrength >= iOurStrength * 1.5f && !bIsKill)
+				{
+					result.iBonusScore -= 15; // Don't pick fights you can't win
+				}
+			}
 		}
 	}
 
