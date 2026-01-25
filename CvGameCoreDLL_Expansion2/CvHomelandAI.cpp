@@ -5919,22 +5919,53 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				iMissileBaseScore += iTargetsInRange * 5;
 				iMissileBaseScore += iHighValueTargets * 10;
 				
-				// For carriers: check resupply capability
+				// For naval platforms (not cities): check platform type and resupply
 				if (!it->pPlot->isCity())
 				{
-					CvCity* pNearestCity = m_pPlayer->GetClosestCityByPlots(it->pPlot);
-					int iDistToCity = pNearestCity ? plotDistance(*it->pPlot, *pNearestCity->plot()) : 999;
-					
-					if (iDistToCity > 10)
+					CvUnit* pPlatform = it->pPlot->getBestDefender(m_pPlayer->GetID());
+					if (pPlatform && pPlatform->domainCargo() == DOMAIN_AIR)
 					{
-						// Carrier can't easily get more missiles - penalize if few targets
-						if (iTargetsInRange < 2)
-							iMissileBaseScore -= 20;
-					}
-					else
-					{
-						// Carrier can resupply - slight bonus
-						iMissileBaseScore += 5;
+						// Check if this is a missile-only platform
+						SpecialUnitTypes eSpecialCargo = pPlatform->specialCargo();
+						static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
+						bool bMissileOnlyPlatform = (eSpecialCargo == eMissileSpecial);
+						
+						CvCity* pNearestCity = m_pPlayer->GetClosestCityByPlots(it->pPlot);
+						int iDistToCity = pNearestCity ? plotDistance(*it->pPlot, *pNearestCity->plot()) : 999;
+						
+						if (bMissileOnlyPlatform)
+						{
+							// MISSILE-ONLY PLATFORMS (Submarines, Cruisers)
+							// These are designed for missiles - give them priority
+							iMissileBaseScore += 15; // Bonus for being on dedicated missile platform
+							
+							// Submarines get extra bonus - stealthy strike capability
+							if (pPlatform->getInvisibleType() != NO_INVISIBLE)
+							{
+								iMissileBaseScore += 10; // Submarine stealth bonus
+							}
+							
+							// Even missile platforms need resupply consideration
+							if (iDistToCity > 15 && iTargetsInRange < 2)
+							{
+								iMissileBaseScore -= 10; // Very far, few targets
+							}
+						}
+						else
+						{
+							// Full carriers - apply original logic
+							if (iDistToCity > 10)
+							{
+								// Carrier can't easily get more missiles - penalize if few targets
+								if (iTargetsInRange < 2)
+									iMissileBaseScore -= 20;
+							}
+							else
+							{
+								// Carrier can resupply - slight bonus
+								iMissileBaseScore += 5;
+							}
+						}
 					}
 				}
 				
@@ -7147,63 +7178,103 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 		pUnitNode = pBasePlot->nextUnitNode(pUnitNode);
 	}
 
-	// Check if this is a carrier (not a city)
-	bool bIsCarrier = !pBasePlot->isCity();
+	// Check if this is a naval platform (not a city)
+	bool bIsNavalPlatform = !pBasePlot->isCity();
 	
-	if (bIsCarrier)
+	if (bIsNavalPlatform)
 	{
-		CvUnit* pCarrier = pBasePlot->getBestDefender(pUnit->getOwner());
-		if (pCarrier && pCarrier->domainCargo() == DOMAIN_AIR)
+		CvUnit* pPlatform = pBasePlot->getBestDefender(pUnit->getOwner());
+		if (pPlatform && pPlatform->domainCargo() == DOMAIN_AIR)
 		{
-			int iCarrierSlots = pCarrier->cargoSpace();
+			int iPlatformSlots = pPlatform->cargoSpace();
 			int iCurrentCargo = iOffensive + iDefensive;
 			
-			// MISSILE VS BOMBER CARRIER LOADING STRATEGY
-			// Consider carrier's ability to resupply missiles
+			// Check what type of cargo this platform can carry
+			// SPECIALUNIT_MISSILE = missile-only platforms (subs, cruisers)
+			// SPECIALUNIT_FIGHTER or NO_SPECIALUNIT = full carriers (can carry all air units)
+			SpecialUnitTypes eSpecialCargo = pPlatform->specialCargo();
+			static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
 			
-			// Check distance to nearest friendly city for resupply
-			CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
-			int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
-			bool bCanResupplyMissiles = (iDistToCity <= 10); // Within reasonable rebase range
+			bool bMissileOnlyPlatform = (eSpecialCargo == eMissileSpecial);
 			
 			UnitAITypes eUnitAI = pUnit->getUnitInfo().GetDefaultUnitAIType();
 			
-			if (eUnitAI == UNITAI_MISSILE_AIR)
+			if (bMissileOnlyPlatform)
 			{
-				// MISSILE LOADING CONSIDERATIONS:
-				// 1. Carriers far from cities can't easily reload missiles after use
-				// 2. Missiles are one-time use - carrier should have enough bombers for sustained ops
-				// 3. Limit missiles on carriers that can't resupply
+				// MISSILE-ONLY PLATFORMS (Submarines, Missile Cruisers)
+				// These can ONLY carry missiles - always accept missiles
 				
-				if (!bCanResupplyMissiles)
+				if (eUnitAI == UNITAI_MISSILE_AIR || eUnitAI == UNITAI_ICBM)
 				{
-					// Carrier is far from cities - limit missiles
-					// Want mostly bombers for sustained operations
-					int iMaxMissileRatio = iCarrierSlots / 4; // Max 25% missiles when can't resupply
-					if (iMissiles >= iMaxMissileRatio)
+					// Check distance to city for resupply considerations
+					CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
+					int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
+					
+					// Missile platforms far from cities should keep some capacity for resupply
+					// But they primarily exist to carry missiles, so be more lenient
+					if (iDistToCity > 15 && iMissiles >= iPlatformSlots - 1)
+					{
+						// Very far from resupply - keep at least 1 slot free
 						return false;
+					}
+					
+					// Otherwise, fill up the missile platform
+					return iMissiles < iPlatformSlots;
 				}
 				else
 				{
-					// Can resupply - allow more missiles but still keep bombers majority
-					int iMaxMissileRatio = iCarrierSlots / 3; // Max 33% missiles when can resupply
-					if (iMissiles >= iMaxMissileRatio)
-						return false;
-				}
-				
-				// Always ensure at least some bombers for sustained operations
-				if (iCurrentCargo > 0 && iBombers == 0)
-				{
-					// No bombers yet - don't add missiles until we have bombers
+					// Non-missile trying to load on missile-only platform - reject
+					// (This shouldn't happen due to canLoad checks, but be safe)
 					return false;
 				}
 			}
-			else if (eUnitAI == UNITAI_ATTACK_AIR)
+			else
 			{
-				// Bombers are preferred for carriers - they're reusable
-				// Allow bombers more freely
-				if (iBombers >= iCarrierSlots - 1)
-					return false; // Leave at least 1 slot for fighters/missiles
+				// FULL CARRIERS (can carry fighters, bombers, missiles)
+				// Need to balance bomber/missile ratio
+				
+				// Check distance to nearest friendly city for resupply
+				CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
+				int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
+				bool bCanResupplyMissiles = (iDistToCity <= 10); // Within reasonable rebase range
+				
+				if (eUnitAI == UNITAI_MISSILE_AIR)
+				{
+					// MISSILE LOADING ON CARRIERS:
+					// 1. Carriers far from cities can't easily reload missiles after use
+					// 2. Missiles are one-time use - carrier should have enough bombers for sustained ops
+					// 3. Limit missiles on carriers that can't resupply
+					
+					if (!bCanResupplyMissiles)
+					{
+						// Carrier is far from cities - limit missiles
+						// Want mostly bombers for sustained operations
+						int iMaxMissileRatio = max(1, iPlatformSlots / 4); // Max 25% missiles when can't resupply
+						if (iMissiles >= iMaxMissileRatio)
+							return false;
+					}
+					else
+					{
+						// Can resupply - allow more missiles but still keep bombers majority
+						int iMaxMissileRatio = max(1, iPlatformSlots / 3); // Max 33% missiles when can resupply
+						if (iMissiles >= iMaxMissileRatio)
+							return false;
+					}
+					
+					// Always ensure at least some bombers for sustained operations
+					if (iCurrentCargo > 0 && iBombers == 0)
+					{
+						// No bombers yet - don't add missiles until we have bombers
+						return false;
+					}
+				}
+				else if (eUnitAI == UNITAI_ATTACK_AIR)
+				{
+					// Bombers are preferred for carriers - they're reusable
+					// Allow bombers more freely
+					if (iBombers >= iPlatformSlots - 1)
+						return false; // Leave at least 1 slot for fighters/missiles
+				}
 			}
 		}
 	}
