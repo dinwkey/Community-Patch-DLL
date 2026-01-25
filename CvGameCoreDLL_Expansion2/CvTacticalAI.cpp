@@ -12543,6 +12543,92 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 		}
 	}
 
+	// === CITY ATTACK MODIFIERS ===
+	// Different unit types have different effectiveness against cities
+	// Tanks: No city attack penalty (breakthrough weapons)
+	// Cavalry/Mounted: City attack penalty (historically ineffective vs fortifications)
+	if (enemyPlot.isEnemyCity() && pUnit->getDomainType() == DOMAIN_LAND && !pUnit->IsCanAttackRanged())
+	{
+		bool bIsFastMelee = (pUnit->baseMoves(false) >= 3);
+		int iOurStrength = pUnit->GetBaseCombatStrength();
+		bool bIsModernArmor = (bIsFastMelee && iOurStrength >= 60);
+		
+		// Check for city attack modifiers on the unit
+		int iCityAttackMod = pUnit->cityAttackModifier();
+		
+		if (bIsModernArmor)
+		{
+			// TANKS: Designed for breakthrough - good at city assault
+			// No penalty, and bonus for capturing cities
+			result.iBonusScore += 15; // Tanks are effective city attackers
+			
+			// Extra bonus if this would capture the city
+			if (bIsKill)
+			{
+				result.iBonusScore += 25; // Tank breakthrough captures city!
+			}
+			
+			// Tanks with infantry support are even better at city assault
+			int iFriendlyInfantryNearby = 0;
+			for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(pEnemyPlot, i);
+				if (pLoopPlot)
+				{
+					CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+					if (pFriendly && !pFriendly->IsCanAttackRanged() && 
+						pFriendly->AI_getUnitAIType() != UNITAI_FAST_ATTACK &&
+						pFriendly->baseMoves(false) <= 3)
+					{
+						iFriendlyInfantryNearby++;
+					}
+				}
+			}
+			
+			if (iFriendlyInfantryNearby >= 2)
+			{
+				result.iBonusScore += 12; // Combined arms city assault
+			}
+			else if (iFriendlyInfantryNearby == 1)
+			{
+				result.iBonusScore += 6;
+			}
+			
+			// Apply any city attack modifier bonus the unit has
+			if (iCityAttackMod > 0)
+			{
+				result.iBonusScore += iCityAttackMod / 5; // +4 for 20%, +10 for 50%
+			}
+		}
+		else if (bIsFastMelee && iCityAttackMod < 0)
+		{
+			// CAVALRY/MOUNTED: Has city attack penalty
+			// These units are historically bad at assaulting fortifications
+			// Apply penalty based on their city attack modifier
+			result.iBonusScore += iCityAttackMod / 3; // e.g., -10 for -33% modifier
+			
+			// Even worse if this isn't a capture (just chip damage)
+			if (!bIsKill)
+			{
+				result.iBonusScore -= 8; // Cavalry shouldn't be assaulting cities
+			}
+			
+			// Cavalry should prefer other targets when available
+			// Small additional penalty to encourage finding unit targets
+			result.iBonusScore -= 5;
+		}
+		else if (bIsFastMelee && iCityAttackMod == 0)
+		{
+			// Fast melee without explicit penalty (e.g., upgraded cavalry, unique units)
+			// Neutral - no bonus or penalty
+			// But still prefer infantry for city assault
+			if (!bIsKill)
+			{
+				result.iBonusScore -= 3; // Mild preference for infantry assault
+			}
+		}
+	}
+
 	//don't break formation if there are many enemies around
 	if (result.eAssignmentType == A_MELEEKILL && !enemyPlot.isEnemyCity() && enemyPlot.getNumAdjacentEnemies(DomainForUnit(pUnit)) > 3)
 	{
