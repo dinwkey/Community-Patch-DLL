@@ -274,7 +274,8 @@ CvPlot* CvHomelandAI::GetBestExploreTarget(const CvUnit* pUnit, int iMaxTurns) c
 	//find all other explorer plots/target plots
 	std::vector<pair<int, int>> vOtherExplorerCoordinates;
 	int iLoop;
-	for (CvUnit* pLoopUnit = GET_PLAYER(pUnit->getOwner()).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(pUnit->getOwner()).nextUnit(&iLoop))
+	CvPlayer& kOwner = GET_PLAYER(pUnit->getOwner());
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
 	{
 		if (pLoopUnit == pUnit)
 			continue;
@@ -3034,6 +3035,102 @@ bool CvHomelandAI::ExecuteExplorerMoves(CvUnit* pUnit)
 				pUnit->PushMission(CvTypes::getMISSION_PLUNDER_TRADE_ROUTE());
 				// we can still move
 				return pUnit->plot() == pOldPlot || !pUnit->canMove();
+			}
+
+
+			//do this after the enemy unit check
+			if (!IsValidExplorerEndTurnPlot(pUnit, pEvalPlot))
+				continue;
+
+			//get contributions from yet-to-be revealed plots (and goodies)
+			int iScoreBase = EconomicAIHelpers::ScoreExplorePlot(pEvalPlot, m_pPlayer, pUnit->getDomainType(), pUnit->isEmbarked(), bCanPopGoody);
+			if (iScoreBase > 0)
+			{
+				int iScoreBonus = pEvalPlot->GetExplorationBonus(m_pPlayer, pUnit);
+				int iScoreExtra = 0;
+
+				//hill plots are good for defense and view - do not add this in ScoreExplorePlot2
+				if (pEvalPlot->isHills())
+					iScoreExtra += 25;
+
+				//resources on water are always near land
+				if (pUnit->getDomainType() == DOMAIN_SEA && pEvalPlot->isWater() && (pEvalPlot->getResourceType(m_pPlayer->getTeam()) != NO_RESOURCE || pEvalPlot->getFeatureType() != NO_FEATURE))
+					iScoreExtra += 25;
+
+				if (pUnit->canSellExoticGoods(pEvalPlot))
+				{
+					float fRewardFactor = pUnit->calculateExoticGoodsDistanceFactor(pEvalPlot);
+					if (fRewardFactor >= 0.75f)
+					{
+						iScoreExtra += 150;
+					}
+					else if (fRewardFactor >= 0.5f)
+					{
+						iScoreExtra += 75;
+					}
+				}
+
+				// Add a penalty based on how many other explorers are at or are moving towards the vicinity of this plot
+				int iNearbyPenalty = 0;
+				int iLoop;
+				CvPlayer& kOwner = GET_PLAYER(pUnit->getOwner());
+				for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
+				{
+					if (pLoopUnit == pUnit)
+						continue;
+
+					if (pLoopUnit->isHuman(ISHUMAN_AI_UNITS))
+					{
+						if (!pLoopUnit->IsAutomated())
+							continue;
+
+						if (pLoopUnit->GetAutomateType() != AUTOMATE_EXPLORE)
+							continue;
+					}
+					else
+					{
+						if (pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE_SEA)
+							continue;
+					}
+
+					int iLoopX = pLoopUnit->getX();
+					int iLoopY = pLoopUnit->getY();
+					const MissionData* pMissionData = pLoopUnit->GetHeadMissionData();
+					if (pMissionData && pMissionData->eMissionType == CvTypes::getMISSION_MOVE_TO())
+					{
+						iLoopX = pMissionData->iData1;
+						iLoopY = pMissionData->iData2;
+					}
+
+					int iDist = plotDistance(iLoopX, iLoopY, pEvalPlot->getX(), pEvalPlot->getY());
+					if (iDist == 0)
+					{
+						break;
+					}
+
+					iNearbyPenalty += 100 / iDist;
+				}
+
+				int iRandom = GC.getGame().randRangeExclusive(0, 23, pEvalPlot->GetPseudoRandomSeed());
+				int iTotalScore = iScoreBase + iScoreExtra + iScoreBonus - iNearbyPenalty + iRandom;
+
+				//careful with plots that are too dangerous
+				int iAcceptableDanger = pUnit->GetCurrHitPoints() / 2;
+				int iDanger = pUnit->GetDanger(pEvalPlot);
+				if (iDanger > iAcceptableDanger)
+					continue;
+				if (iDanger > iAcceptableDanger / 2)
+					iTotalScore /= 2;
+
+				if (iTotalScore > iBestPlotScore)
+				{
+					//make sure we can actually reach it - shouldn't happen, but sometimes does because of blocks
+					if (pUnit->TurnsToReachTarget(pEvalPlot, false, false, 1) > 1)
+						continue;
+
+					pBestPlot = pEvalPlot;
+					iBestPlotScore = iTotalScore;
+				}
 			}
 		}
 	}

@@ -611,6 +611,7 @@ bool CvDealAI::IsDealWithHumanAcceptable(CvDeal* pDeal, PlayerTypes eOtherPlayer
 	}
 
 
+
 	// We're surrendering
 	if (pDeal->GetSurrenderingPlayer() == GetPlayer()->GetID())
 	{
@@ -5660,7 +5661,8 @@ bool CvDealAI::IsMakeOfferForCityExchange(PlayerTypes eOtherPlayer, CvDeal* pDea
 	int iBestSellCity = 150; // initial value, they must overpay a lot
 
 	//check their cities
-	for (CvCity* pTheirCity = GET_PLAYER(eOtherPlayer).firstCity(&iCityLoop); pTheirCity != NULL; pTheirCity = GET_PLAYER(eOtherPlayer).nextCity(&iCityLoop))
+	CvPlayer& kOtherPlayer = GET_PLAYER(eOtherPlayer);
+	for (CvCity* pTheirCity = kOtherPlayer.firstCity(&iCityLoop); pTheirCity != NULL; pTheirCity = kOtherPlayer.nextCity(&iCityLoop))
 	{
 		if (pDeal->IsPossibleToTradeItem(eOtherPlayer, m_pPlayer->GetID(), TRADE_ITEM_CITIES, pTheirCity->getX(), pTheirCity->getY()))
 		{
