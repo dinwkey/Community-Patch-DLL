@@ -4225,11 +4225,33 @@ void CvTacticalAI::ExecuteAirAttack(CvPlot* pTargetPlot)
 }
 
 /// Queues up attacks on enemy units on or adjacent to army's desired center
+/// Now with ground combat coordination: prioritizes targets based on what ground forces need
 CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximateTargetPlot)
 {
 	int iRange = pUnit->GetRange();
 	int iBestValue = -INT_MAX;
 	CvPlot* pBestPlot = NULL;
+
+	// Estimate total ground damage available (from m_CurrentMoveUnits which was filled before air attack)
+	// This helps us coordinate air strikes with what ground forces can do
+	int iTotalGroundDamage = 0;
+	int iGroundMeleeCount = 0;
+	int iGroundRangedCount = 0;
+	for (unsigned int iGround = 0; iGround < m_CurrentMoveUnits.size(); iGround++)
+	{
+		CvUnit* pGroundUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[iGround].GetID());
+		if (!pGroundUnit || pGroundUnit->getDomainType() == DOMAIN_AIR)
+			continue;
+		
+		int iExpectedDamage = m_CurrentMoveUnits[iGround].GetExpectedTargetDamage();
+		if (iExpectedDamage > 0)
+			iTotalGroundDamage += iExpectedDamage;
+		
+		if (pGroundUnit->IsCanAttackRanged())
+			iGroundRangedCount++;
+		else
+			iGroundMeleeCount++;
+	}
 
 	// Loop through all appropriate targets to see if any is of concern
 	for (unsigned int iI = 0; iI < m_AllTargets.size(); iI++)
@@ -4267,12 +4289,14 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					iValue += 11;
 
 				int iUnusedReferenceVariable = 0;
+				int iAirDamage = 0;
 				if (pUnit->AI_getUnitAIType() == UNITAI_MISSILE_AIR)
 				{
 					//ignore the city when attacking!
-					iValue = pUnit->GetAirCombatDamage(pDefender, NULL, 0, iUnusedReferenceVariable, false);
+					iAirDamage = pUnit->GetAirCombatDamage(pDefender, NULL, 0, iUnusedReferenceVariable, false);
+					iValue = iAirDamage;
 					//bonus for a kill
-					if (pDefender->GetCurrHitPoints() <= iValue)
+					if (pDefender->GetCurrHitPoints() <= iAirDamage)
 						iValue += 21;
 					//bonus for hitting units in cities, can only do that with missiles
 					if (pDefender->plot()->isCity())
@@ -4281,7 +4305,8 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 				else
 				{
 					//use distance as tiebreaker
-					iValue = pUnit->GetAirCombatDamage(pDefender, pCity, 0, iUnusedReferenceVariable, false) - iDistance * 3;
+					iAirDamage = pUnit->GetAirCombatDamage(pDefender, pCity, 0, iUnusedReferenceVariable, false);
+					iValue = iAirDamage - iDistance * 3;
 
 					if (pCity != NULL)
 					{
@@ -4293,6 +4318,85 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 
 					if (pTestPlot->GetBestInterceptor(pUnit->getOwner(),NULL,false,true) != NULL)
 						iValue /= 2;
+				}
+
+				// AIR-GROUND COORDINATION: Adjust value based on ground combat needs
+				// Goal: Air should soften targets that ground forces will engage
+				
+				int iDefenderHP = pDefender->GetCurrHitPoints();
+				bool bIsOnPrimaryTarget = (pTestPlot == pApproximateTargetPlot);
+				bool bIsAdjacentToTarget = (pApproximateTargetPlot && plotDistance(*pTestPlot, *pApproximateTargetPlot) == 1);
+				
+				// Priority 1: Soften the primary target city - ground forces will definitely engage this
+				if (pCity && bIsOnPrimaryTarget)
+				{
+					// City is the main target - air softening is highly valuable
+					int iCityHP = pCity->GetMaxHitPoints() - pCity->getDamage();
+					
+					// Bonus for attacking city that needs softening for capture
+					// If city HP > ground damage, air is critical for the assault
+					if (iCityHP > iTotalGroundDamage)
+					{
+						int iNeededDamage = iCityHP - iTotalGroundDamage;
+						// Bigger bonus the more damage we need
+						iValue += min(iAirDamage, iNeededDamage) / 2;
+					}
+					
+					// If city is close to capturable and we have melee, bonus for finishing softening
+					if (iGroundMeleeCount > 0 && iCityHP <= iTotalGroundDamage + iAirDamage)
+					{
+						iValue += 25; // Help enable capture this turn
+					}
+				}
+				// Priority 2: Units adjacent to primary target - these block/threaten ground assault
+				else if (bIsAdjacentToTarget)
+				{
+					// Enemy units adjacent to target city/position threaten our attackers
+					iValue += 15;
+					
+					// Extra bonus if this is a ranged/siege unit threatening our melee
+					if (pDefender->IsCanAttackRanged())
+						iValue += 10;
+					
+					// If we can kill it, even better - clears the approach
+					if (iDefenderHP <= iAirDamage)
+						iValue += 20;
+				}
+				// Priority 3: On the primary target (defending unit in city or on target plot)
+				else if (bIsOnPrimaryTarget && pDefender)
+				{
+					// Garrison or defender on target - air can soften it for ground assault
+					// But be careful about overkill
+					if (iDefenderHP > iTotalGroundDamage)
+					{
+						// Ground can't kill it alone - air is needed
+						iValue += 20;
+					}
+					else if (iDefenderHP > iTotalGroundDamage / 2)
+					{
+						// Ground can probably kill it but air helps reduce our losses
+						iValue += 10;
+					}
+					// If ground can easily handle it, slight penalty to save air for other targets
+					else if (iGroundRangedCount > 0)
+					{
+						iValue -= 5;
+					}
+				}
+				
+				// Avoid overkill: penalize targeting units that are already near death
+				// if ground forces can finish them easily
+				if (!pCity && iDefenderHP <= 20 && iTotalGroundDamage >= iDefenderHP * 2)
+				{
+					// Ground forces can easily kill this wounded unit - save air for tougher targets
+					iValue -= 15;
+				}
+				
+				// Bonus for high-threat targets that will damage our melee attackers
+				if (!pCity && pDefender->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+				{
+					// Enemy siege is devastating - prioritize killing it before it fires
+					iValue += 25;
 				}
 
 				if (iValue > iBestValue)
