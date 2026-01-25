@@ -32830,6 +32830,48 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					iScore += 90;
 				}
 				// Regular melee units are lower priority - they take damage when attacking the city
+				
+				// NAVAL MELEE CAPTURE THREAT - for coastal cities at critical HP
+				// Naval ranged are generally higher priority (they damage city without taking damage)
+				// BUT if city HP is critical, naval melee becomes the imminent capture threat!
+				if (isCoastal() && pTarget->getDomainType() == DOMAIN_SEA && !pTarget->IsCanAttackRanged())
+				{
+					// This is a naval melee unit that can capture our city
+					int iCityHP = GetMaxHitPoints() - getDamage();
+					int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
+					
+					// Only prioritize naval melee over ranged when city is in danger of capture
+					// At high HP, naval ranged (+75) should be prioritized since they're doing the damage
+					int iNavalMeleeBonus = 0;
+					
+					if (iCityHPPercent <= 25)
+					{
+						// CRITICAL: City could be captured soon - naval melee is now top priority!
+						iNavalMeleeBonus = 100; // Base: higher than ranged
+						
+						if (iRing == 1)
+							iNavalMeleeBonus += 80; // Adjacent = imminent capture
+						else if (iRing == 2)
+							iNavalMeleeBonus += 40; // Can reach next turn
+					}
+					else if (iCityHPPercent <= 50 && iRing == 1)
+					{
+						// Adjacent melee with city at half HP - getting dangerous
+						iNavalMeleeBonus = 80; // Higher than ranged in this specific case
+					}
+					else
+					{
+						// City is healthy enough - naval ranged is bigger threat
+						// Give small bonus to track melee but don't prioritize over ranged
+						iNavalMeleeBonus = 30; // Less than ranged (+75)
+					}
+					
+					// Bonus if we can kill the naval melee unit
+					if (iDamage >= iTargetHP)
+						iNavalMeleeBonus += 25;
+					
+					iScore += iNavalMeleeBonus;
+				}
 
 				// Blockade breaker bonus - prioritize naval units that are blockading us
 				// Killing them restores city healing which is critical during a siege
