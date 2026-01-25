@@ -1000,6 +1000,10 @@ void CvTacticalAI::AssignGlobalMidPrioMoves()
 	PlotPillageMoves(AI_TACTICAL_TARGET_IMPROVEMENT_RESOURCE, false);
 	PlotPillageMoves(AI_TACTICAL_TARGET_IMPROVEMENT, false);
 	PlotBlockadeMoves();
+	
+	// Counter-blockade: actively hunt enemy naval units blockading our cities
+	// This is critical because blockaded cities can't heal
+	PlotCounterBlockadeMoves();
 }
 
 /// Choose which tactics to run and assign units to it
@@ -1672,6 +1676,94 @@ void CvTacticalAI::PlotBlockadeMoves()
 				CvString strLogString;
 				strLogString.Format("Moving into enemy territory for a naval blockade with move to, X: %d, Y: %d", pTarget->GetTargetX(), pTarget->GetTargetY());
 				LogTacticalMessage(strLogString);
+			}
+		}
+	}
+}
+
+/// Hunt enemy naval units that are blockading our cities
+/// Breaking blockades is critical - blockaded cities can't heal and lose trade income
+void CvTacticalAI::PlotCounterBlockadeMoves()
+{
+	ClearCurrentMoveUnits(AI_TACTICAL_BLOCKADE);
+	
+	// Find all our blockaded cities
+	int iCityLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
+	{
+		if (!pCity->GetCityCitizens()->AnyPlotBlockaded())
+			continue;
+			
+		// Higher urgency if city is damaged (can't heal while blockaded)
+		bool bCityDamaged = pCity->getDamage() > 0;
+		bool bCityUnderSiege = pCity->isUnderSiege();
+		
+		// Find enemy naval units adjacent to this city that are causing the blockade
+		CvPlot* pCityPlot = pCity->plot();
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pCityPlot->getX(), pCityPlot->getY(), (DirectionTypes)iDir);
+			if (!pAdj || !pAdj->isWater())
+				continue;
+				
+			// Check if this plot is blockaded (has enemy unit)
+			if (!pAdj->isBlockaded(m_pPlayer->GetID()))
+				continue;
+				
+			CvUnit* pBlockader = pAdj->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true, true);
+			if (!pBlockader || pBlockader->getDomainType() != DOMAIN_SEA)
+				continue;
+			
+			// Found a blockading naval unit! Try to attack it with our naval units
+			// Use higher range for damaged/besieged cities
+			int iSearchRange = bCityUnderSiege ? 6 : (bCityDamaged ? 5 : 4);
+			
+			if (FindUnitsForHarassing(pAdj, iSearchRange, GD_INT_GET(MAX_HIT_POINTS) / 3, -1, DOMAIN_SEA, false, false, 3))
+			{
+				// Try to attack the blockader
+				for (size_t i = 0; i < m_CurrentMoveUnits.size(); i++)
+				{
+					CvUnit* pAttacker = m_pPlayer->getUnit(m_CurrentMoveUnits[i].GetID());
+					if (!pAttacker || pAttacker->TurnProcessed())
+						continue;
+					
+					// Can we attack from current position or move adjacent to attack?
+					if (pAttacker->canMoveInto(*pAdj, CvUnit::MOVEFLAG_ATTACK))
+					{
+						pAttacker->PushMission(CvTypes::getMISSION_MOVE_TO(), pAdj->getX(), pAdj->getY(), CvUnit::MOVEFLAG_ATTACK);
+						
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("Counter-blockade: Unit %d attacking blockader near %s at (%d,%d)%s%s",
+								pAttacker->GetID(), pCity->getName().GetCString(), pAdj->getX(), pAdj->getY(),
+								bCityDamaged ? " [CITY DAMAGED]" : "", bCityUnderSiege ? " [UNDER SIEGE]" : "");
+							LogTacticalMessage(strLogString);
+						}
+						
+						if (!pAttacker->canMove())
+							UnitProcessed(pAttacker->GetID());
+						
+						// One attacker per blockader per turn to spread damage
+						break;
+					}
+					else if (pAttacker->IsCanAttackRanged() && pAttacker->canRangeStrikeAt(pAdj->getX(), pAdj->getY()))
+					{
+						// Ranged naval unit can attack from distance
+						pAttacker->PushMission(CvTypes::getMISSION_RANGE_ATTACK(), pAdj->getX(), pAdj->getY());
+						
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("Counter-blockade: Ranged unit %d bombarding blockader near %s at (%d,%d)",
+								pAttacker->GetID(), pCity->getName().GetCString(), pAdj->getX(), pAdj->getY());
+							LogTacticalMessage(strLogString);
+						}
+						
+						if (!pAttacker->canMove())
+							UnitProcessed(pAttacker->GetID());
+					}
+				}
 			}
 		}
 	}
@@ -3335,6 +3427,51 @@ void CvTacticalAI::UpdateTargetScores()
 			{
 				int iDistScore = max(0, 5 - iDist);
 				it->SetAuxIntData(it->GetAuxIntData() + iDistScore);
+			}
+			
+			// COUNTER-BLOCKADE: Prioritize naval units that are blockading our cities
+			// Breaking blockades is critical - it restores city healing and trade income
+			CvUnit* pTargetUnit = it->GetUnitPtr();
+			if (pTargetUnit && pTargetUnit->getDomainType() == DOMAIN_SEA && pPlot->isBlockaded(m_pPlayer->GetID()))
+			{
+				// Check if this unit is adjacent to one of our cities (actively blockading)
+				bool bBlockadingOurCity = false;
+				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+				{
+					CvPlot* pAdj = plotDirection(pPlot->getX(), pPlot->getY(), (DirectionTypes)iDir);
+					if (pAdj && pAdj->isCity() && pAdj->getPlotCity()->getOwner() == m_pPlayer->GetID())
+					{
+						CvCity* pCity = pAdj->getPlotCity();
+						if (pCity->GetCityCitizens()->AnyPlotBlockaded())
+						{
+							bBlockadingOurCity = true;
+							
+							// Higher priority if city is damaged (needs healing)
+							if (pCity->getDamage() > 0)
+								it->SetAuxIntData(it->GetAuxIntData() + 15);
+							
+							// Even higher if city is under siege
+							if (pCity->isUnderSiege())
+								it->SetAuxIntData(it->GetAuxIntData() + 20);
+								
+							break;
+						}
+					}
+				}
+				
+				if (bBlockadingOurCity)
+				{
+					// Major priority boost for units actively blockading our cities
+					it->SetAuxIntData(it->GetAuxIntData() + 25);
+					
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						strLogString.Format("Counter-blockade target: %s at (%d,%d), boosted priority",
+							pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY());
+						LogTacticalMessage(strLogString);
+					}
+				}
 			}
 		}
 	}

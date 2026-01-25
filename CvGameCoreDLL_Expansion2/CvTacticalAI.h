@@ -381,6 +381,7 @@ private:
 	void PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediate);
 	void PlotPlunderTradeUnitMoves(DomainTypes eDomain);
 	void PlotBlockadeMoves();
+	void PlotCounterBlockadeMoves();
 	void PlotCivilianAttackMoves();
 	void ExecuteCivilianAttackMoves(AITacticalTargetType eTargetType);
 	void PlotHealMoves(bool bFirstPass);
