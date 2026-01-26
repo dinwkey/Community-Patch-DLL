@@ -11935,6 +11935,123 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		}
 	}
 
+	// === GREAT GENERAL AURA COORDINATION (Combat Units) ===
+	// Combat units benefit from Great General aura (+15% combat by default)
+	// Units should prefer positions within General's aura range to get this bonus
+	// This coordination helps units cluster around Generals for mutual benefit
+	// Key: hasSupportBonus() returns true if a General/Admiral is adjacent
+	// But Generals have range 2 (GREAT_GENERAL_RANGE), so we need extended check
+	if (pUnit->IsCombatUnit() && evalMode != EM_INTERMEDIATE && !pUnit->IsIgnoreGreatGeneralBenefit())
+	{
+		int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+		bool bHasGeneralBonus = testPlot.hasSupportBonus(unit.iPlotIndex);
+		
+		// Only care about General aura when enemies are nearby (combat expected)
+		if (iEnemyDist <= 3 && assumedPosition.haveEnemies())
+		{
+			// Check if we're within range of a friendly Great General/Admiral
+			// hasSupportBonus only checks adjacent (range 1), but GG range is 2
+			// Count generals within extended range for better coordination
+			int iGeneralsInRange = 0;
+			int iGeneralRange = /*2*/ GD_INT_GET(GREAT_GENERAL_RANGE);
+			
+			// Check for Generals within aura range
+			for (int iRing = 0; iRing <= iGeneralRange; iRing++)
+			{
+				int iStart = (iRing == 0) ? 0 : RING_PLOTS[iRing-1];
+				int iEnd = RING_PLOTS[min(iRing, 5)];
+				for (int i = iStart; i < iEnd; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pLoopUnit = pLoopPlot->getBestDefender(pUnit->getOwner());
+						if (pLoopUnit && pLoopUnit != pUnit)
+						{
+							// Check if this is a Great General (land) or Great Admiral (sea)
+							bool bIsRelevantGeneral = false;
+							if (pUnit->getDomainType() == DOMAIN_LAND && pLoopUnit->IsGreatGeneral())
+								bIsRelevantGeneral = true;
+							else if (pUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsGreatAdmiral())
+								bIsRelevantGeneral = true;
+							
+							if (bIsRelevantGeneral)
+							{
+								iGeneralsInRange++;
+								// Extended range generals may have AuraRangeChange
+								int iThisGeneralRange = iGeneralRange + pLoopUnit->GetAuraRangeChange();
+								int iActualDist = plotDistance(*pTestPlot, *pLoopPlot);
+								
+								// Are we actually within this General's aura?
+								if (iActualDist <= iThisGeneralRange)
+								{
+									// Good! We'll get the combat bonus from this General
+									// Bonus scales with proximity (closer is better for safety)
+									int iProximityBonus = (iThisGeneralRange + 1 - iActualDist) * 3;
+									iPlotScore += iProximityBonus;
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			// If we found a General nearby, bonus for positioning to benefit from aura
+			if (iGeneralsInRange > 0)
+			{
+				// Base bonus for being within General aura
+				iPlotScore += 5;
+				
+				// Melee units benefit more from General aura (in direct combat)
+				if (!pUnit->IsCanAttackRanged())
+				{
+					iPlotScore += 4; // Melee gets more from combat bonus
+				}
+				
+				// Extra bonus when on front line (where combat bonus matters most)
+				if (iEnemyDist <= 2)
+				{
+					iPlotScore += 3;
+				}
+			}
+			else if (!bHasGeneralBonus && iGeneralsInRange == 0)
+			{
+				// No General support available
+				// Check if there ARE friendly Generals we could move toward
+				// This encourages units to converge on General-supported positions
+				bool bFriendlyGeneralExists = false;
+				
+				// Quick check via area effect units list (more efficient)
+				const std::vector<std::pair<int,int>>& possibleUnits = GET_PLAYER(pUnit->getOwner()).GetAreaEffectPositiveUnits();
+				for (size_t i = 0; i < possibleUnits.size(); i++)
+				{
+					CvPlot* pUnitPlot = GC.getMap().plotByIndexUnchecked(possibleUnits[i].second);
+					if (plotDistance(*pUnitPlot, *pTestPlot) <= 6) // Within reasonable move distance
+					{
+						CvUnit* pPossibleGeneral = GET_PLAYER(pUnit->getOwner()).getUnit(possibleUnits[i].first);
+						if (pPossibleGeneral && !pPossibleGeneral->isDelayedDeath())
+						{
+							if ((pUnit->getDomainType() == DOMAIN_LAND && pPossibleGeneral->IsGreatGeneral()) ||
+								(pUnit->getDomainType() == DOMAIN_SEA && pPossibleGeneral->IsGreatAdmiral()))
+							{
+								bFriendlyGeneralExists = true;
+								
+								// Mild bonus for moving toward the General's direction
+								int iDistToGeneral = plotDistance(*pTestPlot, *pUnitPlot);
+								int iDistFromCurrent = plotDistance(*pUnit->plot(), *pUnitPlot);
+								if (iDistToGeneral < iDistFromCurrent)
+								{
+									iPlotScore += 2; // Moving toward General
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// === HELICOPTER GUNSHIP POSITIONING ===
 	// Helicopters are extremely mobile but need to:
 	// - Stay away from AA coverage zones
@@ -12701,6 +12818,92 @@ STacticalAssignment ScorePlotForNonFightingUnitMove(const SUnitStats& unit, cons
 			//try not to be a sitting duck (faster than isNativeDomain but not entirely accurate)
 			if (pUnit->getDomainType() != pTestPlot->getDomain())
 				iScore -= 3;
+		}
+
+		// === GREAT GENERAL AURA POSITIONING ===
+		// Generals should position to maximize combat bonus to nearby units
+		// Their aura range is GREAT_GENERAL_RANGE (default 2) + any AuraRangeChange
+		// Melee units benefit most from combat bonuses (direct combat)
+		// Ranged/siege benefit less but still gain from the bonus
+		int iGeneralAuraRange = /*2*/ GD_INT_GET(GREAT_GENERAL_RANGE) + pUnit->GetAuraRangeChange();
+		
+		// Count units within aura range, weighted by type
+		int iMeleeUnitsInAura = 0;
+		int iRangedUnitsInAura = 0;
+		int iUnitsNearFront = 0; // Units close to enemies that will actually fight
+		
+		for (int iRing = 0; iRing <= iGeneralAuraRange; iRing++)
+		{
+			int iStart = (iRing == 0) ? 0 : RING_PLOTS[iRing-1];
+			int iEnd = RING_PLOTS[min(iRing, 5)];
+			for (int i = iStart; i < iEnd; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+				if (pLoopPlot)
+				{
+					CvUnit* pLoopUnit = pLoopPlot->getBestDefender(pUnit->getOwner());
+					if (pLoopUnit && pLoopUnit != pUnit && pLoopUnit->IsCombatUnit())
+					{
+						// Don't count units that ignore Great General benefit
+						if (pLoopUnit->IsIgnoreGreatGeneralBenefit())
+							continue;
+						
+						// Check domain match (Generals for land, Admirals for sea)
+						if ((pUnit->IsGreatGeneral() && pLoopUnit->getDomainType() != DOMAIN_LAND) ||
+							(pUnit->IsGreatAdmiral() && pLoopUnit->getDomainType() != DOMAIN_SEA))
+							continue;
+						
+						if (pLoopUnit->IsCanAttackRanged())
+						{
+							iRangedUnitsInAura++;
+						}
+						else
+						{
+							iMeleeUnitsInAura++;
+						}
+						
+						// Check if this unit is near the front (will actually benefit from combat bonus)
+						// Get the enemy distance for this unit's plot
+						const CvTacticalPlot& unitTactPlot = assumedPosition.getTactPlot(pLoopPlot->GetPlotIndex());
+						if (unitTactPlot.isValid() && unitTactPlot.getEnemyDistance() <= 3)
+						{
+							iUnitsNearFront++;
+						}
+					}
+				}
+			}
+		}
+		
+		// Bonus for covering units with aura (melee counts more)
+		// Melee units are in direct combat and gain full benefit from +15% combat
+		iScore += iMeleeUnitsInAura * 3;
+		// Ranged still benefits but less directly
+		iScore += iRangedUnitsInAura * 1;
+		
+		// Extra bonus for covering units that are actually near the front
+		// Combat bonuses matter most when units are engaged with enemies
+		iScore += iUnitsNearFront * 2;
+		
+		// Bonus for stacking with a strong melee unit (direct protection + full bonus)
+		if (testPlot.hasFriendlyCombatUnit())
+		{
+			const vector<STacticalUnit>& unitsHere = testPlot.getUnitsAtPlot();
+			for (size_t i = 0; i < unitsHere.size(); i++)
+			{
+				if (isCombatUnit(unitsHere[i].eMoveType))
+				{
+					CvUnit* pStackedUnit = GET_PLAYER(assumedPosition.getPlayer()).getUnit(unitsHere[i].iUnitID);
+					if (pStackedUnit && !pStackedUnit->IsCanAttackRanged())
+					{
+						// Stacked with melee - good for protection and gives them stacked bonus
+						iScore += 3;
+						
+						// Extra bonus if melee is damaged (General gives morale/healing support)
+						if (pStackedUnit->getDamage() > 0)
+							iScore += 2;
+					}
+				}
+			}
 		}
 
 		//points for supported units (count only the first ring for performance ...)
