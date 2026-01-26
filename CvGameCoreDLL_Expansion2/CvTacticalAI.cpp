@@ -10789,6 +10789,96 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 				iPlotScore -= 6; // penalty for wounded unit staying on front line
 		}
 		
+		// 3b. WOUNDED UNITS SEEKING MEDIC SUPPORT
+		// Damaged units should prefer positions adjacent to friendly medics
+		// This coordinates with medic positioning to maximize healing efficiency
+		if (pUnit->getDamage() > 0)
+		{
+			int iDamagePercent = (pUnit->getDamage() * 100) / pUnit->GetMaxHitPoints();
+			
+			// Check for friendly medics adjacent to this plot
+			int iBestMedicHeal = 0;
+			int iMedicsNearby = 0;
+			
+			// Also check if a medic is stacked here (SameTileHeal)
+			const vector<STacticalUnit>& unitsHere = testPlot.getUnitsAtPlot();
+			for (size_t i = 0; i < unitsHere.size(); i++)
+			{
+				CvUnit* pStackedUnit = GET_PLAYER(assumedPosition.getPlayer()).getUnit(unitsHere[i].iUnitID);
+				if (pStackedUnit && pStackedUnit != pUnit && pStackedUnit->getSameTileHeal() > 0)
+				{
+					iBestMedicHeal = max(iBestMedicHeal, pStackedUnit->getSameTileHeal());
+					iMedicsNearby++;
+				}
+			}
+			
+			// Check adjacent tiles for medics (AdjacentTileHeal)
+			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+			{
+				CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+				if (pAdj)
+				{
+					CvUnit* pAdjUnit = pAdj->getBestDefender(pUnit->getOwner());
+					if (pAdjUnit && pAdjUnit->getAdjacentTileHeal() > 0)
+					{
+						iBestMedicHeal = max(iBestMedicHeal, pAdjUnit->getAdjacentTileHeal());
+						iMedicsNearby++;
+					}
+				}
+			}
+			
+			// Bonus for being near medics scales with damage
+			if (iMedicsNearby > 0)
+			{
+				// Base bonus for being near a medic
+				int iMedicBonus = 3;
+				
+				// Scale with damage - more wounded = more need for medic
+				if (iDamagePercent >= 60)
+					iMedicBonus += 6; // Critically wounded - strong pull toward medic
+				else if (iDamagePercent >= 40)
+					iMedicBonus += 4; // Heavily wounded
+				else if (iDamagePercent >= 20)
+					iMedicBonus += 2; // Moderately wounded
+				
+				// Bonus for better medic (higher heal amount)
+				iMedicBonus += iBestMedicHeal / 5; // +1 per 5 HP heal
+				
+				// Extra bonus if multiple medics nearby (redundant healing)
+				if (iMedicsNearby >= 2)
+					iMedicBonus += 2;
+				
+				iPlotScore += min(iMedicBonus, 15); // Cap the bonus
+			}
+			else if (iDamagePercent >= 40)
+			{
+				// No medic nearby but significantly wounded
+				// Check if there's a medic within 2 tiles we could move toward
+				for (int iRing = 2; iRing <= 3; iRing++)
+				{
+					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (pLoopPlot)
+						{
+							CvUnit* pLoopUnit = pLoopPlot->getBestDefender(pUnit->getOwner());
+							if (pLoopUnit && (pLoopUnit->getAdjacentTileHeal() > 0 || pLoopUnit->getSameTileHeal() > 0))
+							{
+								// Moving toward a medic - mild bonus
+								int iDistToMedic = plotDistance(*pTestPlot, *pLoopPlot);
+								int iDistFromCurrent = plotDistance(*pUnit->plot(), *pLoopPlot);
+								if (iDistToMedic < iDistFromCurrent)
+								{
+									iPlotScore += 2; // Moving closer to medic
+								}
+								break; // Found one, that's enough
+							}
+						}
+					}
+				}
+			}
+		}
+		
 		// 4. City proximity bonus when city is threatened
 		// Units should stay close to defend rather than chase enemies
 		if (pFriendlyCity && (pFriendlyCity->isUnderSiege() || pFriendlyCity->isInDangerOfFalling()))
