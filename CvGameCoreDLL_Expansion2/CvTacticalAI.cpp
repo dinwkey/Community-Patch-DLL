@@ -10811,6 +10811,39 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 			}
 		}
 		
+		// === FEATURE-SPECIFIC TERRAIN PROMOTIONS (Woodsman, etc.) ===
+		// Units with promotions like Woodsman get bonuses in specific features (forest/jungle)
+		// They should prefer positioning in these features for defense and to enable attacks
+		FeatureTypes eFeature = pTestPlot->getFeatureType();
+		if (eFeature != NO_FEATURE)
+		{
+			// Check if unit has defense bonus in this feature
+			int iFeatureDefBonus = pUnit->featureDefenseModifier(eFeature);
+			if (iFeatureDefBonus > 0)
+			{
+				// Unit has specific defense bonus in this feature (e.g., Woodsman in forest)
+				// This is different from the generic rough terrain bonus
+				iPlotScore += iFeatureDefBonus / 4; // +5-12 typically
+				
+				// Extra bonus when enemies are nearby (we'll be attacked here)
+				if (testPlot.getEnemyDistance(eRelevantDomain) <= 2)
+					iPlotScore += iFeatureDefBonus / 6;
+			}
+			
+			// Check if unit has attack bonus from this feature (RoughFromMod)
+			// Units with this bonus fight better when attacking FROM this feature
+			int iFeatureAttackFromBonus = pUnit->getExtraRoughFromPercent();
+			if (iFeatureAttackFromBonus > 0 && bIsRoughGround)
+			{
+				// Unit has attack bonus when attacking FROM rough terrain (Woodsman)
+				// Position in forests/jungle to enable this bonus on attacks
+				if (testPlot.getEnemyDistance(eRelevantDomain) <= 2)
+				{
+					iPlotScore += iFeatureAttackFromBonus / 3; // +3-10 for positioning to attack
+				}
+			}
+		}
+		
 		// === FLANKING POSITIONING FOR MELEE UNITS ===
 		// Units with high FlankAttackModifier should position to enable flanking attacks
 		int iFlankMod = pUnit->GetFlankAttackModifier();
@@ -12421,6 +12454,32 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 		}
 	}
 
+	// === RANGED FEATURE-SPECIFIC ATTACK BONUSES (Woodsman, Jungle Fighter, etc.) ===
+	// Ranged units with feature-specific attack bonuses should prioritize targets in those features
+	// Note: For ranged, the bonus applies to the TARGET'S terrain, not the attacker's position
+	if (!enemyPlot.isEnemyCity() && unit.pUnit->getDomainType() == DOMAIN_LAND && unit.pUnit->IsCanAttackRanged())
+	{
+		const CvPlot* pTargetPlot = enemyPlot.getPlot();
+		if (pTargetPlot)
+		{
+			FeatureTypes eTargetFeature = pTargetPlot->getFeatureType();
+			if (eTargetFeature != NO_FEATURE)
+			{
+				// Check if we have attack bonus against targets IN this feature
+				int iFeatureAttackBonus = unit.pUnit->featureAttackModifier(eTargetFeature);
+				if (iFeatureAttackBonus > 0)
+				{
+					// Prefer shooting at enemies in terrain we have bonus against
+					newAssignment.iBonusScore += iFeatureAttackBonus / 3; // +8-15 typically
+					
+					// Extra for kills
+					if (bIsKill)
+						newAssignment.iBonusScore += iFeatureAttackBonus / 5;
+				}
+			}
+		}
+	}
+
 	// === ANTI-ARMOR TARGET PRIORITIZATION (Bazookas, AT Guns, etc.) ===
 	// Units with significant combat modifiers against specific unit types should prioritize those targets.
 	// Bazookas have PROMOTION_ANTI_TANK (+50% vs UNITCOMBAT_ARMOR).
@@ -13401,6 +13460,45 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 			{
 				// Unit with rough bonus attacking on open - not ideal
 				result.iBonusScore -= iRoughAttackBonus / 8;
+			}
+		}
+		
+		// === FEATURE-SPECIFIC ATTACK BONUSES (Woodsman, Jungle Fighter, etc.) ===
+		// Units with feature-specific attack bonuses should prioritize targets on those features
+		FeatureTypes eEnemyFeature = pEnemyPlot->getFeatureType();
+		if (eEnemyFeature != NO_FEATURE)
+		{
+			// Check if unit has attack bonus against enemies IN this feature
+			int iFeatureAttackBonus = pUnit->featureAttackModifier(eEnemyFeature);
+			if (iFeatureAttackBonus > 0)
+			{
+				// Strong preference for targets we have feature bonus against
+				result.iBonusScore += iFeatureAttackBonus / 3; // +8-15 typically
+				
+				// Extra bonus for kills - our feature advantage makes kills more likely
+				if (bIsKill)
+					result.iBonusScore += iFeatureAttackBonus / 5;
+			}
+		}
+		
+		// Check if we have attack bonus when attacking FROM our current terrain (RoughFromMod/Woodsman)
+		const CvPlot* pOurPlot = assumedUnitPlot.getPlot();
+		if (pOurPlot)
+		{
+			FeatureTypes eOurFeature = pOurPlot->getFeatureType();
+			if (eOurFeature != NO_FEATURE && pOurPlot->isRoughGround())
+			{
+				int iRoughFromBonus = pUnit->getExtraRoughFromPercent();
+				if (iRoughFromBonus > 0)
+				{
+					// We're attacking FROM rough terrain with Woodsman-type bonus
+					// This bonus makes our attacks stronger
+					result.iBonusScore += iRoughFromBonus / 3; // +3-10 typically
+					
+					// Extra for kills since we're attacking at advantage
+					if (bIsKill)
+						result.iBonusScore += iRoughFromBonus / 5;
+				}
 			}
 		}
 	}
