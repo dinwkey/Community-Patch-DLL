@@ -11207,6 +11207,56 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 					}
 				}
 			}
+
+			// === COUNTER-ENEMY TERRAIN BONUSES ===
+			// Avoid fighting enemies in their preferred terrain (e.g. Iroquois Woodsman in forests)
+			{
+				FeatureTypes eFeature = pTestPlot->getFeatureType();
+				bool bHasFeature = (eFeature != NO_FEATURE);
+				bool bIsRoughGroundCT = pTestPlot->isRoughGround();
+
+				if (bHasFeature || bIsRoughGroundCT)
+				{
+					int iEnemyTerrainBonus = 0;
+					int iEnemiesWithBonus = 0;
+
+					for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (pLoopPlot)
+						{
+							CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+							if (pEnemy && pEnemy->IsCombatUnit() && !pEnemy->IsCanAttackRanged())
+							{
+								int iEnemyRoughBonus = pEnemy->roughAttackModifier();
+								int iEnemyRoughFromBonus = pEnemy->getExtraRoughFromPercent();
+								int iEnemyFeatureBonus = bHasFeature ? pEnemy->featureAttackModifier(eFeature) : 0;
+
+								int iTotalEnemyBonus = 0;
+								if (bIsRoughGroundCT)
+								{
+									iTotalEnemyBonus += iEnemyRoughBonus;
+									iTotalEnemyBonus += iEnemyRoughFromBonus;
+								}
+								iTotalEnemyBonus += iEnemyFeatureBonus;
+
+								if (iTotalEnemyBonus > 0)
+								{
+									iEnemyTerrainBonus = max(iEnemyTerrainBonus, iTotalEnemyBonus);
+									iEnemiesWithBonus++;
+								}
+							}
+						}
+					}
+
+					if (iEnemyTerrainBonus > 0)
+					{
+						iPlotScore -= iEnemyTerrainBonus / 3;
+						if (iEnemiesWithBonus >= 2)
+							iPlotScore -= iEnemyTerrainBonus / 5;
+					}
+				}
+			}
 		}
 	}
 
