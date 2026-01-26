@@ -1726,18 +1726,53 @@ void CvTacticalAI::PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediat
 		{
 			//be careful when sending out single units ...
 			CvTacticalDominanceZone* pZone = GetTacticalAnalysisMap()->GetZoneByPlot(pPlot);
-			if (!pZone || pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY)
+			
+			CvUnit* pUnit = (m_CurrentMoveUnits.size() > 0) ? m_pPlayer->getUnit(m_CurrentMoveUnits.begin()->GetID()) : 0;
+			if (!pUnit)
+				continue;
+			
+			// In enemy-dominated zones, only send units that can handle the danger:
+			// - ZOC-ignoring units (can slip past defenders)
+			// - Fast units with move-after-attack (can escape)
+			// - Recon units (designed for behind-enemy-lines operations)
+			bool bCanOperateInEnemyZone = false;
+			if (pUnit->IsIgnoreZOC())
+				bCanOperateInEnemyZone = true;
+			else if (pUnit->canMoveAfterAttacking() && pUnit->baseMoves(false) >= 4)
+				bCanOperateInEnemyZone = true;
+			else if (pUnit->AI_getUnitAIType() == UNITAI_EXPLORE || 
+					 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE)
+				bCanOperateInEnemyZone = true;
+			
+			// Block regular units from entering enemy zones, but allow special units
+			if (pZone && pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY && !bCanOperateInEnemyZone)
+				continue;
+			
+			// Even special units should avoid if there's no zone (unexplored)
+			if (!pZone && !bCanOperateInEnemyZone)
 				continue;
 
-			CvUnit* pUnit = (m_CurrentMoveUnits.size() > 0) ? m_pPlayer->getUnit(m_CurrentMoveUnits.begin()->GetID()) : 0;
-			if (pUnit && pUnit->canMoveInto(*pPlot, CvUnit::MOVEFLAG_DESTINATION))
+			if (pUnit->canMoveInto(*pPlot, CvUnit::MOVEFLAG_DESTINATION))
 			{
 				ExecuteMoveToPlot(pUnit, pPlot, true, CvUnit::MOVEFLAG_NO_EMBARK | CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER);
 
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Moving toward %s for pillage, X: %d, Y: %d", szTargetName.GetCString(), pTarget->GetTargetX(), pTarget->GetTargetY());
+					if (bCanOperateInEnemyZone && pZone && pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY)
+					{
+						strLogString.Format("Sending %s %s into ENEMY ZONE for pillage (%s%s%s), X: %d, Y: %d",
+							pUnit->getUnitInfo().GetDescription(), 
+							pUnit->getName().GetCString(),
+							pUnit->IsIgnoreZOC() ? "ZOC-ignore " : "",
+							pUnit->canMoveAfterAttacking() ? "move-after-attack " : "",
+							(pUnit->AI_getUnitAIType() == UNITAI_EXPLORE) ? "recon" : "",
+							pTarget->GetTargetX(), pTarget->GetTargetY());
+					}
+					else
+					{
+						strLogString.Format("Moving toward %s for pillage, X: %d, Y: %d", szTargetName.GetCString(), pTarget->GetTargetX(), pTarget->GetTargetY());
+					}
 					LogTacticalMessage(strLogString);
 				}
 
@@ -7141,7 +7176,58 @@ bool CvTacticalAI::FindUnitsForHarassing(CvPlot* pTarget, int iNumTurnsAway, int
 						iPlunderBonus += pLoopUnit->getYieldFromTRPlunder((YieldTypes)iI);
 					}
 				}
-				unit.SetAttackStrength(1 + iNumTurnsAway - iTurnsCalculated + iPlunderBonus);
+				
+				// === PILLAGING UNIT SUITABILITY BONUS ===
+				// Some units are especially good at pillaging due to their mobility and promotions
+				int iPillageSuitability = 0;
+				
+				// 1. RECON UNITS: Scouts/Explorers are excellent pillagers
+				// They can get deep behind enemy lines and have pillage-focused promotion tree
+				bool bIsRecon = (pLoopUnit->AI_getUnitAIType() == UNITAI_EXPLORE || 
+								 pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE);
+				if (bIsRecon)
+				{
+					iPillageSuitability += 30; // Base recon bonus
+					
+					// Recon units with combat capability are even better pillagers
+					if (pLoopUnit->GetBaseCombatStrength() > 0)
+						iPillageSuitability += 20;
+				}
+				
+				// 2. ZOC-IGNORING UNITS: Can slip past enemy lines
+				// This is a key promotion for pillaging behind enemy fortifications
+				if (pLoopUnit->IsIgnoreZOC())
+				{
+					iPillageSuitability += 50; // Major bonus - can bypass defenders
+				}
+				
+				// 3. FAST UNITS: Can reach targets quickly and escape
+				int iBaseMoves = pLoopUnit->baseMoves(false);
+				if (iBaseMoves >= 4)
+				{
+					iPillageSuitability += (iBaseMoves - 3) * 10; // +10 for 4 moves, +20 for 5, etc.
+				}
+				
+				// 4. MOVE-AFTER-ATTACK: Can pillage and retreat
+				if (pLoopUnit->canMoveAfterAttacking())
+				{
+					iPillageSuitability += 25; // Can escape after pillaging
+				}
+				
+				// 5. LOW-VALUE UNITS: Expendable units are better for risky pillaging
+				// Don't send your expensive tanks to pillage - use scouts instead
+				if (pLoopUnit->GetBaseCombatStrength() <= 20 && pLoopUnit->GetBaseCombatStrength() > 0)
+				{
+					iPillageSuitability += 15; // Expendable combat unit
+				}
+				
+				// 6. CAVALRY/FAST ATTACK: Good at hit-and-run
+				if (pLoopUnit->AI_getUnitAIType() == UNITAI_FAST_ATTACK)
+				{
+					iPillageSuitability += 20;
+				}
+				
+				unit.SetAttackStrength(1 + iNumTurnsAway - iTurnsCalculated + iPlunderBonus + iPillageSuitability);
 				unit.SetHealthPercent(1, 1);
 				m_CurrentMoveUnits.push_back(unit);
 				//pathfinding is expensive, don't return more than needed
