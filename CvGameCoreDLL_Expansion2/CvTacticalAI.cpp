@@ -10965,6 +10965,18 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 		iPlotScore += iPlotScoreForTargetDistanceEscort[eMoveStrategy][iTargetDistance];
 	}
 
+	// === COMBAT BONUS IMPROVEMENT AWARENESS (Shoshone Encampment, etc.) ===
+	if (pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		int iNearbyImprovementBonus = pUnit->GetNearbyImprovementModifier(pTestPlot);
+		if (iNearbyImprovementBonus > 0)
+		{
+			iPlotScore += iNearbyImprovementBonus / 3;
+			if (assumedPosition.haveEnemies() && testPlot->getEnemyDistance(eRelevantDomain) <= 3)
+				iPlotScore += iNearbyImprovementBonus / 5;
+		}
+	}
+
 	if (bMoving && testPlot->isEnemyCivilian()) //unescorted civilian
 	{
 		if (unit.iMovesLeft > 0 || testPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND) == 0)
@@ -11164,11 +11176,6 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 
 			// 4. City proximity bonus when city is threatened
 			if (pFriendlyCity && (pFriendlyCity->isUnderSiege() || pFriendlyCity->isInDangerOfFalling()))
-			{
-				if (iDistToCity <= 2)
-					iPlotScore += 6;
-				else if (iDistToCity <= 3)
-					iPlotScore += 3;
 				else if (iDistToCity > 4)
 					iPlotScore -= 4;
 			}
