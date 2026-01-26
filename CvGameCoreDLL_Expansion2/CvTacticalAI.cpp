@@ -12235,6 +12235,158 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		}
 	}
 
+	// === MOUNTAIN-CAPABLE UNIT POSITIONING (Inca, Recon with Altitude Training, Helicopters) ===
+	// Units that can move into mountains have unique tactical opportunities:
+	// - Mountains provide excellent defense (+25% in VP)
+	// - Mountains are impassable to most enemies (flanking immunity)
+	// - Mountains provide superior visibility (sight bonus)
+	// - Units can retreat to mountains for safety
+	// Detection: Check if unit can enter mountains (promotion or trait)
+	if (pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		// Check if this unit can cross mountains
+		bool bCanCrossMountains = pUnit->canCrossMountains() || GET_PLAYER(assumedPosition.getPlayer()).CanCrossMountain();
+		
+		if (bCanCrossMountains)
+		{
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			
+			// Check if this plot is a mountain
+			if (pTestPlot->isMountain())
+			{
+				// 1. DEFENSIVE MOUNTAIN POSITION: Mountains are excellent defensive terrain
+				// The defense bonus is already in defenseModifier, but we add awareness for the
+				// tactical value of being unreachable by most enemies
+				
+				// Count how many enemy units CANNOT reach us on the mountain
+				int iEnemiesWhoCannotReach = 0;
+				int iEnemiesWhoCanReach = 0;
+				
+				for (int iRing = 1; iRing <= 3; iRing++)
+				{
+					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (!pLoopPlot)
+							continue;
+						
+						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemy && pEnemy->IsCombatUnit())
+						{
+							// Check if enemy can cross mountains
+							bool bEnemyCanCrossMountains = pEnemy->canCrossMountains() || 
+								GET_PLAYER(pEnemy->getOwner()).CanCrossMountain() ||
+								pEnemy->IsHoveringUnit();
+							
+							if (bEnemyCanCrossMountains)
+								iEnemiesWhoCanReach++;
+							else
+								iEnemiesWhoCannotReach++;
+						}
+					}
+				}
+				
+				// Strong bonus if enemies cannot reach us on the mountain
+				if (iEnemiesWhoCannotReach > 0 && iEnemiesWhoCanReach == 0)
+				{
+					// Completely safe from nearby melee enemies!
+					iPlotScore += 15;
+					
+					// Extra bonus per enemy who can't reach us (we're denying them options)
+					iPlotScore += iEnemiesWhoCannotReach * 3;
+				}
+				else if (iEnemiesWhoCannotReach > iEnemiesWhoCanReach)
+				{
+					// Mostly safe - only some enemies can follow
+					iPlotScore += 8 + (iEnemiesWhoCannotReach - iEnemiesWhoCanReach) * 2;
+				}
+				
+				// 2. RANGED UNITS ON MOUNTAINS: Excellent firing platform
+				if (pUnit->IsCanAttackRanged())
+				{
+					// Mountains provide LOS advantage and protection
+					iPlotScore += 8;
+					
+					// Extra bonus if in range to attack enemies who can't reach us
+					int iUnitRange = pUnit->GetRange();
+					if (iEnemyDist <= iUnitRange && iEnemiesWhoCannotReach > 0)
+					{
+						iPlotScore += 6; // Can attack enemies who can't retaliate
+					}
+				}
+				
+				// 3. WOUNDED UNITS: Mountains are great for wounded units to heal safely
+				int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
+				if (iHealthPercent < 50 && iEnemiesWhoCanReach == 0)
+				{
+					iPlotScore += 10; // Safe healing position
+				}
+				
+				// 4. BLOCKING MOUNTAIN PASS: If this mountain is between enemies and our city
+				// it can serve as an impassable barrier (for enemies who can't cross)
+				const CvPlot* pTarget = assumedPosition.getTarget();
+				if (pTarget && pTarget->isCity() && pTarget->isFriendlyCity(*pUnit))
+				{
+					// Check if we're between the target city and enemies
+					int iDistToCity = plotDistance(*pTestPlot, *pTarget);
+					if (iDistToCity <= 4 && iEnemyDist <= 3 && iDistToCity < iEnemyDist)
+					{
+						// We're between enemies and our city, on a mountain
+						// This is a blocking position
+						iPlotScore += 6;
+					}
+				}
+			}
+			else
+			{
+				// 5. MOUNTAIN ESCAPE ROUTES: Check for nearby mountains as escape options
+				// Units that can cross mountains have unique retreat paths
+				int iMountainEscapeRoutes = 0;
+				
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (pAdj && pAdj->isMountain())
+					{
+						// This adjacent mountain is a potential escape route
+						// (only for us, not for most enemies)
+						iMountainEscapeRoutes++;
+					}
+				}
+				
+				// Bonus for having mountain escape options
+				if (iMountainEscapeRoutes > 0 && iEnemyDist <= 2)
+				{
+					// Near enemies but have mountain escape routes
+					iPlotScore += iMountainEscapeRoutes * 2;
+				}
+				
+				// 6. MOUNTAIN FLANKING: Use mountains to get behind enemy lines
+				// Mountains that enemies can't cross can serve as flanking corridors
+				if (assumedPosition.haveEnemies() && iEnemyDist <= 4)
+				{
+					// Check if there's a mountain route that gets us behind enemies
+					for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (pLoopPlot && pLoopPlot->isMountain())
+						{
+							// Check if this mountain leads toward enemy flank/rear
+							int iMtnEnemyDist = assumedPosition.getTactPlot(pLoopPlot->GetPlotIndex()).getEnemyDistance(eRelevantDomain);
+							if (iMtnEnemyDist <= iEnemyDist)
+							{
+								// Mountain closer to enemies - potential flanking route
+								// Small bonus for being near a flanking path
+								iPlotScore += 2;
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	//final score
 	//danger values (typically negative!) are mostly useful as tiebreaker
 	result.iPlotScore = iPlotScore * 10 + iDangerScore;
