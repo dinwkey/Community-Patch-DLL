@@ -10717,6 +10717,73 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 				}
 			}
 		}
+		
+		// === COUNTER-ENEMY TERRAIN BONUSES ===
+		// When defending, consider enemy terrain promotions and avoid fighting them in their preferred terrain
+		// This is especially important against civs like Iroquois (Woodsman for all units)
+		// Key insight: If enemies have forest bonuses, we should fight them OUTSIDE forests
+		FeatureTypes eFeature = pTestPlot->getFeatureType();
+		bool bHasFeature = (eFeature != NO_FEATURE);
+		bool bIsRoughGround = pTestPlot->isRoughGround();
+		
+		if (bDefendingFriendlyCity && (bHasFeature || bIsRoughGround))
+		{
+			// Check nearby enemies for terrain bonuses that would help them attack us here
+			int iEnemyTerrainBonus = 0;
+			int iEnemiesWithBonus = 0;
+			
+			for (int iRing = 1; iRing <= 2; iRing++)
+			{
+				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemy && pEnemy->IsCombatUnit() && !pEnemy->IsCanAttackRanged())
+						{
+							// Check if this enemy has terrain bonuses that would help them attack us
+							int iEnemyRoughBonus = pEnemy->roughAttackModifier();
+							int iEnemyRoughFromBonus = pEnemy->getExtraRoughFromPercent();
+							
+							// Feature-specific attack bonus (rare but check it)
+							int iEnemyFeatureBonus = 0;
+							if (bHasFeature)
+							{
+								iEnemyFeatureBonus = pEnemy->featureAttackModifier(eFeature);
+							}
+							
+							// Sum up bonuses the enemy would get attacking us on this terrain
+							int iTotalEnemyBonus = 0;
+							if (bIsRoughGround)
+							{
+								iTotalEnemyBonus += iEnemyRoughBonus;
+								iTotalEnemyBonus += iEnemyRoughFromBonus;
+							}
+							iTotalEnemyBonus += iEnemyFeatureBonus;
+							
+							if (iTotalEnemyBonus > 0)
+							{
+								iEnemyTerrainBonus = max(iEnemyTerrainBonus, iTotalEnemyBonus);
+								iEnemiesWithBonus++;
+							}
+						}
+					}
+				}
+			}
+			
+			// Penalty for positioning where enemies get terrain bonuses against us
+			// Better to fight on open ground where their Woodsman/rough terrain bonuses don't apply
+			if (iEnemyTerrainBonus > 0)
+			{
+				// Significant penalty - we're giving the enemy their preferred fight
+				iPlotScore -= iEnemyTerrainBonus / 3; // -3 for 10%, -10 for 30%
+				
+				// Extra penalty if multiple enemies have the bonus
+				if (iEnemiesWithBonus >= 2)
+					iPlotScore -= iEnemyTerrainBonus / 5;
+			}
+		}
 	}
 
 	// Siege unit positioning bonus: encourage UNITAI_CITY_BOMBARD units to position within range of enemy cities

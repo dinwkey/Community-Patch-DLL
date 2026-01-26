@@ -2889,6 +2889,69 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 	{
 		iWeight = iWeight * 2;
 	}
+	
+	// === DEFENSIVE STRATEGIC CLEARING ===
+	// If at war with a civ that has forest/jungle bonuses (like Iroquois with Woodsman),
+	// clearing forests near our cities denies them terrain advantage.
+	// This is especially important for cities that are threatened or border hostile territory.
+	if ((eFeature == FEATURE_FOREST || eFeature == FEATURE_JUNGLE) && pCity)
+	{
+		int iDefensiveClearBonus = 0;
+		int iDistToCity = plotDistance(*pPlot, *pCity->plot());
+		
+		// Only consider defensive clearing close to the city (within 3 tiles)
+		if (iDistToCity <= 3)
+		{
+			// Check if we're at war with anyone who has forest/jungle combat advantages
+			for (int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+			{
+				CvPlayer& kPlayer = GET_PLAYER((PlayerTypes)iI);
+				if (!kPlayer.isAlive() || kPlayer.GetID() == m_pPlayer->GetID())
+					continue;
+				
+				if (!m_pPlayer->IsAtWarWith(kPlayer.GetID()))
+					continue;
+				
+				// Check for Woodland movement bonus trait (Iroquois)
+				// Units from civs with this trait get Woodsman promotion and fight well in forests
+				bool bEnemyHasForestBonus = kPlayer.GetPlayerTraits()->IsWoodlandMovementBonus();
+				
+				if (bEnemyHasForestBonus)
+				{
+					// Significant bonus for clearing forests when fighting forest-bonus civs
+					int iBaseBonus = 500;
+					
+					// Extra bonus if this is near a threatened city
+					if (pCity->isInDangerOfFalling())
+					{
+						iBaseBonus += 1000;
+					}
+					else if (pCity->isUnderSiege())
+					{
+						iBaseBonus += 500;
+					}
+					
+					// Extra bonus for closer tiles (higher priority)
+					iBaseBonus += (4 - iDistToCity) * 100; // +300 for adjacent, +200 for 2 tiles, +100 for 3
+					
+					// Extra bonus if we're fighting multiple enemies (likely defensive)
+					if (GET_TEAM(m_pPlayer->getTeam()).getAtWarCount(true) > 1)
+					{
+						// Defensive war makes terrain denial more valuable
+						iBaseBonus += 200;
+					}
+					
+					iDefensiveClearBonus = max(iDefensiveClearBonus, iBaseBonus);
+				}
+			}
+		}
+		
+		// Apply defensive clearing bonus
+		if (iDefensiveClearBonus > 0)
+		{
+			iWeight += iDefensiveClearBonus;
+		}
+	}
 
 	if(iWeight > 0)
 	{
