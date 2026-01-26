@@ -11279,8 +11279,61 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 					iPlotScore -= 6;
 			}
 
+			// 3b. WOUNDED UNITS SEEKING MEDIC SUPPORT
+			if (pUnit->getDamage() > 0)
+			{
+				int iDamagePercent = (pUnit->getDamage() * 100) / pUnit->GetMaxHitPoints();
+				int iBestMedicHeal = 0;
+				int iMedicsNearby = 0;
+
+				const vector<STacticalUnit>& unitsHere = testPlot->getUnitsAtPlot();
+				for (size_t i = 0; i < unitsHere.size(); i++)
+				{
+					CvUnit* pStackedUnit = GET_PLAYER(assumedPosition.getPlayer()).getUnit(unitsHere[i].iUnitID);
+					if (pStackedUnit && pStackedUnit != pUnit && pStackedUnit->getSameTileHeal() > 0)
+					{
+						iBestMedicHeal = max(iBestMedicHeal, pStackedUnit->getSameTileHeal());
+						iMedicsNearby++;
+					}
+				}
+
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (pAdj)
+					{
+						CvUnit* pAdjUnit = pAdj->getBestDefender(pUnit->getOwner());
+						if (pAdjUnit && pAdjUnit->getAdjacentTileHeal() > 0)
+						{
+							iBestMedicHeal = max(iBestMedicHeal, pAdjUnit->getAdjacentTileHeal());
+							iMedicsNearby++;
+						}
+					}
+				}
+
+				if (iMedicsNearby > 0)
+				{
+					int iMedicBonus = 3;
+					if (iDamagePercent >= 60)
+						iMedicBonus += 6;
+					else if (iDamagePercent >= 40)
+						iMedicBonus += 4;
+					else if (iDamagePercent >= 20)
+						iMedicBonus += 2;
+					iMedicBonus += iBestMedicHeal / 5;
+					if (iMedicsNearby >= 2)
+						iMedicBonus += 2;
+					iPlotScore += min(iMedicBonus, 15);
+				}
+			}
+
 			// 4. City proximity bonus when city is threatened
 			if (pFriendlyCity && (pFriendlyCity->isUnderSiege() || pFriendlyCity->isInDangerOfFalling()))
+			{
+				if (iDistToCity <= 2)
+					iPlotScore += 6;
+				else if (iDistToCity <= 3)
+					iPlotScore += 3;
 				else if (iDistToCity > 4)
 					iPlotScore -= 4;
 			}
