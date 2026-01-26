@@ -10940,6 +10940,81 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		iResult += iCarrierBonus;
 	}
 
+	// === NAVAL ESCORT FOR EMBARKED UNITS ===
+	// Naval combat units should position to protect friendly embarked units
+	// This is critical for amphibious operations - transports need warship escort
+	if (pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit())
+	{
+		int iEscortBonus = 0;
+		int iEmbarkedUnitsNearby = 0;
+		int iEmbarkedUnitsAdjacent = 0;
+		
+		// Check for friendly embarked units that need protection
+		for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
+			if (!pLoopPlot || !pLoopPlot->isWater())
+				continue;
+			
+			for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+			{
+				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+				if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
+					continue;
+				
+				// Found a friendly embarked unit
+				if (pLoopUnit->isEmbarked())
+				{
+					iEmbarkedUnitsNearby++;
+					int iDist = plotDistance(*testPlot.getPlot(), *pLoopPlot);
+					if (iDist <= 1)
+						iEmbarkedUnitsAdjacent++;
+					
+					// Higher value targets get more escort priority
+					// Great Generals, Settlers, Workers are very valuable
+					if (pLoopUnit->IsGreatGeneral() || pLoopUnit->IsGreatAdmiral())
+						iEscortBonus += 6;
+					else if (pLoopUnit->AI_getUnitAIType() == UNITAI_SETTLE)
+						iEscortBonus += 5;
+					else if (pLoopUnit->IsCombatUnit())
+						iEscortBonus += 3; // Combat units waiting to land
+					else
+						iEscortBonus += 2; // Workers, etc.
+				}
+			}
+		}
+		
+		if (iEmbarkedUnitsNearby > 0)
+		{
+			// Base bonus for being near embarked units
+			iResult += min(iEscortBonus, 20);
+			
+			// Extra bonus for being adjacent (direct protection)
+			if (iEmbarkedUnitsAdjacent > 0)
+				iResult += iEmbarkedUnitsAdjacent * 3;
+			
+			// Naval ranged units should position to provide fire support
+			if (pUnit->IsCanAttackRanged())
+			{
+				// Check if this position allows firing at enemies threatening the embarked units
+				int iEnemyDist = testPlot.getEnemyDistance(CvTacticalPlot::TD_SEA);
+				if (iEnemyDist <= pUnit->GetRange() && iEnemyDist >= 2)
+				{
+					iResult += 5; // Good fire support position
+				}
+			}
+			else
+			{
+				// Melee naval should be between enemies and embarked units
+				int iEnemyDist = testPlot.getEnemyDistance(CvTacticalPlot::TD_SEA);
+				if (iEnemyDist <= 2)
+				{
+					iResult += 4; // Screening position
+				}
+			}
+		}
+	}
+
 	//try to occupy enemy citadels!
 	int iImprovementDamage = TacticalAIHelpers::GetOtherPlayerImprovementDamage(pTestPlot, assumedPosition.getPlayer(), true);
 	if (iImprovementDamage > 0)
@@ -12516,6 +12591,103 @@ static STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, c
 		}
 	}
 
+	// === NAVAL FIRE SUPPORT FOR LAND UNITS (Amphibious Coordination) ===
+	// Land units attacking coastal positions should coordinate with naval ranged units
+	// Battleships, Frigates, and other naval ranged can provide devastating fire support
+	// This is critical for successful amphibious operations and coastal city assaults
+	if (pUnit->getDomainType() == DOMAIN_LAND && pUnit->IsCombatUnit() && evalMode != EM_INTERMEDIATE)
+	{
+		// Check if this plot is coastal (adjacent to water)
+		bool bIsCoastalPlot = false;
+		int iAdjacentWaterTiles = 0;
+		
+		for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+		{
+			CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+			if (pAdj && pAdj->isWater())
+			{
+				bIsCoastalPlot = true;
+				iAdjacentWaterTiles++;
+			}
+		}
+		
+		// Only apply if this is a coastal position
+		if (bIsCoastalPlot && assumedPosition.haveEnemies())
+		{
+			int iNavalFireSupportBonus = 0;
+			int iNavalRangedNearby = 0;
+			int iTotalNavalRangedStrength = 0;
+			
+			// Check for friendly naval ranged units that can provide fire support
+			for (int iRing = 1; iRing <= 3; iRing++)
+			{
+				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (!pLoopPlot || !pLoopPlot->isWater())
+						continue;
+					
+					for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+					{
+						CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+						if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
+							continue;
+						
+						// Found a friendly naval unit
+						if (pLoopUnit->getDomainType() == DOMAIN_SEA && 
+							pLoopUnit->IsCanAttackRanged() && 
+							pLoopUnit->IsCombatUnit())
+						{
+							// Check if this naval unit can actually fire at enemies near our position
+							int iNavalRange = pLoopUnit->GetRange();
+							int iDistToUs = plotDistance(*pTestPlot, *pLoopPlot);
+							
+							if (iDistToUs <= iNavalRange)
+							{
+								iNavalRangedNearby++;
+								iTotalNavalRangedStrength += pLoopUnit->GetBaseRangedCombatStrength();
+								
+								// Battleships and similar heavy naval ranged are particularly valuable
+								if (pLoopUnit->GetBaseRangedCombatStrength() >= 50)
+									iNavalFireSupportBonus += 5;
+								else
+									iNavalFireSupportBonus += 3;
+							}
+						}
+					}
+				}
+			}
+			
+			if (iNavalRangedNearby > 0)
+			{
+				// Base bonus for having naval fire support
+				int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+				
+				// Strong bonus when engaging enemies with naval support
+				if (iEnemyDist <= 2)
+				{
+					iPlotScore += iNavalFireSupportBonus;
+					
+					// Extra bonus for melee units (they need fire support most)
+					if (!pUnit->IsCanAttackRanged())
+						iPlotScore += min(iNavalRangedNearby * 3, 12);
+				}
+				
+				// Coastal city assault bonus
+				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+				{
+					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+					if (pAdj && pAdj->isCity() && GET_PLAYER(pUnit->getOwner()).IsAtWarWith(pAdj->getOwner()))
+					{
+						// Adjacent to enemy coastal city with naval support - excellent!
+						iPlotScore += min(iTotalNavalRangedStrength / 10, 15);
+						break;
+					}
+				}
+			}
+		}
+	}
+
 	// === HELICOPTER GUNSHIP POSITIONING ===
 	// Helicopters are extremely mobile but need to:
 	// - Stay away from AA coverage zones
@@ -13417,7 +13589,69 @@ static STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& un
 			if (testPlot->isEdgePlot())
 				iDanger += 50;
 
-			iScore -= iDanger;
+			//we want friends around us
+			int iFriends = (evalMode==EM_FINAL) ? testPlot->getNumAdjacentFriendliesEndTurn(CvTacticalPlot::TD_BOTH) : testPlot->getNumAdjacentFriendlies(CvTacticalPlot::TD_BOTH, -1);
+			iScore -= iDanger / (iFriends + 1);
+
+			// === EMBARKED UNIT SEEKING NAVAL ESCORT ===
+			int iNavalEscortCount = 0;
+			int iNavalCombatStrengthNearby = 0;
+			bool bHasRangedEscort = false;
+
+			for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+				if (!pLoopPlot || !pLoopPlot->isWater())
+					continue;
+
+				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+				{
+					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+					if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
+						continue;
+
+					if (pLoopUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsCombatUnit())
+					{
+						iNavalEscortCount++;
+						iNavalCombatStrengthNearby += pLoopUnit->GetBaseCombatStrength();
+						if (pLoopUnit->IsCanAttackRanged())
+							bHasRangedEscort = true;
+					}
+				}
+			}
+
+			if (iNavalEscortCount > 0)
+			{
+				iScore += iNavalEscortCount * 4;
+				if (bHasRangedEscort)
+					iScore += 5;
+
+				int iEnemyDist = testPlot->getEnemyDistance(CvTacticalPlot::TD_SEA);
+				if (iEnemyDist <= 3 && iNavalCombatStrengthNearby > 0)
+					iScore += min(iNavalCombatStrengthNearby / 10, 10);
+			}
+			else if (testPlot->getEnemyDistance(CvTacticalPlot::TD_SEA) <= 3)
+			{
+				iScore -= 15;
+			}
+
+			bool bAdjacentToFriendlyCoast = false;
+			bool bAdjacentToNeutralCoast = false;
+			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+			{
+				CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+				if (pAdj && pAdj->isCoastalLand())
+				{
+					if (pAdj->IsFriendlyTerritory(pUnit->getOwner()))
+						bAdjacentToFriendlyCoast = true;
+					else if (!pAdj->isOwned() || !GET_PLAYER(pUnit->getOwner()).IsAtWarWith(pAdj->getOwner()))
+						bAdjacentToNeutralCoast = true;
+				}
+			}
+			if (bAdjacentToFriendlyCoast)
+				iScore += 8;
+			else if (bAdjacentToNeutralCoast)
+				iScore += 4;
 		}
 	}
 
