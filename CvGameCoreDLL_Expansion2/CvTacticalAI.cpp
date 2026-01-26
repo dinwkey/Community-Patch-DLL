@@ -10954,6 +10954,184 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 				iPlotScore -= 4;
 			}
 		}
+		
+		// === SLOW INFANTRY POSITIONING (Spearmen, Swordsmen, Pikemen, Longswordsmen, etc.) ===
+		// Slow melee infantry (2 moves) use fundamentally different tactics than fast cavalry:
+		// - Form defensive lines and hold positions
+		// - Use terrain defense bonuses heavily (unlike cavalry)
+		// - Anti-cavalry units (spearmen/pikemen) should intercept mounted threats
+		// - Mainline infantry (swordsmen) are versatile front-line fighters
+		// Detection: Non-ranged, 2 moves or less, not a tank
+		bool bIsSlowInfantry = (!pUnit->IsCanAttackRanged() && pUnit->baseMoves(false) <= 2 && !bIsModernArmor);
+		
+		if (bIsSlowInfantry && assumedPosition.haveEnemies())
+		{
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			int iAdjacentEnemies = testPlot.getNumAdjacentEnemies(eRelevantDomain);
+			int iAdjacentFriendlies = testPlot.getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
+			
+			// Check for anti-cavalry bonus (spearmen/pikemen have bonus vs UNITCOMBAT_MOUNTED)
+			static UnitCombatTypes eMountedCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_MOUNTED");
+			int iAntiCavalryBonus = 0;
+			if (eMountedCombat != NO_UNITCOMBAT)
+			{
+				iAntiCavalryBonus = pUnit->unitCombatModifier(eMountedCombat);
+			}
+			
+			bool bIsAntiCavalry = (iAntiCavalryBonus >= 25); // Spearman typically has +50% vs mounted
+			
+			// 1. ANTI-CAVALRY INTERCEPTION POSITIONING
+			// Spearmen/pikemen should position to intercept enemy cavalry
+			if (bIsAntiCavalry)
+			{
+				// Check for enemy cavalry nearby that we can intercept
+				int iEnemyCavalryNearby = 0;
+				int iClosestCavalryDist = INT_MAX;
+				
+				for (int iRing = 1; iRing <= 3; iRing++)
+				{
+					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (pLoopPlot)
+						{
+							CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+							if (pEnemy && pEnemy->IsCombatUnit() && !pEnemy->IsCanAttackRanged())
+							{
+								// Check if this is a mounted unit we counter
+								UnitCombatTypes eEnemyCombat = pEnemy->getUnitCombatType();
+								if (eEnemyCombat == eMountedCombat)
+								{
+									iEnemyCavalryNearby++;
+									int iDistToCav = plotDistance(*pTestPlot, *pLoopPlot);
+									if (iDistToCav < iClosestCavalryDist)
+										iClosestCavalryDist = iDistToCav;
+								}
+							}
+						}
+					}
+				}
+				
+				// Bonus for positioning to intercept cavalry
+				if (iEnemyCavalryNearby > 0)
+				{
+					// Strong bonus for being in interception range of cavalry
+					iPlotScore += 10;
+					
+					// Extra bonus if we're close enough to be attacked (we want that!)
+					if (iClosestCavalryDist <= 2)
+					{
+						iPlotScore += 8; // Bait position - cavalry may attack us
+					}
+					
+					// Bonus per cavalry we can threaten
+					iPlotScore += iEnemyCavalryNearby * 3;
+				}
+				
+				// Anti-cavalry units should protect ranged units from cavalry charges
+				// Position between friendly ranged and enemy cavalry
+				if (iEnemyCavalryNearby > 0)
+				{
+					int iAdjacentFriendlyRanged = 0;
+					for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+					{
+						CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+						if (pAdj)
+						{
+							CvUnit* pFriendly = pAdj->getBestDefender(pUnit->getOwner());
+							if (pFriendly && pFriendly->IsCanAttackRanged())
+							{
+								iAdjacentFriendlyRanged++;
+							}
+						}
+					}
+					
+					// Strong bonus for screening ranged from cavalry
+					if (iAdjacentFriendlyRanged > 0)
+					{
+						iPlotScore += iAdjacentFriendlyRanged * 5;
+					}
+				}
+			}
+			
+			// 2. TERRAIN DEFENSE: Slow infantry LOVE defensive terrain
+			// Unlike cavalry, infantry can fully utilize terrain bonuses
+			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
+			if (iTerrainDefMod > 0)
+			{
+				// Strong bonus for defensive terrain (hills, forests)
+				iPlotScore += iTerrainDefMod / 4; // +5 for 20%, +12 for 50%
+				
+				// Extra bonus when enemies are close (we'll be attacked here)
+				if (iEnemyDist <= 2)
+					iPlotScore += iTerrainDefMod / 6;
+			}
+			
+			// Penalty for open ground (no terrain defense)
+			if (pTestPlot->isOpenGround() && iEnemyDist <= 2)
+			{
+				iPlotScore -= 4; // Exposed without terrain advantage
+			}
+			
+			// 3. FORMATION FIGHTING: Infantry is strongest in groups
+			// Mutual support and combined strength
+			if (iAdjacentFriendlies >= 2)
+			{
+				// Good formation - infantry phalanx/shield wall
+				iPlotScore += 6;
+				
+				// Extra bonus for being part of a larger formation
+				if (iAdjacentFriendlies >= 3)
+					iPlotScore += 3;
+			}
+			else if (iAdjacentFriendlies == 0 && iEnemyDist <= 2)
+			{
+				// Isolated infantry is vulnerable
+				iPlotScore -= 6;
+			}
+			
+			// 4. HOLD THE LINE: Infantry should maintain front-line positions
+			// They don't have the mobility to reposition quickly
+			if (iEnemyDist == 1 && iAdjacentEnemies > 0)
+			{
+				// On the front line - this is where infantry belongs
+				// But only if we have support
+				if (iAdjacentFriendlies >= 1)
+				{
+					iPlotScore += 4; // Good defensive position with support
+				}
+				else
+				{
+					iPlotScore -= 4; // Exposed on front line alone
+				}
+			}
+			else if (iEnemyDist == 2)
+			{
+				// One tile back - reserve position
+				// Good if there are friendlies on the front line we can support
+				if (iAdjacentEnemies == 0 && iAdjacentFriendlies >= 1)
+				{
+					iPlotScore += 2; // Reserve/support position
+				}
+			}
+			
+			// 5. CHOKEPOINT CONTROL: Infantry excels at holding chokepoints
+			if (pTestPlot->IsChokePoint() && iEnemyDist <= 3)
+			{
+				iPlotScore += 12; // Chokepoint is ideal for infantry
+				
+				// Even better with terrain defense
+				if (iTerrainDefMod > 0)
+					iPlotScore += 4;
+			}
+			
+			// 6. FORTIFICATION VALUE: Infantry benefits greatly from fortifying
+			if (pUnit->canFortify(pTestPlot) && iEnemyDist >= 2 && iTerrainDefMod > 0)
+			{
+				// Position where we can fortify on good terrain
+				iPlotScore += 3;
+			}
+		}
 	}
 
 	// === FAST RANGED UNIT POSITIONING (Skirmishers, Mounted Archers) ===
@@ -13694,6 +13872,162 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 					// Withdrawal makes isolated attacks safer since you can escape
 					if (iEnemySupport == 0)
 						result.iBonusScore += 3; // Extra safe when can withdraw from lone enemy
+				}
+			}
+			
+			// === SLOW INFANTRY MELEE TACTICS (Spearmen, Swordsmen, Pikemen, etc.) ===
+			// Slow melee units (2 moves) use fundamentally different melee tactics than cavalry:
+			// - Anti-cavalry units (spearmen/pikemen) should prioritize mounted targets
+			// - Mainline infantry (swordsmen) should target weakened enemies for kills
+			// - All slow infantry prefers supported attacks over isolated charges
+			bool bIsSlowInfantry = (!pUnit->IsCanAttackRanged() && pUnit->baseMoves(false) <= 2);
+			
+			if (bIsSlowInfantry && !bIsFastMelee && !bIsCavalry && !bIsRecon)
+			{
+				int iEnemySupport = enemyPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
+				int iOurSupport = assumedUnitPlot.getNumAdjacentFriendlies(CvTacticalPlot::TD_LAND, unit.iPlotIndex);
+				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
+				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
+				int iEnemyHPPercent = (iEnemyHP * 100) / max(iEnemyMaxHP, 1);
+				
+				// Check for anti-cavalry bonus (spearmen/pikemen)
+				static UnitCombatTypes eMountedCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_MOUNTED");
+				int iAntiCavalryBonus = 0;
+				bool bEnemyIsCavalry = false;
+				
+				if (eMountedCombat != NO_UNITCOMBAT)
+				{
+					iAntiCavalryBonus = pUnit->unitCombatModifier(eMountedCombat);
+					bEnemyIsCavalry = (pEnemyUnit->getUnitCombatType() == eMountedCombat);
+				}
+				
+				bool bIsAntiCavalry = (iAntiCavalryBonus >= 25);
+				
+				// 1. ANTI-CAVALRY MELEE: Spearmen should prioritize mounted targets
+				if (bIsAntiCavalry && bEnemyIsCavalry)
+				{
+					// This is our specialty - give big bonus for engaging cavalry
+					result.iBonusScore += 35;
+					
+					// Extra bonus based on our anti-cavalry strength
+					result.iBonusScore += iAntiCavalryBonus / 5; // +10 for +50% bonus
+					
+					// Killing cavalry is excellent
+					if (bIsKill)
+					{
+						result.iBonusScore += 25;
+					}
+					
+					// Bonus for protecting ranged units from cavalry
+					// Check if there are friendly ranged units nearby that cavalry could threaten
+					int iNearbyFriendlyRanged = 0;
+					const CvPlot* pAttackerPlot = assumedUnitPlot.getPlot();
+					if (pAttackerPlot)
+					{
+						for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+						{
+							CvPlot* pLoopPlot = iterateRingPlots(pAttackerPlot, i);
+							if (pLoopPlot)
+							{
+								CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+								if (pFriendly && pFriendly->IsCanAttackRanged())
+								{
+									iNearbyFriendlyRanged++;
+								}
+							}
+						}
+					}
+					
+					// Big bonus for protecting ranged from cavalry
+					if (iNearbyFriendlyRanged > 0)
+					{
+						result.iBonusScore += iNearbyFriendlyRanged * 8;
+					}
+				}
+				// Anti-cavalry units attacking non-cavalry targets
+				else if (bIsAntiCavalry && !bEnemyIsCavalry)
+				{
+					// Mild penalty - save spearmen for cavalry interception
+					// Unless it's a kill opportunity
+					if (!bIsKill && iEnemySupport > 0)
+					{
+						result.iBonusScore -= 8;
+					}
+				}
+				
+				// 2. MAINLINE INFANTRY (non-anti-cavalry): Target priority
+				// Swordsmen and similar units are versatile front-line fighters
+				if (!bIsAntiCavalry)
+				{
+					// Priority: Siege units - slow infantry can catch them
+					if (eEnemyAI == UNITAI_CITY_BOMBARD)
+					{
+						result.iBonusScore += 20;
+						if (bIsKill)
+							result.iBonusScore += 15;
+					}
+					// Priority: Weakened enemies - infantry excels at finishing
+					else if (iEnemyHPPercent <= 50)
+					{
+						result.iBonusScore += (100 - iEnemyHPPercent) / 4; // Up to +12
+						if (bIsKill)
+							result.iBonusScore += 10;
+					}
+					// Priority: Ranged units - can't fight back in melee
+					else if (pEnemyUnit->IsCanAttackRanged())
+					{
+						result.iBonusScore += 10;
+						if (bIsKill)
+							result.iBonusScore += 8;
+					}
+				}
+				
+				// 3. FORMATION FIGHTING: Infantry needs mutual support
+				// Unlike cavalry, infantry charges without support are dangerous
+				if (iOurSupport >= 2)
+				{
+					// Well-supported attack - this is how infantry fights best
+					result.iBonusScore += 10;
+				}
+				else if (iOurSupport == 1)
+				{
+					result.iBonusScore += 4;
+				}
+				else if (iOurSupport == 0 && iEnemySupport > 0)
+				{
+					// Unsupported attack into supported enemy - very risky for infantry
+					if (!bIsKill)
+						result.iBonusScore -= 15;
+					else
+						result.iBonusScore -= 5; // Still risky even for kill
+				}
+				
+				// 4. DEFENSIVE COMBAT BONUS: Infantry uses terrain
+				// If we're on good defensive terrain, we can afford more aggressive attacks
+				const CvPlot* pOurPlot = assumedUnitPlot.getPlot();
+				if (pOurPlot)
+				{
+					int iOurTerrainDef = pOurPlot->defenseModifier(pUnit->getTeam(), false, false);
+					if (iOurTerrainDef > 0)
+					{
+						// Attacking from good terrain is safer
+						result.iBonusScore += iOurTerrainDef / 8;
+					}
+				}
+				
+				// Penalty for attacking fortified enemies (infantry struggles)
+				if (pEnemyUnit->IsFortified() && !bIsKill)
+				{
+					int iFortifyMod = pEnemyUnit->fortifyModifier();
+					result.iBonusScore -= iFortifyMod / 4; // -5 to -12
+				}
+				
+				// 5. CIVILIANS: Infantry can capture them, but not a specialty
+				if (pEnemyUnit->IsCivilianUnit())
+				{
+					result.iBonusScore += 10;
+					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
+						result.iBonusScore += 15;
 				}
 			}
 		}
