@@ -11170,6 +11170,157 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 				}
 			}
 		}
+		// === SLOW RANGED UNIT POSITIONING (Archers, Crossbowmen, etc.) ===
+		// Non-mobile ranged units (2 moves, range 2) need different tactics:
+		// - Cannot kite effectively - must rely on melee screen
+		// - Need defensive terrain since they can't escape
+		// - Should stay behind melee line, not on it
+		// - Must avoid getting adjacent to enemy melee at all costs
+		else if (!bIsFastRanged && !bIsSkirmisher && iUnitRange >= 2)
+		{
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			int iAdjacentEnemies = testPlot.getNumAdjacentEnemies(eRelevantDomain);
+			int iAdjacentFriendlyMelee = 0;
+			
+			// Count friendly melee units that can screen for us
+			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
+			{
+				CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+				if (pAdj)
+				{
+					CvUnit* pFriendly = pAdj->getBestDefender(pUnit->getOwner());
+					if (pFriendly && !pFriendly->IsCanAttackRanged() && pFriendly->IsCombatUnit())
+					{
+						iAdjacentFriendlyMelee++;
+					}
+				}
+			}
+			
+			// 1. STAY BEHIND THE LINE: Slow ranged must maintain distance
+			if (iEnemyDist == 1 && iAdjacentEnemies > 0)
+			{
+				// CRITICAL: Adjacent to enemy melee - disaster for slow ranged
+				// They cannot escape and will be destroyed
+				iPlotScore -= 20;
+				
+				// Slightly less bad if we have melee support
+				if (iAdjacentFriendlyMelee >= 2)
+					iPlotScore += 5;
+			}
+			else if (iEnemyDist == 2)
+			{
+				// Perfect firing position - one tile behind the front
+				iPlotScore += 10;
+				
+				// Even better if we have melee screen between us and enemies
+				if (iAdjacentFriendlyMelee >= 1)
+					iPlotScore += 4;
+			}
+			else if (iEnemyDist == 3 && iUnitRange == 2)
+			{
+				// One tile too far back - can still fire but should close up
+				iPlotScore += 2;
+			}
+			
+			// 2. DEFENSIVE TERRAIN: Slow ranged benefit greatly from terrain bonuses
+			// They can't run, so they need to survive being attacked
+			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
+			if (iTerrainDefMod > 0)
+			{
+				// Strong bonus for defensive terrain
+				iPlotScore += iTerrainDefMod / 4; // Up to +6 for 25% terrain
+				
+				// Extra valuable when enemies are close
+				if (iEnemyDist <= 2)
+					iPlotScore += iTerrainDefMod / 8;
+			}
+			
+			// 3. AVOID OPEN GROUND: Unlike cavalry, slow ranged are vulnerable in the open
+			if (pTestPlot->isOpenGround() && iEnemyDist <= 3)
+			{
+				// Open terrain is dangerous for units that can't retreat
+				iPlotScore -= 3;
+			}
+			
+			// 4. STAY NEAR FRIENDLIES: Slow ranged need protection
+			int iAdjacentFriendlies = testPlot.getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
+			if (iAdjacentFriendlies >= 2)
+			{
+				iPlotScore += 4; // Good mutual support
+			}
+			else if (iAdjacentFriendlies == 0 && iEnemyDist <= 2)
+			{
+				iPlotScore -= 6; // Isolated and vulnerable
+			}
+			
+			// 5. FORTIFICATION VALUE: Slow ranged benefit from fortifying
+			// Unlike fast units, they should dig in when not attacking
+			if (pUnit->canFortify(pTestPlot) && iEnemyDist >= 2)
+			{
+				iPlotScore += 2; // Position where we can fortify safely
+			}
+		}
+	}
+
+	// === MEDIC UNIT POSITIONING ===
+	// Units with AdjacentTileHeal (medic promotion) should position to maximize healing support
+	// This is critical for pre-gunpowder armies where ranged units often have medic
+	if (pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		int iMedicHeal = pUnit->getAdjacentTileHeal();
+		
+		// Only apply if this unit has medic ability (heals adjacent friendlies)
+		if (iMedicHeal > 0)
+		{
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			
+			// Count wounded friendly units nearby that would benefit from our medic aura
+			int iWoundedFriendliesNearby = 0;
+			int iTotalHealingNeeded = 0;
+			
+			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++) // Adjacent tiles only (medic range)
+			{
+				CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
+				if (pAdj)
+				{
+					CvUnit* pFriendly = pAdj->getBestDefender(pUnit->getOwner());
+					if (pFriendly && pFriendly != pUnit && pFriendly->IsCombatUnit())
+					{
+						int iDamage = pFriendly->getDamage();
+						if (iDamage > 0)
+						{
+							iWoundedFriendliesNearby++;
+							iTotalHealingNeeded += iDamage;
+						}
+					}
+				}
+			}
+			
+			// Bonus for positioning to heal wounded friendlies
+			if (iWoundedFriendliesNearby > 0)
+			{
+				// Base bonus per wounded unit we can heal
+				int iMedicBonus = iWoundedFriendliesNearby * 4;
+				
+				// Scale with how much healing is needed (up to cap)
+				iMedicBonus += min(iTotalHealingNeeded / 20, 8);
+				
+				// Cap bonus
+				iPlotScore += min(iMedicBonus, 20);
+			}
+			
+			// Medics should stay safe to keep providing healing
+			// Mild penalty for being on the front line
+			if (iEnemyDist == 1)
+			{
+				iPlotScore -= 4; // Medic shouldn't be in direct combat
+			}
+			else if (iEnemyDist == 2 && iWoundedFriendliesNearby > 0)
+			{
+				// Good medic position - close enough to heal, not on front line
+				iPlotScore += 3;
+			}
+		}
 	}
 
 	// === HELICOPTER GUNSHIP POSITIONING ===
@@ -11338,6 +11489,161 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 			if (iHealthPercent > 50)
 			{
 				iPlotScore -= 8; // Helicopters should stay mobile
+			}
+		}
+	}
+
+	// === SUPPRESSION/SUPPORT UNIT POSITIONING (Bazookas, Machine Guns, etc.) ===
+	// Units with negative NearbyEnemyCombatMod debuff enemies within range.
+	// These "suppression" units should position to maximize their aura coverage.
+	// Bazookas (COVERING_FIRE_2) have -15% debuff on enemies within 2 tiles.
+	// Machine Guns with similar promotions provide area denial.
+	// These units should:
+	// - Position where the aura covers maximum enemies
+	// - Stay near friendly melee to support attacks (debuffed enemies easier to kill)
+	// - Position at moderate range (need protection from melee but want to be effective)
+	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		int iSuppressionMod = pUnit->getNearbyEnemyCombatMod(); // Negative = debuff enemies
+		
+		// Only apply to units with suppression auras (negative modifier)
+		if (iSuppressionMod < 0)
+		{
+			int iSuppressionRange = pUnit->getNearbyEnemyCombatRange(); // Usually 2 tiles
+			if (iSuppressionRange <= 0)
+				iSuppressionRange = 2; // Default assumption
+			
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			
+			// 1. AURA COVERAGE: Count enemies that would be debuffed from this position
+			int iEnemiesInAura = 0;
+			int iHighValueInAura = 0; // Melee units are more affected by combat debuffs
+			
+			for (int iRing = 1; iRing <= iSuppressionRange; iRing++)
+			{
+				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+					if (pLoopPlot)
+					{
+						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+						if (pEnemy && pEnemy->IsCombatUnit())
+						{
+							iEnemiesInAura++;
+							
+							// Melee units are high-value targets for suppression
+							// Combat debuffs affect their attack/defense directly
+							if (!pEnemy->IsCanAttackRanged())
+							{
+								iHighValueInAura++;
+								
+								// Modern armor (tanks) are even more valuable to suppress
+								if (pEnemy->GetBaseCombatStrength() >= 60)
+									iHighValueInAura++;
+							}
+						}
+					}
+				}
+			}
+			
+			// Bonus for covering multiple enemies with suppression aura
+			if (iEnemiesInAura > 0)
+			{
+				// Base bonus per enemy in aura
+				int iAuraBonus = iEnemiesInAura * 4;
+				
+				// Extra bonus for suppressing melee/tanks (more affected by combat mod)
+				iAuraBonus += iHighValueInAura * 3;
+				
+				// Cap the bonus to prevent runaway values
+				iPlotScore += min(iAuraBonus, 25);
+			}
+			
+			// 2. SUPPORT POSITIONING: Stay near friendly melee to support their attacks
+			// Enemies debuffed by our aura are easier for friendlies to kill
+			int iFriendlyMeleeNearby = 0;
+			for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+				if (pLoopPlot)
+				{
+					CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+					if (pFriendly && !pFriendly->IsCanAttackRanged() && pFriendly->IsCombatUnit())
+					{
+						iFriendlyMeleeNearby++;
+					}
+				}
+			}
+			
+			// Bonus for being near friendlies who benefit from our suppression
+			if (iFriendlyMeleeNearby > 0 && iEnemiesInAura > 0)
+			{
+				iPlotScore += min(iFriendlyMeleeNearby * 3, 9); // +3 per friendly, max +9
+			}
+			
+			// 3. SAFE DISTANCE: Suppression units shouldn't be on front line
+			// They're typically fragile and need protection
+			if (iEnemyDist == 1)
+			{
+				// Adjacent to enemies - too exposed for support unit
+				int iAdjacentEnemies = testPlot.getNumAdjacentEnemies(eRelevantDomain);
+				if (iAdjacentEnemies > 0)
+				{
+					iPlotScore -= 8 + (iAdjacentEnemies * 2);
+				}
+			}
+			else if (iEnemyDist == 2)
+			{
+				// Ideal range for suppression aura (if range is 2)
+				if (iSuppressionRange >= 2)
+				{
+					iPlotScore += 6; // Good position - in aura range but not adjacent
+				}
+			}
+			
+			// 4. DEFENSIVE TERRAIN: Suppression units benefit from cover
+			// They need to survive to maintain their aura
+			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
+			if (iTerrainDefMod > 0)
+			{
+				iPlotScore += iTerrainDefMod / 10; // Small bonus for defensive terrain
+			}
+			
+			// 5. COMBINED ARMS WITH ANTI-TANK: If this unit also has anti-armor bonus,
+			// it should position where it can both suppress AND engage armor
+			UnitCombatTypes eArmorCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_ARMOR");
+			if (eArmorCombat != NO_UNITCOMBAT)
+			{
+				int iAntiArmorBonus = pUnit->unitCombatModifier(eArmorCombat);
+				if (iAntiArmorBonus >= 25)
+				{
+					// This unit has significant anti-armor bonus (like Bazooka with +50%)
+					// Check for armor targets in firing range
+					int iUnitRange = pUnit->GetRange();
+					int iArmorInRange = 0;
+					
+					for (int iRing = 1; iRing <= iUnitRange; iRing++)
+					{
+						for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+						{
+							CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+							if (pLoopPlot)
+							{
+								CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+								if (pEnemy && pEnemy->getUnitCombatType() == eArmorCombat)
+								{
+									iArmorInRange++;
+								}
+							}
+						}
+					}
+					
+					// Strong bonus for positions with armor targets in range
+					if (iArmorInRange > 0)
+					{
+						iPlotScore += 10 + (iArmorInRange * 5); // +15 for one tank, +20 for two
+					}
+				}
 			}
 		}
 	}
@@ -11932,6 +12238,78 @@ STacticalAssignment ScorePlotForRangedAttack(const SUnitStats& unit, const CvTac
 					// Settlers are extremely valuable
 					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
 						newAssignment.iBonusScore += 20;
+				}
+			}
+		}
+	}
+
+	// === ANTI-ARMOR TARGET PRIORITIZATION (Bazookas, AT Guns, etc.) ===
+	// Units with significant combat modifiers against specific unit types should prioritize those targets.
+	// Bazookas have PROMOTION_ANTI_TANK (+50% vs UNITCOMBAT_ARMOR).
+	// AT Guns and similar units have bonuses against tanks/armored vehicles.
+	// These units should hunt armor whenever possible - it's their primary role.
+	if (!enemyPlot.isEnemyCity() && unit.pUnit->getDomainType() == DOMAIN_LAND && 
+		unit.pUnit->IsCanAttackRanged() && !unit.pUnit->IsHoveringUnit()) // Non-helicopter ranged
+	{
+		CvUnit* pEnemyUnit = enemyPlot.getEnemyUnit();
+		if (pEnemyUnit && pEnemyUnit->IsCombatUnit())
+		{
+			UnitCombatTypes eEnemyCombatType = pEnemyUnit->getUnitCombatType();
+			
+			if (eEnemyCombatType != NO_UNITCOMBAT)
+			{
+				// Check for anti-type bonus (e.g., Bazooka's +50% vs Armor)
+				int iAntiTypeBonus = unit.pUnit->unitCombatModifier(eEnemyCombatType);
+				
+				// Only apply if we have a significant bonus (25%+)
+				if (iAntiTypeBonus >= 25)
+				{
+					// This is our primary target type - prioritize it!
+					newAssignment.iBonusScore += 25;
+					
+					// Scale bonus with our advantage magnitude
+					newAssignment.iBonusScore += iAntiTypeBonus / 5; // +10 at 50%, +20 at 100%
+					
+					// Extra bonus for kills - removing the threat we're designed to counter
+					if (bIsKill)
+						newAssignment.iBonusScore += 20;
+					
+					// Modern tanks are high-value targets (more threatening)
+					if (pEnemyUnit->GetBaseCombatStrength() >= 60)
+						newAssignment.iBonusScore += 10;
+					
+					// Slightly less valuable if enemy is heavily wounded (will die anyway)
+					int iEnemyHPPercent = (pEnemyUnit->GetCurrHitPoints() * 100) / pEnemyUnit->GetMaxHitPoints();
+					if (iEnemyHPPercent <= 25 && !bIsKill)
+					{
+						// Nearly dead - save our anti-armor for healthy targets if possible
+						newAssignment.iBonusScore -= 10;
+					}
+				}
+			}
+			
+			// PENALTY: Anti-armor units are less effective against non-armor targets
+			// Bazookas have -25% vs fortified units and cities (from COVERING_FIRE promotion)
+			// Check if we have a PENALTY against this target type
+			if (eEnemyCombatType != NO_UNITCOMBAT)
+			{
+				int iPenaltyMod = unit.pUnit->unitCombatModifier(eEnemyCombatType);
+				if (iPenaltyMod < 0)
+				{
+					// We have a combat penalty against this type
+					// Discourage attacking (save ammo for better targets)
+					newAssignment.iBonusScore += iPenaltyMod / 2; // e.g., -12 for -25% penalty
+				}
+			}
+			
+			// Also check fortification penalty (Bazookas are bad vs fortified)
+			if (pEnemyUnit->IsFortified())
+			{
+				int iFortifiedPenalty = unit.pUnit->attackFortifiedModifier();
+				if (iFortifiedPenalty < 0)
+				{
+					// Penalty for attacking fortified enemies
+					newAssignment.iBonusScore += iFortifiedPenalty / 3; // e.g., -8 for -25% penalty
 				}
 			}
 		}
