@@ -564,6 +564,25 @@ void CvTacticalAI::FindTacticalTargets()
 					newTarget.SetAuxIntData(80);
 					m_AllTargets.push_back(newTarget);
 				}
+				
+				// Or forts/defensive improvements with high defense modifier (for pillaging!)
+				// This catches forts and similar defensive structures that don't deal damage
+				ImprovementTypes eRevealedImprovement = pLoopPlot->getRevealedImprovementType(m_pPlayer->getTeam());
+				if (atWar(m_pPlayer->getTeam(), pLoopPlot->getTeam()) &&
+					eRevealedImprovement != NO_IMPROVEMENT &&
+					!pLoopPlot->IsImprovementPillaged())
+				{
+					CvImprovementEntry* pkImprovementInfo = GC.getImprovementInfo(eRevealedImprovement);
+					// High-defense improvements (forts, etc.) that aren't already tagged as citadels
+					if (pkImprovementInfo && pkImprovementInfo->GetDefenseModifier() >= 25 &&
+						pkImprovementInfo->GetNearbyEnemyDamage() <= GD_INT_GET(ENEMY_HEAL_RATE))
+					{
+						newTarget.SetTargetType(AI_TACTICAL_TARGET_ENEMY_CITADEL);
+						// Priority based on defense strength - higher defense = higher priority to pillage
+						newTarget.SetAuxIntData(40 + pkImprovementInfo->GetDefenseModifier() / 2);
+						m_AllTargets.push_back(newTarget);
+					}
+				}
 
 				// ... enemy improvement?
 				if (atWar(m_pPlayer->getTeam(), pLoopPlot->getTeam()) &&
@@ -13470,6 +13489,39 @@ static STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, con
 			result->AddScore(0, iNavalBonus, 0);
 	}
 
+	// === ENEMY COMBAT BONUS IMPROVEMENT AWARENESS (Shoshone Encampment, Fort, Citadel, etc.) ===
+	if (!enemyPlot->isEnemyCity())
+	{
+		CvUnit* pEnemyUnit = enemyPlot->getEnemyUnit();
+		if (pEnemyUnit && pEnemyUnit->IsCombatUnit())
+		{
+			const CvPlot* pTargetPlot = enemyPlot->getPlot();
+			int iDefBonusPenalty = 0;
+
+			int iEnemyImprovementBonus = pEnemyUnit->GetNearbyImprovementModifier(pTargetPlot);
+			if (iEnemyImprovementBonus > 0)
+				iDefBonusPenalty -= iEnemyImprovementBonus / 2;
+
+			if (pTargetPlot)
+			{
+				ImprovementTypes eImprovement = pTargetPlot->getImprovementType();
+				if (eImprovement != NO_IMPROVEMENT)
+				{
+					CvImprovementEntry* pkImprovement = GC.getImprovementInfo(eImprovement);
+					if (pkImprovement)
+					{
+						int iFortDefense = pkImprovement->GetDefenseModifier();
+						if (iFortDefense >= 25)
+							iDefBonusPenalty -= iFortDefense / 5;
+					}
+				}
+			}
+
+			if (iDefBonusPenalty != 0)
+				result->AddScore(0, iDefBonusPenalty, 0);
+		}
+	}
+
 	return result;
 }
 
@@ -14117,6 +14169,21 @@ static STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, cons
 					{
 						result.iBonusScore -= pEnemyUnit->fortifyModifier() / 5; // -2 to -5
 					}
+				}
+				
+				// === ENEMY COMBAT BONUS IMPROVEMENT AWARENESS (Shoshone Encampment, etc.) ===
+				// Check if the enemy gets a combat bonus from nearby improvements (like Shoshone encampments)
+				// This makes the enemy significantly tougher to attack - prefer other targets
+				int iEnemyImprovementBonus = pEnemyUnit->GetNearbyImprovementModifier(pEnemyPlot);
+				if (iEnemyImprovementBonus > 0 && !bIsKill)
+				{
+					// Enemy has defensive bonus from nearby improvement (+20% for Shoshone)
+					// Penalize attacking them - prefer targets without this bonus
+					result.iBonusScore -= iEnemyImprovementBonus / 2; // -10 for 20% bonus
+					
+					// Extra penalty if we're cavalry - we're fast, we can find better targets
+					if (bIsCavalry)
+						result.iBonusScore -= iEnemyImprovementBonus / 4; // additional -5
 				}
 			}
 			
