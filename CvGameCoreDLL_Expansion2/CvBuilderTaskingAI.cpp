@@ -4216,6 +4216,14 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 	{
 		int iBonusRange = pTraits->GetNearbyImprovementBonusRange();
 		int iCombatBonusValue = pTraits->GetNearbyImprovementCombatBonus();
+		
+		// Track strategic value of covered tiles
+		int iTilesWithStrategicValue = 0;
+		int iChokepointsCovered = 0;
+		int iCitiesCovered = 0;
+		bool bNearBorder = false;
+		bool bNearThreatenedCity = false;
+		
 		for (int iI = 0; iI < RING_PLOTS[iBonusRange]; iI++)
 		{
 			CvPlot* pCoveredPlot = iterateRingPlots(pPlot, iI);
@@ -4241,8 +4249,71 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 
 			// If we are giving 20 bonus combat damage to 18 tiles (maximum in two rings), this gives 720 value
 			if (!bTileAlreadyCovered)
+			{
 				iSecondaryScore += iCombatBonusValue * 2;
+				
+				// Strategic value: check if this covered tile is strategically important
+				// 1. Chokepoints - great for blocking enemy advances
+				if (pCoveredPlot->IsChokePoint())
+				{
+					iChokepointsCovered++;
+					iTilesWithStrategicValue++;
+				}
+				
+				// 2. Near a city - bonus helps garrison and city defenders
+				if (pCoveredPlot->isCity())
+				{
+					CvCity* pCity = pCoveredPlot->getPlotCity();
+					if (pCity && pCity->getOwner() == m_pPlayer->GetID())
+					{
+						iCitiesCovered++;
+						iTilesWithStrategicValue++;
+						
+						// Extra value if city is threatened
+						if (pCity->isInDangerOfFalling() || pCity->isUnderSiege())
+							bNearThreatenedCity = true;
+					}
+				}
+				
+				// 3. High defense terrain tiles are good defensive positions
+				int iDefenseMod = pCoveredPlot->defenseModifier(m_pPlayer->getTeam(), false, false);
+				if (iDefenseMod >= 25)
+					iTilesWithStrategicValue++;
+			}
 		}
+		
+		// Check if encampment would be near border (defensive value)
+		for (int iI = 0; iI < RING_PLOTS[3]; iI++)
+		{
+			CvPlot* pNearbyPlot = iterateRingPlots(pPlot, iI);
+			if (pNearbyPlot && pNearbyPlot->getOwner() != m_pPlayer->GetID() && pNearbyPlot->getOwner() != NO_PLAYER)
+			{
+				// Potential enemy territory nearby
+				if (GET_TEAM(m_pPlayer->getTeam()).isAtWar(pNearbyPlot->getTeam()))
+				{
+					bNearBorder = true;
+					break;
+				}
+			}
+		}
+		
+		// Strategic placement bonuses
+		// Encampments near chokepoints are extremely valuable for defense
+		iSecondaryScore += iChokepointsCovered * iCombatBonusValue * 3;
+		
+		// Cities covered by the combat bonus help with defense significantly
+		iSecondaryScore += iCitiesCovered * iCombatBonusValue * 2;
+		
+		// High defense terrain in range makes encampment more valuable
+		iSecondaryScore += iTilesWithStrategicValue * iCombatBonusValue;
+		
+		// Near border during wartime? Extra priority
+		if (bNearBorder)
+			iSecondaryScore += iCombatBonusValue * 5;
+		
+		// Threatened city needs encampment protection urgently
+		if (bNearThreatenedCity)
+			iSecondaryScore += iCombatBonusValue * 10;
 	}
 
 	// Do we want a canal here?

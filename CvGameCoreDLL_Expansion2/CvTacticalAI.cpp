@@ -10518,6 +10518,27 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 		iPlotScore = iPlotScoreForTargetDistanceEscort[eMoveStrategy][iTargetDistance];
 	}
 
+	// === COMBAT BONUS IMPROVEMENT AWARENESS (Shoshone Encampment, etc.) ===
+	// Units should generally prefer positions within range of their combat bonus improvement
+	// This applies to both offensive and defensive situations as it's a direct combat modifier
+	// The Shoshone encampment gives +20% combat to units within 2 tiles - a significant bonus
+	if (pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
+	{
+		int iNearbyImprovementBonus = pUnit->GetNearbyImprovementModifier(pTestPlot);
+		if (iNearbyImprovementBonus > 0)
+		{
+			// Base bonus for being within range of combat bonus improvement
+			// This is a significant combat modifier that the AI should actively use
+			iPlotScore += iNearbyImprovementBonus / 3; // +6-7 for typical 20% bonus
+			
+			// Additional bonus when enemies are nearby (we'll actually use this bonus in combat)
+			if (assumedPosition.haveEnemies() && testPlot.getEnemyDistance(eRelevantDomain) <= 3)
+			{
+				iPlotScore += iNearbyImprovementBonus / 5; // additional +4 when in active combat
+			}
+		}
+	}
+
 	if (testPlot.isEnemyCivilian()) //unescorted civilian
 	{
 		if (iAssumedMovesLeft > 0 || testPlot.getNumAdjacentEnemies(CvTacticalPlot::TD_LAND) == 0)
@@ -10716,6 +10737,21 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 					iPlotScore -= iWithdrawPenalty;
 				}
 			}
+		}
+		
+		// 6. Combat bonus improvement awareness (Shoshone Encampment, etc.)
+		// Units should prefer positions within range of their combat bonus improvement
+		// This is a significant combat modifier that the AI should actively use
+		int iNearbyImprovementBonus = pUnit->GetNearbyImprovementModifier(pTestPlot);
+		if (iNearbyImprovementBonus > 0)
+		{
+			// Strong bonus for positioning within range of combat bonus improvement
+			// The Shoshone encampment gives +20% combat which is significant
+			iPlotScore += iNearbyImprovementBonus / 2; // +10 for 20% bonus
+			
+			// Extra bonus when enemies are nearby (we'll actually use this bonus)
+			if (testPlot.getEnemyDistance(eRelevantDomain) <= 2)
+				iPlotScore += iNearbyImprovementBonus / 4; // additional +5 for active combat
 		}
 		
 		// === COUNTER-ENEMY TERRAIN BONUSES ===
