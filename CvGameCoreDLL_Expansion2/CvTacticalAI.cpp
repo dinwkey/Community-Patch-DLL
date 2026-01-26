@@ -4264,6 +4264,103 @@ void CvTacticalAI::UpdateTargetScores()
 					}
 				}
 			}
+			
+			// === AIR SOFTENING COORDINATION FOR GROUND ATTACKS ===
+			// Ground forces should prefer attacking targets that air units can soften first
+			// This creates efficient combined arms: air weakens, ground finishes
+			if (bHaveAirUnits && pTargetUnit)
+			{
+				int iAirSofteningBonus = 0;
+				int iEstimatedAirDamage = 0;
+				int iAirUnitsCanStrike = 0;
+				
+				// Count air units that can strike this target and estimate damage
+				for (list<int>::iterator airIt = m_CurrentTurnUnits.begin(); airIt != m_CurrentTurnUnits.end(); ++airIt)
+				{
+					CvUnit* pAirUnit = m_pPlayer->getUnit(*airIt);
+					if (!pAirUnit || pAirUnit->getDomainType() != DOMAIN_AIR || !pAirUnit->IsCanAttackRanged())
+						continue;
+					
+					if (pAirUnit->canRangeStrikeAt(pPlot->getX(), pPlot->getY()))
+					{
+						iAirUnitsCanStrike++;
+						
+						// Estimate air damage (rough calculation)
+						int iUnusedRef = 0;
+						int iDamage = pAirUnit->GetAirCombatDamage(pTargetUnit, NULL, 0, iUnusedRef, false);
+						iEstimatedAirDamage += iDamage;
+					}
+				}
+				
+				if (iAirUnitsCanStrike > 0)
+				{
+					int iTargetHP = pTargetUnit->GetCurrHitPoints();
+					int iTargetMaxHP = pTargetUnit->GetMaxHitPoints();
+					
+					// Case 1: Air can kill outright - high priority (let air handle it, ground moves on)
+					if (iEstimatedAirDamage >= iTargetHP)
+					{
+						iAirSofteningBonus += 15; // Good target for air strike
+					}
+					// Case 2: Air can seriously weaken (>50% damage) - excellent for ground follow-up
+					else if (iEstimatedAirDamage >= iTargetHP / 2)
+					{
+						iAirSofteningBonus += 20; // Ideal combined arms target
+					}
+					// Case 3: Air can contribute significant damage (25-50%)
+					else if (iEstimatedAirDamage >= iTargetHP / 4)
+					{
+						iAirSofteningBonus += 10; // Worthwhile softening
+					}
+					
+					// Bonus for multiple air units - more reliable softening
+					if (iAirUnitsCanStrike >= 3)
+						iAirSofteningBonus += 8;
+					else if (iAirUnitsCanStrike >= 2)
+						iAirSofteningBonus += 4;
+					
+					// Target is already wounded - coordinate to finish it off
+					int iHPPercent = (iTargetHP * 100) / iTargetMaxHP;
+					if (iHPPercent <= 50)
+					{
+						// Wounded unit that air can further weaken - excellent target
+						iAirSofteningBonus += 12;
+						
+						// Even better if air can finish it
+						if (iEstimatedAirDamage >= iTargetHP)
+							iAirSofteningBonus += 8;
+					}
+					else if (iHPPercent <= 75)
+					{
+						// Moderately damaged - air softening is valuable
+						iAirSofteningBonus += 6;
+					}
+					
+					// High-value targets worth softening
+					UnitAITypes eTargetAI = pTargetUnit->AI_getUnitAIType();
+					if (eTargetAI == UNITAI_CITY_BOMBARD || eTargetAI == UNITAI_RANGED)
+					{
+						// Siege and ranged are dangerous - softening reduces threat
+						iAirSofteningBonus += 8;
+					}
+					else if (pTargetUnit->GetBaseCombatStrength() >= 40)
+					{
+						// Strong units benefit most from softening
+						iAirSofteningBonus += 5;
+					}
+					
+					it->SetAuxIntData(it->GetAuxIntData() + iAirSofteningBonus);
+					
+					if (GC.getLogging() && GC.getAILogging() && iAirSofteningBonus >= 15)
+					{
+						CvString strLogString;
+						strLogString.Format("Air softening target: %s at (%d,%d), HP %d/%d, air damage ~%d, air units %d, priority +%d",
+							pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(),
+							iTargetHP, iTargetMaxHP, iEstimatedAirDamage, iAirUnitsCanStrike, iAirSofteningBonus);
+						LogTacticalMessage(strLogString);
+					}
+				}
+			}
 		}
 	}
 }
@@ -5133,6 +5230,73 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 				{
 					// Enemy siege is devastating - prioritize killing it before it fires
 					iValue += 25;
+				}
+				
+				// === DIRECT GROUND ENGAGEMENT BONUS ===
+				// Strongly prioritize targets that have friendly ground units actively engaging
+				// This ensures air softens enemies our troops are fighting RIGHT NOW
+				if (!pCity)
+				{
+					int iFriendlyMeleeAdjacent = pTestPlot->GetNumFriendlyUnitsAdjacent(m_pPlayer->getTeam(), DOMAIN_LAND, false, NULL);
+					
+					if (iFriendlyMeleeAdjacent > 0)
+					{
+						// Our melee units are adjacent - they're attacking this turn!
+						iValue += 30; // Strong bonus for coordinated strike
+						
+						// More units engaging = higher priority for air support
+						if (iFriendlyMeleeAdjacent >= 2)
+							iValue += 15;
+						
+						// If our units can't kill it alone, air is critical
+						if (iDefenderHP > iTotalGroundDamage)
+							iValue += 20;
+						
+						// Bonus for helping wounded friendlies - they need fire support
+						for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+						{
+							CvPlot* pAdj = plotDirection(pTestPlot->getX(), pTestPlot->getY(), (DirectionTypes)iDir);
+							if (pAdj)
+							{
+								CvUnit* pFriendly = pAdj->getBestDefender(m_pPlayer->GetID());
+								if (pFriendly && pFriendly->getDomainType() == DOMAIN_LAND && pFriendly->IsCombatUnit())
+								{
+									int iFriendlyHP = (pFriendly->GetCurrHitPoints() * 100) / pFriendly->GetMaxHitPoints();
+									if (iFriendlyHP <= 50)
+									{
+										// Wounded friendly engaging - urgent air support needed
+										iValue += 15;
+										break;
+									}
+								}
+							}
+						}
+					}
+					
+					// Also check for friendly ranged units in range - they benefit from softening too
+					int iFriendlyRangedInRange = 0;
+					for (int iRing = 1; iRing <= 2; iRing++)
+					{
+						for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+						{
+							CvPlot* pRingPlot = iterateRingPlots(pTestPlot, i);
+							if (pRingPlot)
+							{
+								CvUnit* pFriendly = pRingPlot->getBestDefender(m_pPlayer->GetID());
+								if (pFriendly && pFriendly->IsCanAttackRanged() && pFriendly->getDomainType() != DOMAIN_AIR)
+								{
+									if (pFriendly->canRangeStrikeAt(pTestPlot->getX(), pTestPlot->getY()))
+										iFriendlyRangedInRange++;
+								}
+							}
+						}
+					}
+					
+					if (iFriendlyRangedInRange >= 2)
+					{
+						// Multiple ranged units targeting this - air softening helps them all
+						iValue += 10;
+					}
 				}
 
 				if (iValue > iBestValue)
