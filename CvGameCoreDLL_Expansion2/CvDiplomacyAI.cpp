@@ -20960,6 +20960,19 @@ void CvDiplomacyAI::SelectBestApproachTowardsMajorCiv(PlayerTypes ePlayer, bool 
 	int iCompetitorThreshold = /*30*/ max(GD_INT_GET(OPINION_THRESHOLD_COMPETITOR), 1);
 	int iFavorableThreshold = /*-30*/ min(GD_INT_GET(OPINION_THRESHOLD_FAVORABLE), -1);
 
+	// Hysteresis: Add buffer to prevent oscillation when opinion fluctuates near thresholds.
+	// If we were previously using negative approach modifiers, require a more negative opinion to switch to favorable modifiers.
+	// If we were previously friendly, require a more positive (worse) opinion to switch to competitor modifiers.
+	const int iHysteresisBuffer = 5;
+	if (eOldApproach < CIV_APPROACH_NEUTRAL) // Was negative (WAR, HOSTILE, DECEPTIVE, GUARDED, AFRAID)
+	{
+		iFavorableThreshold -= iHysteresisBuffer; // Require -35 instead of -30 to use favorable modifiers
+	}
+	else if (eOldApproach > CIV_APPROACH_NEUTRAL) // Was positive (FRIENDLY)
+	{
+		iCompetitorThreshold += iHysteresisBuffer; // Require 35 instead of 30 to use competitor modifiers
+	}
+
 	if (iOpinionWeight > iCompetitorThreshold)
 	{
 		// Let's also see how much we don't like this guy compared to others that we hate.
