@@ -11080,6 +11080,199 @@ STacticalAssignment ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvT
 			}
 		}
 		
+		// === SPOTTER/OBSERVER FOR INDIRECT FIRE UNITS (Artillery, Battleships, etc.) ===
+		// Fast and recon units should position to provide sight for indirect fire units
+		// Indirect fire units (IsRangeAttackIgnoreLOS) can attack over obstacles if they have sight
+		// This gives valuable tactical advantage - artillery can fire over mountains, forests, etc.
+		// 
+		// Key units that benefit: Artillery, Rocket Artillery, Battleship, Missile Cruiser
+		// Good spotters: Scouts, Cavalry, Helicopters, Destroyers, Fighters doing recon
+		if (assumedPosition.haveEnemies())
+		{
+			int iUnitRange = pUnit->GetRange();
+			int iUnitSight = pUnit->visibilityRange();
+			int iEnemyDist = testPlot.getEnemyDistance(eRelevantDomain);
+			
+			// Check if this unit could be a good spotter (fast or recon type)
+			bool bIsGoodSpotter = false;
+			bool bIsIndirectFireUnit = pUnit->IsRangeAttackIgnoreLOS();
+			
+			// Good spotters: fast units, recon, aircraft doing sweeps
+			if (!bIsIndirectFireUnit)
+			{
+				switch (pUnit->AI_getUnitAIType())
+				{
+				case UNITAI_EXPLORE:
+				case UNITAI_FAST_ATTACK:
+				case UNITAI_SKIRMISHER:
+				case UNITAI_ATTACK_SEA:
+				case UNITAI_SUBMARINE: // Subs can spot for surface ships
+					bIsGoodSpotter = true;
+					break;
+				default:
+					// Fast units with good sight are also decent spotters
+					if (pUnit->baseMoves(false) >= 4 || iUnitSight >= 3)
+						bIsGoodSpotter = true;
+					break;
+				}
+			}
+			
+			if (bIsGoodSpotter)
+			{
+				// Count friendly indirect fire units that could benefit from our spotting
+				int iFriendlyIndirectFireUnits = 0;
+				int iFriendlyIndirectFireRange = 0;
+				CvPlot* pBestIndirectFirePlot = NULL;
+				
+				// Search for friendly indirect fire units within reasonable range
+				for (int iRing = 1; iRing <= 5; iRing++)
+				{
+					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (!pLoopPlot)
+							continue;
+						
+						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+						if (pFriendly && pFriendly->IsCanAttackRanged() && pFriendly->IsRangeAttackIgnoreLOS())
+						{
+							iFriendlyIndirectFireUnits++;
+							if (pFriendly->GetRange() > iFriendlyIndirectFireRange)
+							{
+								iFriendlyIndirectFireRange = pFriendly->GetRange();
+								pBestIndirectFirePlot = pLoopPlot;
+							}
+						}
+					}
+				}
+				
+				// If we have indirect fire allies, prioritize positions that provide sight to enemies
+				if (iFriendlyIndirectFireUnits > 0)
+				{
+					// Count enemies we can see from this position that indirect fire could target
+					int iEnemiesWeCanSpot = 0;
+					int iEnemiesBehindObstacles = 0;
+					
+					// Check enemies within our sight range
+					for (int iRing = 1; iRing <= min(iUnitSight, 3); iRing++)
+					{
+						for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+						{
+							CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+							if (!pLoopPlot)
+								continue;
+							
+							// Can we see this plot from our test position?
+							if (!pTestPlot->canSeePlot(pLoopPlot, pUnit->getTeam(), iUnitSight, NO_DIRECTION))
+								continue;
+							
+							CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
+							if (pEnemy && pEnemy->IsCombatUnit())
+							{
+								iEnemiesWeCanSpot++;
+								
+								// Check if this enemy is behind an obstacle from the indirect fire unit
+								// (i.e., would the indirect fire unit need spotting to hit this target?)
+								if (pBestIndirectFirePlot)
+								{
+									int iDistFromArtillery = plotDistance(*pBestIndirectFirePlot, *pLoopPlot);
+									if (iDistFromArtillery <= iFriendlyIndirectFireRange)
+									{
+										// Enemy is in range of our artillery
+										// Check if there's an obstacle between artillery and target
+										if (!pBestIndirectFirePlot->canSeePlot(pLoopPlot, pUnit->getTeam(), iFriendlyIndirectFireRange, NO_DIRECTION))
+										{
+											// Artillery CANNOT see this target - we would be providing critical spotting!
+											iEnemiesBehindObstacles++;
+										}
+									}
+								}
+							}
+						}
+					}
+					
+					// Bonus for spotting enemies that artillery can hit
+					if (iEnemiesWeCanSpot > 0)
+					{
+						iPlotScore += iEnemiesWeCanSpot * 2;
+						
+						// BIG bonus for spotting enemies that are behind obstacles!
+						// This is the key value of spotters - enabling indirect fire over mountains/forests
+						if (iEnemiesBehindObstacles > 0)
+						{
+							iPlotScore += iEnemiesBehindObstacles * 8; // Major bonus
+							iPlotScore += iFriendlyIndirectFireUnits * 3; // More bonus per indirect fire unit
+						}
+					}
+					
+					// Spotters should stay safe enough to maintain sight
+					// Mild penalty for getting too close to enemies (might die)
+					if (iEnemyDist == 1 && testPlot.getNumAdjacentEnemies(eRelevantDomain) >= 2)
+					{
+						iPlotScore -= 4; // Don't get surrounded while spotting
+					}
+				}
+			}
+			
+			// === INDIRECT FIRE UNIT POSITIONING ===
+			// Artillery and battleships should consider spotter availability
+			if (bIsIndirectFireUnit)
+			{
+				// Check for friendly spotters that can extend our effective range
+				int iFriendlySpotters = 0;
+				int iBestSpotterSight = 0;
+				
+				for (int iRing = 1; iRing <= min(iUnitRange + 2, 5); iRing++)
+				{
+					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+					{
+						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
+						if (!pLoopPlot)
+							continue;
+						
+						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
+						if (pFriendly && pFriendly != pUnit && !pFriendly->IsRangeAttackIgnoreLOS())
+						{
+							// Check if this unit could spot for us
+							int iFriendlySight = pFriendly->visibilityRange();
+							if (iFriendlySight >= 2)
+							{
+								iFriendlySpotters++;
+								if (iFriendlySight > iBestSpotterSight)
+									iBestSpotterSight = iFriendlySight;
+							}
+						}
+					}
+				}
+				
+				// Bonus for having spotters nearby
+				if (iFriendlySpotters > 0)
+				{
+					iPlotScore += 3; // Base bonus for having spotter support
+					iPlotScore += min(iFriendlySpotters, 3) * 2; // +2 per spotter, max +6
+					
+					// Extra bonus if spotters can see further than we can
+					if (iBestSpotterSight > iUnitSight)
+					{
+						iPlotScore += 4; // Good coordination - spotters extend our reach
+					}
+				}
+				
+				// Artillery with indirect fire can position behind obstacles
+				// Check if this plot is protected by terrain from enemy sight
+				if (pTestPlot->isHills() || pTestPlot->isMountain() || 
+					pTestPlot->getFeatureType() == FEATURE_FOREST || 
+					pTestPlot->getFeatureType() == FEATURE_JUNGLE)
+				{
+					// Protected position for indirect fire
+					if (iEnemyDist <= iUnitRange && iEnemyDist >= 2)
+					{
+						iPlotScore += 5; // Good defilade position - can fire but harder to counter
+					}
+				}
+			}
+		}
+		
 		// === MODERN ARMOR (TANK) POSITIONING ===
 		// Tanks (high-strength fast melee) use different tactics than cavalry:
 		// - Lead assaults as spearhead (not flanking)
