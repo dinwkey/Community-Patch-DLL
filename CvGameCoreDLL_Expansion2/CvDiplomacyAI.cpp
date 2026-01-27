@@ -27872,8 +27872,8 @@ void CvDiplomacyAI::DoMakeWarOnPlayer(PlayerTypes eTargetPlayer)
 			if (GET_PLAYER(eTargetPlayer).isMinorCiv() || GetGlobalCoopWarAgainstState(eTargetPlayer) != COOP_WAR_STATE_PREPARING)
 			{
 				// Check if declaring war on this target would trigger defensive pacts that create unfavorable matchups
-				int iAlliedAgainstUs = 0;
-				int iTargetAllyStrength = 0;
+						int iAlliedAgainstUs = 0;
+						int iTargetAllyMight = 0;
 
 				// Count defensive pact allies of the target that are hostile to us
 				for (int i = 0; i < MAX_MAJOR_CIVS; i++)
@@ -27883,21 +27883,21 @@ void CvDiplomacyAI::DoMakeWarOnPlayer(PlayerTypes eTargetPlayer)
 						continue;
 
 					// Check if they have a defensive pact with the target
-					if (GET_TEAM(GET_PLAYER(eLoopPlayer).getTeam()).IsHasDefensivePact(GET_PLAYER(eTargetPlayer).getTeam()))
+							if (GET_TEAM(GET_PLAYER(eLoopPlayer).getTeam()).IsHasDefensivePact(GET_PLAYER(eTargetPlayer).getTeam()))
 					{
 						iAlliedAgainstUs++;
-						iTargetAllyStrength += GetMilitaryStrengthComparedToUs(eLoopPlayer);
+								iTargetAllyMight += GET_PLAYER(eLoopPlayer).GetMilitaryMight();
 					}
 				}
 
 				// If multiple hostile allies could join via defensive pacts, reassess the war decision
 				if (iAlliedAgainstUs > 0)
 				{
-					int iOurStrengthVsTarget = GetMilitaryStrengthComparedToUs(eTargetPlayer);
-					if (iOurStrengthVsTarget > 0)
+							int iOurMight = GetPlayer()->GetMilitaryMight();
+							if (iOurMight > 0)
 					{
-						int iThreshold = (iOurStrengthVsTarget * 3) / 4;
-						if (iTargetAllyStrength > iThreshold)
+								int iThreshold = (iOurMight * 3) / 4;
+								if (iTargetAllyMight > iThreshold)
 						{
 							CvString strLogName = "DiplomacyWarDecisions.log";
 							FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
