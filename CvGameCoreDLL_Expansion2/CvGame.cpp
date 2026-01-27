@@ -87,13 +87,6 @@ struct stringHash
 	}
 };
 
-//------------------------------------------------------------------------------
-// CvGame Version History
-// Version 1 
-//	 * CvGame save version reset for expansion pack 2.
-//------------------------------------------------------------------------------
-const int g_CurrentCvGameVersion = 1;
-
 //some statistics
 int gTactMovesCount[NUM_AI_TACTICAL_MOVES] = { 0 };
 int gHomeMovesCount[NUM_AI_HOMELAND_MOVES] = { 0 };
