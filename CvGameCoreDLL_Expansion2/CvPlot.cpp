@@ -7169,6 +7169,7 @@ void CvPlot::setPlotType(PlotTypes eNewValue, bool bRecalculate, bool bRebuildGr
 
 		updateYield();
 		updateImpassable();
+		updatePlotCacheFlags();
 
 		updateSeeFromSight(true,bRecalculate);
 
@@ -7475,6 +7476,8 @@ void CvPlot::setTerrainType(TerrainTypes eNewValue, bool bRecalculate, bool bReb
 				}
 			}
 		}
+
+		updatePlotCacheFlags();
 	}
 }
 
@@ -7586,6 +7589,8 @@ void CvPlot::setFeatureType(FeatureTypes eNewValue)
 				GC.getMap().getAreaById(getArea())->ChangeNumNaturalWonders(-1);
 			}
 		}
+
+		updatePlotCacheFlags();
 
 		if(eNewValue == NO_FEATURE)
 		{

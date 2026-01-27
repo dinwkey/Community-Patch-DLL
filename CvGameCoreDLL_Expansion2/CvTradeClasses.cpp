@@ -2246,9 +2246,34 @@ bool CvGameTrade::RecalculateTradeRoutePath(int iTradeRouteIndex)
 	kConnection.m_iCurrentPathDanger = iNewPathDanger;
 	kConnection.m_iSpeedFactor = (100 * SPath::getNormalizedDistanceBase() * newPath.length()) / max(1, newPath.iNormalizedDistanceRaw);
 
-	// Reset trade unit location to start of new path
-	kConnection.m_iTradeUnitLocationIndex = 0;
-	kConnection.m_bTradeUnitMovingForward = true;
+	// Preserve trade unit location when possible to avoid teleporting
+	CvUnit* pTradeUnit = GetTradeUnitForRoute(iTradeRouteIndex);
+	if (pTradeUnit != NULL && !kConnection.m_aPlotList.empty())
+	{
+		int iMatchIndex = -1;
+		for (size_t i = 0; i < kConnection.m_aPlotList.size(); i++)
+		{
+			if (kConnection.m_aPlotList[i].m_iX == pTradeUnit->getX() && kConnection.m_aPlotList[i].m_iY == pTradeUnit->getY())
+			{
+				iMatchIndex = (int)i;
+				break;
+			}
+		}
+		if (iMatchIndex < 0)
+			return false; // Avoid reroute if current unit position isn't on the new path
+
+		kConnection.m_iTradeUnitLocationIndex = iMatchIndex;
+		if (kConnection.m_iTradeUnitLocationIndex <= 0)
+			kConnection.m_bTradeUnitMovingForward = true;
+		else if (kConnection.m_iTradeUnitLocationIndex >= (int)kConnection.m_aPlotList.size() - 1)
+			kConnection.m_bTradeUnitMovingForward = false;
+	}
+	else
+	{
+		// Reset trade unit location to start of new path
+		kConnection.m_iTradeUnitLocationIndex = 0;
+		kConnection.m_bTradeUnitMovingForward = true;
+	}
 
 	return true;
 }
