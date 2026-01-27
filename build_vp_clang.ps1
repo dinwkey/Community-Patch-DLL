@@ -67,7 +67,13 @@ $CL_SUPPRESS = @(
     'invalid-offsetof',
     'tautological-constant-out-of-range-compare',
     'comment',
-    'enum-constexpr-conversion'
+    'enum-constexpr-conversion',
+    'unknown-warning-option'  # Suppress warnings about unrecognized -W options for cross-version compatibility
+)
+
+$CL_ENABLE = @(
+    'unused-variable',
+    'unused-parameter'
 )
 
 $PCH_CPP = 'CvGameCoreDLL_Expansion2\_precompile.cpp'
@@ -269,6 +275,10 @@ function Build-ClangArgs {
     
     foreach ($suppress in $CL_SUPPRESS) {
         $args += "-Wno-$suppress"
+    }
+    
+    foreach ($enable in $CL_ENABLE) {
+        $args += "-W$enable"
     }
     
     return ($args -join ' ')
