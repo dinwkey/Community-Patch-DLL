@@ -794,7 +794,7 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
 	{
 		for(int iDY = -iMaxDistance; iDY <= iMaxDistance; iDY++)
 		{
-			CvPlot* pLoopPlot = GC.getMap().plot(iPlotX + iDX, iPlotY + iDY);
+			CvPlot* pLoopPlot = plotXYWithRangeCheck(iPlotX, iPlotY, iDX, iDY, iMaxDistance);
 			if(!pLoopPlot) continue;
 			
 			if(plotDistance(iPlotX, iPlotY, pLoopPlot->getX(), pLoopPlot->getY()) > iMaxDistance)
@@ -5481,6 +5481,15 @@ bool CvTacticalAI::ExecuteAttackWithUnits(CvPlot* pTargetPlot, eAggressionLevel 
 	//try to improve visibility
 	if (!ExecuteSpotterMove(vUnits,pTargetPlot))
 		return false;
+
+	// Issue 4.2: If multiple units can coordinate on this target, increase aggression level
+	if (FindCoordinatedAttackOpportunity(pTargetPlot, vUnits))
+	{
+		if (eAggLvl == AL_LOW)
+			eAggLvl = AL_MEDIUM;
+		else if (eAggLvl == AL_MEDIUM)
+			eAggLvl = AL_HIGH;
+	}
 
 	//first handle air units (including missiles)
 	ExecuteAirSweep(pTargetPlot);
