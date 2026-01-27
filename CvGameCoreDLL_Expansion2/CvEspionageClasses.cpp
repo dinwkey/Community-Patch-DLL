@@ -24,7 +24,6 @@
 const int iSpyTurnsToTravel = 1;
 const int iSpyTurnsToMakeIntroductions = 5;
 const int iIntrigueTurnsValid = 5;
-const int iSpyRankPower = 50;
 PlayerTypes g_eSortPlayer = NO_PLAYER; // global - used for the sort
 
 // ================================================================================
