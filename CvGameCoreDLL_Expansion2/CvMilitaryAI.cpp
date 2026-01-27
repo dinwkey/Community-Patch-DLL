@@ -285,7 +285,7 @@ void CvMilitaryAI::Init(CvMilitaryAIStrategyXMLEntries* pAIStrategies, CvPlayer*
 
 	m_aiTempFlavors.init();
 
-	m_previousUnitComposition.init(0);
+	m_iPreviousMilitaryUnitCount = 0;
 	Reset();
 }
 
@@ -295,8 +295,6 @@ void CvMilitaryAI::Uninit()
 	SAFE_DELETE_ARRAY(m_pabUsingStrategy);
 	SAFE_DELETE_ARRAY(m_paiTurnStrategyAdopted);
 	m_aiTempFlavors.uninit();
-
-	m_previousUnitComposition.uninit();
 }
 
 /// Reset AIStrategy status array to all false
@@ -325,7 +323,7 @@ void CvMilitaryAI::Reset()
 	m_iNumberOfTimesSettlerBuildSkippedOver = 0;
 
 	// Dynamic Rebalancing initialization (Issue: Dynamic Rebalancing)
-	m_previousUnitComposition.assign(0);
+	m_iPreviousMilitaryUnitCount = 0;
 	m_iLastRebalanceTurn = -1;
 	m_iArmyBalanceScore = 100;
 
@@ -500,6 +498,45 @@ void CvMilitaryAI::DoTurn()
 	ScanForBarbarians();
 	UpdateBaseData();
 	UpdateDefenseState();
+
+	// Issue 7.2: Evaluate escort needs for returning trade units
+	if(!m_pPlayer->isHuman(ISHUMAN_AI_UNITS))
+	{
+		CvGameTrade* pTrade = GC.getGame().GetGameTrade();
+		if(pTrade)
+		{
+			const vector<int>& aiConnections = pTrade->GetTradeConnectionsForPlayer(m_pPlayer->GetID());
+			for(size_t i = 0; i < aiConnections.size(); i++)
+			{
+				int iRouteID = aiConnections[i];
+				int iRouteIndex = pTrade->GetIndexFromID(iRouteID);
+				if(iRouteIndex < 0)
+					continue;
+
+				const TradeConnection& kConnection = pTrade->GetTradeConnection(iRouteIndex);
+				if(!kConnection.isValid())
+					continue;
+				if(kConnection.m_eOriginOwner != m_pPlayer->GetID())
+					continue;
+
+				// Only consider trade units on the return leg
+				if(kConnection.m_bTradeUnitMovingForward)
+					continue;
+
+				int iEscortValue = 0;
+				EscortRecommendation eRec = EvaluateTradeUnitEscortMission(iRouteID, &iEscortValue);
+				if(eRec == ESCORT_REROUTE)
+				{
+					pTrade->RecalculateTradeRoutePath(iRouteIndex);
+				}
+				else if(eRec == ESCORT_RECOMMENDED)
+				{
+					AssignEscortToReturningTradeUnit(iRouteID);
+				}
+			}
+		}
+	}
+
 	DetectCombatLosses();  // Dynamic Rebalancing: Check for combat losses (Issue: Dynamic Rebalancing)
 	UpdateMilitaryStrategies();
 	UpdateWarType();
@@ -2068,6 +2105,17 @@ CvUnit* CvMilitaryAI::AssignEscortToReturningTradeUnit(int iTradeConnectionID)
 	CvUnit* pTradeUnit = pTrade->GetTradeUnitForRoute(pTrade->GetIndexFromID(iTradeConnectionID));
 	if (!pTradeUnit)
 		return NULL;
+	if(pTradeUnit->plot())
+	{
+		for(int iUnitLoop = 0; iUnitLoop < pTradeUnit->plot()->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pLoopUnit = pTradeUnit->plot()->getUnitByIndex(iUnitLoop);
+			if(pLoopUnit && pLoopUnit->getOwner() == m_pPlayer->GetID() && pLoopUnit->IsCombatUnit())
+			{
+				return NULL;
+			}
+		}
+	}
 
 	// Find nearest expendable military unit
 	CvUnit* pBestEscort = NULL;
@@ -2391,7 +2439,12 @@ int CvMilitaryAI::GetTradeRouteEconomicValue(const TradeConnection& kConnection)
 void CvMilitaryAI::UpdateDefenseState()
 {
 	// Predict if enemies moving toward us (Issue 4.1)
-	bool bEnemiesMovingTowardUs = AreEnemiesMovingTowardUs(DOMAIN_LAND);
+	bool bEnemiesMovingTowardUsLand = AreEnemiesMovingTowardUs(DOMAIN_LAND);
+	bool bEnemiesMovingTowardUsSea = AreEnemiesMovingTowardUs(DOMAIN_SEA);
+
+	// Proximity-weighted threat (Issue 4.1)
+	int iLandThreat = CalculateProximityWeightedThreat(DOMAIN_LAND);
+	int iNavalThreat = CalculateProximityWeightedThreat(DOMAIN_SEA);
 	
 	// Get allied threat multiplier (Issue 4.1)
 	int iAlliedMultiplier = GetAlliedThreatMultiplier();
@@ -2429,10 +2482,16 @@ void CvMilitaryAI::UpdateDefenseState()
 		}
 		
 		// Boost if enemies moving toward us (Issue 4.1: predict enemy movements)
-		if(bEnemiesMovingTowardUs && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+		if(bEnemiesMovingTowardUsLand && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
 		{
 			m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 		}
+	}
+
+	// Issue 4.1: Apply proximity-weighted land threat
+	if(iLandThreat > 0 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 	}
 	
 	// Apply allied threat multiplier (Issue 4.1)
@@ -2504,6 +2563,18 @@ void CvMilitaryAI::UpdateDefenseState()
 				break;
 			}
 		}
+
+		// Issue 4.1: Early warning for naval threats
+		if(bEnemiesMovingTowardUsSea && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
+		{
+			m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
+		}
+	}
+
+	// Issue 4.1: Apply proximity-weighted naval threat
+	if(iNavalThreat > 0 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
 	}
 }
 
@@ -4992,7 +5063,7 @@ void CvMilitaryAI::DetectCombatLosses()
 	int iCurrentMilitaryUnits = m_pPlayer->getNumMilitaryUnits();
 
 	// Compare with previous composition to detect losses
-	int iPreviousMilitaryUnits = m_iLastRebalanceTurn > 0 ? m_previousUnitComposition[0] : iCurrentMilitaryUnits;
+	int iPreviousMilitaryUnits = m_iLastRebalanceTurn > 0 ? m_iPreviousMilitaryUnitCount : iCurrentMilitaryUnits;
 	
 	if (iPreviousMilitaryUnits > 0 && iCurrentMilitaryUnits < iPreviousMilitaryUnits)
 	{
@@ -5007,7 +5078,7 @@ void CvMilitaryAI::DetectCombatLosses()
 	}
 
 	// Update snapshot
-	m_previousUnitComposition[0] = iCurrentMilitaryUnits;
+	m_iPreviousMilitaryUnitCount = iCurrentMilitaryUnits;
 }
 
 //	--------------------------------------------------------------------------------
