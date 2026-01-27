@@ -364,8 +364,8 @@ private:
 	CvEnumMap<FlavorTypes, int> m_aiTempFlavors;
 	int m_aiWarFocus[MAX_MAJOR_CIVS];
 
-	// Dynamic Rebalancing: Unit composition tracking for loss detection (Issue: Dynamic Rebalancing)
-	CvEnumMap<UnitCombatTypes, int> m_previousUnitComposition;  // last known composition
+	// Dynamic Rebalancing: Unit count tracking for loss detection (Issue: Dynamic Rebalancing)
+	int m_iPreviousMilitaryUnitCount;  // last known military unit count
 	int m_iLastRebalanceTurn;  // track when rebalancing last occurred
 	int m_iArmyBalanceScore;  // 0-100 score of army health
 
