@@ -1632,15 +1632,26 @@ int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair
 	// Check distance to nearest enemy unit or controlled territory
 	// Closer to enemies = more strategic for military movement
 	int iMinDistanceToEnemy = INT_MAX;
+	TeamTypes eOurTeam = m_pPlayer->getTeam();
 	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 	{
 		PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
 		if (eLoopPlayer == m_pPlayer->GetID() || !GET_PLAYER(eLoopPlayer).isAlive())
 			continue;
 
+		TeamTypes eLoopTeam = GET_PLAYER(eLoopPlayer).getTeam();
+		if (!GET_TEAM(eOurTeam).isHasMet(eLoopTeam))
+			continue;
+		if (GET_TEAM(eOurTeam).IsHasDefensivePact(eLoopTeam) || GET_TEAM(eOurTeam).IsAllowsOpenBordersToTeam(eLoopTeam))
+			continue;
+
+		CvCity* pLoopCapital = GET_PLAYER(eLoopPlayer).getCapitalCity();
+		if (!pLoopCapital)
+			continue;
+
 		// Get distance from start to enemy territory
-		int iDistStart = plotDistance(pStartPlot->getX(), pStartPlot->getY(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getX(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getY());
-		int iDistEnd = plotDistance(pEndPlot->getX(), pEndPlot->getY(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getX(), GET_PLAYER(eLoopPlayer).getCapitalCity()->getY());
+		int iDistStart = plotDistance(pStartPlot->getX(), pStartPlot->getY(), pLoopCapital->getX(), pLoopCapital->getY());
+		int iDistEnd = plotDistance(pEndPlot->getX(), pEndPlot->getY(), pLoopCapital->getX(), pLoopCapital->getY());
 		int iDistToEnemy = min(iDistStart, iDistEnd);
 
 		if (iDistToEnemy < iMinDistanceToEnemy)
@@ -1677,7 +1688,17 @@ int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair
 				if (eEnemy == m_pPlayer->GetID() || !GET_PLAYER(eEnemy).isAlive())
 					continue;
 
-				int iEnemyDist = plotDistance(pCity->getX(), pCity->getY(), GET_PLAYER(eEnemy).getCapitalCity()->getX(), GET_PLAYER(eEnemy).getCapitalCity()->getY());
+				TeamTypes eEnemyTeam = GET_PLAYER(eEnemy).getTeam();
+				if (!GET_TEAM(eOurTeam).isHasMet(eEnemyTeam))
+					continue;
+				if (GET_TEAM(eOurTeam).IsHasDefensivePact(eEnemyTeam) || GET_TEAM(eOurTeam).IsAllowsOpenBordersToTeam(eEnemyTeam))
+					continue;
+
+				CvCity* pEnemyCapital = GET_PLAYER(eEnemy).getCapitalCity();
+				if (!pEnemyCapital)
+					continue;
+
+				int iEnemyDist = plotDistance(pCity->getX(), pCity->getY(), pEnemyCapital->getX(), pEnemyCapital->getY());
 				if (iEnemyDist < 15)
 					iCityThreatLevel++;
 			}
@@ -4550,7 +4571,7 @@ pair<int,int> CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes
 		if (iBuildTime > 0)
 		{
 			// Scale score by build time - divide by (turns + 1) to avoid divide by zero and reduce impact
-			iFinalScore = (iTotalScore * 100) / (iBuildTime / 100 + 1);
+			iFinalScore = (iTotalScore * 100) / (iBuildTime + 1);
 		}
 	}
 
