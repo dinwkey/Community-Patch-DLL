@@ -779,6 +779,13 @@ bool CvGameCulture::SwapGreatWorks(PlayerTypes ePlayer1, int iWork1, PlayerTypes
 		pCulture2->m_bBatchThemingDirty = true;
 	}
 
+	// Apply now to keep same-turn theming bonuses accurate
+	pCulture1->ApplyBatchedThemingUpdates();
+	if (pCity1 != pCity2)
+	{
+		pCulture2->ApplyBatchedThemingUpdates();
+	}
+
 	// Still need to update yields immediately for UI
 	pCity1->UpdateAllNonPlotYields(true);
 	if (pCity1 != pCity2)
@@ -815,6 +822,9 @@ void CvGameCulture::MoveGreatWorks(PlayerTypes ePlayer, int iCity1, int iBuildin
 	{
 		kPlayer.GetCulture()->m_BatchThemingUpdates.push_back(std::make_pair(pCity2->GetID(), iBuildingClass2));
 	}
+
+	// Apply now to keep same-turn theming bonuses accurate
+	kPlayer.GetCulture()->ApplyBatchedThemingUpdates();
 
 	// Still need to update yields immediately for UI
 	pCity1->UpdateAllNonPlotYields(true);
@@ -3130,97 +3140,6 @@ void CvPlayerCulture::DoArchaeologyChoice(ArchaeologyChoiceType eChoice)
 }
 
 // CULTURAL INFLUENCE
-
-/// PERFORMANCE OPTIMIZATION: Cache foreign work era combinations
-/// Called when works change or at turn start to refresh cache
-void CvPlayerCulture::UpdateThemingBonusCacheForPlayer(PlayerTypes eOtherPlayer)
-{
-	if (eOtherPlayer == m_pPlayer->GetID() || eOtherPlayer == NO_PLAYER)
-		return;
-
-	if (!GET_PLAYER(eOtherPlayer).isAlive())
-		return;
-
-	ForeignWorkCombination combo;
-	combo.m_iTurnCached = GC.getGame().getGameTurn();
-
-	// Initialize arrays
-	int iNumEras = GC.getNumEraInfos();
-	combo.m_abErasSeen.resize(iNumEras, false);
-	for (int i = 0; i < MAX_MAJOR_CIVS; i++)
-		combo.m_abCivsSeen[i] = false;
-
-	// Find all works created by other civs in our buildings
-	int iCityLoop = 0;
-	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
-	{
-		for (int iBuildingClassLoop = 0; iBuildingClassLoop < GC.getNumBuildingClassInfos(); iBuildingClassLoop++)
-		{
-			BuildingClassTypes eBuildingClass = (BuildingClassTypes)iBuildingClassLoop;
-			BuildingTypes eBuilding = pCity->GetBuildingTypeFromClass(eBuildingClass);
-			if (eBuilding == NO_BUILDING)
-				continue;
-
-			CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
-			if (!pkBuildingInfo)
-				continue;
-
-			int iNumSlots = pkBuildingInfo->GetGreatWorkCount();
-			for (int iSlot = 0; iSlot < iNumSlots; iSlot++)
-			{
-				int iGreatWorkIndex = pCity->GetCityBuildings()->GetBuildingGreatWork(eBuildingClass, iSlot);
-				if (iGreatWorkIndex >= 0)
-				{
-					CvGameCulture* pGameCulture = GC.getGame().GetGameCulture();
-					PlayerTypes eCreator = pGameCulture->GetGreatWorkCreator(iGreatWorkIndex);
-					EraTypes eEra = (EraTypes)pGameCulture->m_CurrentGreatWorks[iGreatWorkIndex].m_eEra;
-
-					// Mark foreign eras and civs
-					if (eCreator != m_pPlayer->GetID() && eCreator != NO_PLAYER && eEra != NO_ERA && eEra < GC.getNumEraInfos())
-					{
-						combo.m_abErasSeen[eEra] = true;
-						if (eCreator < MAX_MAJOR_CIVS)
-						{
-							combo.m_abCivsSeen[eCreator] = true;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	m_ForeignWorkCache[eOtherPlayer] = combo;
-}
-
-/// PERFORMANCE OPTIMIZATION: Check cache for foreign era presence
-bool CvPlayerCulture::HasForeignWorkInEra(PlayerTypes eOtherPlayer, EraTypes eEra) const
-{
-	if (eEra < 0 || eEra >= GC.getNumEraInfos())
-		return false;
-
-	std::map<PlayerTypes, ForeignWorkCombination>::const_iterator it = m_ForeignWorkCache.find(eOtherPlayer);
-	if (it == m_ForeignWorkCache.end())
-		return false;  // Not cached, assume false to be safe
-
-	if ((int)eEra >= (int)it->second.m_abErasSeen.size())
-		return false;  // Bounds check for vector
-
-	return it->second.m_abErasSeen[eEra];
-}
-
-/// PERFORMANCE OPTIMIZATION: Check cache for foreign civ presence
-bool CvPlayerCulture::HasForeignWorkFromCiv(PlayerTypes eOtherPlayer, PlayerTypes eFromCiv) const
-{
-	if (eFromCiv < 0 || eFromCiv >= MAX_MAJOR_CIVS)
-		return false;
-
-	std::map<PlayerTypes, ForeignWorkCombination>::const_iterator it = m_ForeignWorkCache.find(eOtherPlayer);
-	if (it == m_ForeignWorkCache.end())
-		return false;  // Not cached, assume false to be safe
-
-	return it->second.m_abCivsSeen[eFromCiv];
-}
-
 /// PERFORMANCE OPTIMIZATION: Apply batched theming updates at turn end
 /// Instead of recalculating per-work, collect changes and apply together
 void CvPlayerCulture::ApplyBatchedThemingUpdates()
@@ -3254,13 +3173,6 @@ void CvPlayerCulture::DoTurn()
 
 	// PERFORMANCE OPTIMIZATION: Apply batched theming updates before updating influence
 	ApplyBatchedThemingUpdates();
-
-	// PERFORMANCE OPTIMIZATION: Rebuild theming bonus cache at turn start
-	for (int iLoopPlayer = 0; iLoopPlayer < MAX_MAJOR_CIVS; iLoopPlayer++)
-	{
-		PlayerTypes eLoopPlayer = (PlayerTypes)iLoopPlayer;
-		UpdateThemingBonusCacheForPlayer(eLoopPlayer);
-	}
 
 	// PERFORMANCE OPTIMIZATION: Invalidate influence trend cache at turn start so recalculations use fresh data
 	InvalidateInfluenceTrendCache();
