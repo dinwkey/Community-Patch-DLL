@@ -1871,7 +1871,7 @@ int StepDestValid(int iToX, int iToY, const SPathFinderUserData&, const CvAStar*
 
 //	--------------------------------------------------------------------------------
 /// Default heuristic cost
-int StepHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, int iDestX, int iDestY, const CvAStar* finder)
+int StepHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, int iDestX, int iDestY, const CvAStar* /*finder*/)
 {
 	return plotDistance(iNextX, iNextY, iDestX, iDestY) * PATH_BASE_COST;
 }

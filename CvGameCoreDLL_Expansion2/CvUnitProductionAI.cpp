@@ -490,8 +490,8 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				{
 					// COST-BENEFIT: Compare missile production cost to expected value
 					int iMissileProductionCost = m_pCity->getProductionNeeded(eUnit);
-					int iMissileDamage = pkUnitEntry->GetRangedCombat(); // Base damage output
-					int iMissileRange = pkUnitEntry->GetRange();
+					int iMissileDamage = pkUnitEntry->GetRangedCombat(); // Base damage output (120 for Rocket, 180 for Guided)
+					int iMissileRange = pkUnitEntry->GetRange(); // Strike range (8 for Rocket, 12 for Guided)
 					
 					// Calculate expected targets: units in cities, high-value units, etc.
 					// Missiles excel at hitting units in cities where bombers can't
@@ -515,8 +515,9 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 							if (pGarrison)
 							{
 								iHighValueTargets++;
-								// Value based on strength of garrisoned unit
-								iPotentialDamageValue += pGarrison->GetBaseCombatStrength() * 2;
+								// Value based on strength of garrisoned unit AND missile damage
+								// Higher damage missiles are more effective at eliminating threats
+								iPotentialDamageValue += (pGarrison->GetBaseCombatStrength() * iMissileDamage) / 100;
 							}
 							
 							// Check for siege units near enemy cities - high value to eliminate
@@ -530,16 +531,18 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 										pUnit->AI_getUnitAIType() == UNITAI_RANGED))
 									{
 										iHighValueTargets++;
-										iPotentialDamageValue += pUnit->GetBaseCombatStrength();
+										iPotentialDamageValue += (pUnit->GetBaseCombatStrength() * iMissileDamage) / 100;
 									}
 								}
 							}
 						}
 					}
 					
-					// Calculate cost efficiency
-					// A missile is worth building if: expected damage value > production cost / some factor
-					int iCostEfficiency = (iPotentialDamageValue * 10) / max(1, iMissileProductionCost);
+					// Calculate cost efficiency factoring in missile damage output
+					// Higher damage missiles (Guided: 180) are more cost-effective per shot than lower (Rocket: 120)
+					// Formula: (potential damage value * damage multiplier) / production cost
+					int iDamageMultiplier = (iMissileDamage * 10) / 120; // Normalize: Rocket=10, Guided=15
+					int iCostEfficiency = (iPotentialDamageValue * iDamageMultiplier) / max(1, iMissileProductionCost);
 					
 					if (iHighValueTargets >= 3 && iCostEfficiency >= 5)
 					{
@@ -561,6 +564,18 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						// Few worthwhile targets - prefer reusable bombers
 						iBonus -= 30;
 					}
+					
+					// Range bonus: longer range missiles (Guided: 12) can strike from safer positions
+					// This is valuable for keeping carriers/cruisers out of danger
+					if (iMissileRange >= 12)
+					{
+						iBonus += 20; // Long range - can strike deep targets safely
+					}
+					else if (iMissileRange >= 10)
+					{
+						iBonus += 10; // Decent range
+					}
+					// Short range missiles (8) get no bonus - riskier to use
 					
 					// Stockpile limit: don't build too many missiles
 					int iCurrentMissiles = kPlayer.GetMilitaryAI()->GetNumMissileUnits();

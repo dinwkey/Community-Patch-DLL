@@ -10649,7 +10649,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		// FLEET INTEGRATION: Carriers should stay with the battle group but behind the line
 		{
 			int iCapitalShipsAhead = 0; // Ships between carrier and enemy
-			int iCapitalShipsBehind = 0; // Ships behind carrier
+			int iCapitalShipsBehind = 0; // Ships behind carrier (carrier is too far forward)
 			
 			for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++)
 			{
@@ -10684,6 +10684,10 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					{
 						iCapitalShipsAhead++; // This ship is screening us
 					}
+					else if (iFriendlyEnemyDist > 0 && iFriendlyEnemyDist > iCarrierEnemyDist)
+					{
+						iCapitalShipsBehind++; // This ship is behind us - we're too far forward!
+					}
 				}
 			}
 			
@@ -10695,6 +10699,16 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			else if (iCapitalShipsAhead == 1)
 			{
 				iCarrierBonus += 8;
+			}
+			
+			// Penalty for being ahead of the fleet (carrier is exposed)
+			if (iCapitalShipsBehind > 0 && iCapitalShipsAhead == 0)
+			{
+				iCarrierBonus -= 15; // We're ahead of our escorts - dangerous!
+			}
+			else if (iCapitalShipsBehind > iCapitalShipsAhead)
+			{
+				iCarrierBonus -= 8; // More ships behind than ahead - we're too far forward
 			}
 		}
 		
@@ -15529,8 +15543,6 @@ STacticalAssignment ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTact
 				CvCity* pTargetCity = enemyPlot.getPlot()->getPlotCity();
 				if (pTargetCity && pTargetCity->isCoastal())
 				{
-					int iCityHP = pTargetCity->GetMaxHitPoints() - pTargetCity->getDamage();
-					
 					// Big bonus if city is already softened and we can capture
 					if (result.eAssignmentType == A_MELEEKILL)
 					{
