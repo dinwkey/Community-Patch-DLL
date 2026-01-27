@@ -1167,20 +1167,10 @@ int CvLuaUnit::lJumpToNearestValidPlot(lua_State* L)
 }
 //------------------------------------------------------------------------------
 // int getCombatDamage(int iStrength, int iOpponentStrength, int iCurrentDamage, bool bIncludeRand = true, bool bAttackerIsCity = false, bool bDefenderIsCity = false);
-// LEGACY FUNCTION, use GetMeleeCombatDamage and GetMeleeCombatDamageCity instead!
+// LEGACY FUNCTION - deprecated, always returns 0. Use GetMeleeCombatDamage and GetMeleeCombatDamageCity instead!
 int CvLuaUnit::lGetCombatDamage(lua_State* L)
 {
-	CvUnit* pkUnit = GetInstance(L);
-	const int iStrength = lua_tointeger(L, 2);
-	const int iOpponentStrength = lua_tointeger(L, 3);
-	const int iCurrentDamage = lua_tointeger(L, 4);
-	const bool bIncludeRand = lua_toboolean(L, 5);
-	const bool bAttackerIsCity = lua_toboolean(L, 6);
-	const bool bDefenderIsCity = lua_toboolean(L, 7);
-
-	const int iResult = 0;// pkUnit->getCombatDamage(iStrength, iOpponentStrength, iCurrentDamage, bIncludeRand, bAttackerIsCity, bDefenderIsCity);
-	lua_pushinteger(L, iResult);
-
+	lua_pushinteger(L, 0);
 	return 1;
 }
 //------------------------------------------------------------------------------
