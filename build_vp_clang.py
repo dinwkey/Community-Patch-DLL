@@ -80,6 +80,11 @@ CL_SUPPRESS = [
     'tautological-constant-out-of-range-compare',
     'comment',
     'enum-constexpr-conversion', # TODO: #9786
+    'unknown-warning-option', # Suppress warnings about unrecognized -W options for cross-version compatibility
+]
+CL_ENABLE = [
+    'unused-variable',
+    'unused-parameter',
 ]
 PCH_CPP = 'CvGameCoreDLL_Expansion2\\_precompile.cpp'
 PCH_H = 'CvGameCoreDLLPCH.h'
@@ -315,6 +320,8 @@ def build_cl_config_args(config: Config) -> list[str]:
         args.append(f'/I"{os.path.join(PROJECT_DIR, include_dir)}"')
     for suppress in CL_SUPPRESS:
         args.append(f'-Wno-{suppress}')
+    for enable in CL_ENABLE:
+        args.append(f'-W{enable}')
     return args
 
 def build_link_config_args(config: Config) -> list[str]:
