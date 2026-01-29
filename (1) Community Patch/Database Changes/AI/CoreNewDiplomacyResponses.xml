@@ -423,5 +423,29 @@
 			<ResponseType>RESPONSE_WINNER_PEACE_OFFER</ResponseType>
 			<Response>TXT_KEY_GENERIC_WINNER_PEACE_OFFER%</Response>
 		</Row>
+
+		<!-- Trade route plundering (Morocco UA) -->
+		<Row LeaderType="GENERIC">
+			<ResponseType>RESPONSE_PLUNDERED_TRADE_ROUTE</ResponseType>
+			<Response>TXT_KEY_GENERIC_RESPONSE_PLUNDERED_TRADE_ROUTE%</Response>
+		</Row>
+		<Row LeaderType="GENERIC">
+			<ResponseType>RESPONSE_HUMAN_STOP_PLUNDERING_GOOD</ResponseType>
+			<Response>TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_GOOD%</Response>
+		</Row>
+		<Row LeaderType="GENERIC">
+			<ResponseType>RESPONSE_HUMAN_STOP_PLUNDERING_BAD</ResponseType>
+			<Response>TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_BAD%</Response>
+		</Row>
+		<!-- AI agrees to stop plundering human's trade routes -->
+		<Row LeaderType="GENERIC">
+			<ResponseType>RESPONSE_STOP_PLUNDERING_AGREE</ResponseType>
+			<Response>TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_AGREE%</Response>
+		</Row>
+		<!-- AI refuses to stop plundering human's trade routes -->
+		<Row LeaderType="GENERIC">
+			<ResponseType>RESPONSE_STOP_PLUNDERING_DISAGREE</ResponseType>
+			<Response>TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_DISAGREE%</Response>
+		</Row>
 	</Diplomacy_Responses>
 </GameData>

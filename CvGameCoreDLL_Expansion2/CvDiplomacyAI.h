@@ -693,6 +693,17 @@ public:
 	bool IsPlayerAskedNotToDig(PlayerTypes ePlayer) const;
 	void SetPlayerAskedNotToDig(PlayerTypes ePlayer, bool bValue);
 
+	// Plunder Promise (Morocco UA)
+	PromiseStates GetNoPlunderPromiseState(PlayerTypes ePlayer) const;
+	void SetNoPlunderPromiseState(PlayerTypes ePlayer, PromiseStates ePromiseState);
+	int GetNoPlunderPromiseTurn(PlayerTypes ePlayer) const;
+	void SetNoPlunderPromiseTurn(PlayerTypes ePlayer, int iTurn);
+	bool MadeNoPlunderPromise(PlayerTypes ePlayer) const;
+	bool BrokeNoPlunderPromise(PlayerTypes ePlayer) const;
+	bool IgnoredNoPlunderPromise(PlayerTypes ePlayer) const;
+	bool IsPlayerAskedNotToPlunder(PlayerTypes ePlayer) const;
+	void SetPlayerAskedNotToPlunder(PlayerTypes ePlayer, bool bValue);
+
 	// Coop War Promise
 	bool BrokeCoopWarPromise(PlayerTypes ePlayer) const;
 	void SetBrokeCoopWarPromise(PlayerTypes ePlayer, bool bValue);
@@ -1274,6 +1285,7 @@ public:
 	// Other things the player has done to piss off the AI
 	void DoDugUpMyYardStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
 	void DoConvertedMyCityStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
+	void DoPlunderedTradeRouteStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
 	//void DoSeriousExpansionWarningStatement(PlayerTypes ePlayer, DiploStatementTypes &eStatement);
 	//void DoSeriousPlotBuyingWarningStatement(PlayerTypes ePlayer, DiploStatementTypes &eStatement);
 	void DoExpansionWarningStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
@@ -1603,6 +1615,9 @@ public:
 	// Player asks the AI not to dig
 	bool IsStopDiggingAcceptable(PlayerTypes ePlayer);
 
+	// Player asks the AI not to plunder trade routes
+	bool IsStopPlunderingAcceptable(PlayerTypes ePlayer);
+
 	CivOpinionTypes GetNeighborOpinion(PlayerTypes ePlayer) const;
 	bool MusteringForNeighborAttack(PlayerTypes ePlayer) const;
 
@@ -1691,6 +1706,8 @@ public:
 	int GetIgnoredNoDiggingPromiseScore(PlayerTypes ePlayer);
 	int GetBrokenSpyPromiseScore(PlayerTypes ePlayer);
 	int GetIgnoredSpyPromiseScore(PlayerTypes ePlayer);
+	int GetBrokenNoPlunderPromiseScore(PlayerTypes ePlayer);
+	int GetIgnoredNoPlunderPromiseScore(PlayerTypes ePlayer);
 	int GetBrokenCoopWarPromiseScore(PlayerTypes ePlayer);
 
 	// Religion / Ideology
@@ -2066,6 +2083,11 @@ private:
 	char m_aeNoDiggingPromiseState[MAX_MAJOR_CIVS];
 	int m_aiNoDiggingPromiseTurn[MAX_MAJOR_CIVS];
 	bool m_abAskedNotToDig[MAX_MAJOR_CIVS];
+
+	// No Plunder Promise (Morocco UA)
+	char m_aeNoPlunderPromiseState[MAX_MAJOR_CIVS];
+	int m_aiNoPlunderPromiseTurn[MAX_MAJOR_CIVS];
+	bool m_abAskedNotToPlunder[MAX_MAJOR_CIVS];
 
 	// Coop War Promise
 	int m_aiBrokenCoopWarPromiseTurn[MAX_MAJOR_CIVS];

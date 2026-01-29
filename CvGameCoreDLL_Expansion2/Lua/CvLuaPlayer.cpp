@@ -976,6 +976,8 @@ void CvLuaPlayer::PushMethods(lua_State* L, int t)
 	Method(IsStopSpyingMessageTooSoon);
 	Method(IsAskedToStopConverting);
 	Method(IsAskedToStopDigging);
+	Method(IsAskedToStopPlundering);
+	Method(GetNumTradeRoutesPlundered);
 	Method(IsDoFMessageTooSoon);
 	Method(IsDoF);
 	Method(GetDoFCounter);
@@ -11261,6 +11263,32 @@ int CvLuaPlayer::lIsAskedToStopDigging(lua_State* L)
 	const bool bAsked = pkPlayer->GetDiplomacyAI()->IsPlayerAskedNotToDig(eWithPlayer);
 
 	lua_pushboolean(L, bAsked);
+	return 1;
+}
+
+//------------------------------------------------------------------------------
+//void IsAskedToStopPlundering(PlayerTypes eWithPlayer);
+int CvLuaPlayer::lIsAskedToStopPlundering(lua_State* L)
+{
+	CvPlayerAI* pkPlayer = GetInstance(L);
+	PlayerTypes eWithPlayer = (PlayerTypes) lua_tointeger(L, 2);
+
+	const bool bAsked = pkPlayer->GetDiplomacyAI()->IsPlayerAskedNotToPlunder(eWithPlayer);
+
+	lua_pushboolean(L, bAsked);
+	return 1;
+}
+
+//------------------------------------------------------------------------------
+//int GetNumTradeRoutesPlundered(PlayerTypes eWithPlayer);
+int CvLuaPlayer::lGetNumTradeRoutesPlundered(lua_State* L)
+{
+	CvPlayerAI* pkPlayer = GetInstance(L);
+	PlayerTypes eOtherPlayer = (PlayerTypes) lua_tointeger(L, 2);
+
+	const int iValue = pkPlayer->GetDiplomacyAI()->GetNumTradeRoutesPlundered(eOtherPlayer);
+
+	lua_pushinteger(L, iValue);
 	return 1;
 }
 

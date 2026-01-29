@@ -2825,5 +2825,63 @@
 		<Row Tag="TXT_KEY_GENERIC_REPEAT_NO_2">
 			<Text>The answer is still no.</Text>
 		</Row>
+
+		<!--// TRADE ROUTE PLUNDERING (Morocco UA) //-->
+
+		<!-- AI confronts human about plundering trade routes -->
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_PLUNDERED_TRADE_ROUTE_1">
+			<Text>You have plundered our trade routes! I demand that you cease these piratical attacks immediately!</Text>
+		</Row>
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_PLUNDERED_TRADE_ROUTE_2">
+			<Text>Our merchants report that your forces have been seizing our caravans! I insist that you stop this at once!</Text>
+		</Row>
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_PLUNDERED_TRADE_ROUTE_3">
+			<Text>Your raids on our trade routes are an outrage! Put an end to this thievery or face the consequences!</Text>
+		</Row>
+
+		<!-- Human agrees to stop plundering -->
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_GOOD_1">
+			<Text>Good. I expect you to honor this commitment.</Text>
+		</Row>
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_GOOD_2">
+			<Text>Very well. See that it does not happen again.</Text>
+		</Row>
+
+		<!-- Human refuses to stop plundering -->
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_BAD_1">
+			<Text>You will regret this decision. Mark my words.</Text>
+		</Row>
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_BAD_2">
+			<Text>So be it. Do not expect us to forget this offense.</Text>
+		</Row>
+
+		<!-- Button text for human response choices -->
+		<Row Tag="TXT_KEY_DIPLO_DISCUSS_DONT_STOP_PLUNDERING">
+			<Text>That is none of your concern.</Text>
+		</Row>
+		<Row Tag="TXT_KEY_DIPLO_DISCUSS_STOP_PLUNDERING">
+			<Text>Very well, we will cease our raids.</Text>
+		</Row>
+
+		<!-- Button text for human asking AI to stop plundering -->
+		<Row Tag="TXT_KEY_DIPLO_DISCUSS_MESSAGE_STOP_PLUNDERING">
+			<Text>Your raids on our trade routes must stop!</Text>
+		</Row>
+
+		<!-- AI agrees to stop plundering human's trade routes -->
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_AGREE_1">
+			<Text>You make a valid point. Very well, I shall direct my forces to leave your caravans in peace.</Text>
+		</Row>
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_AGREE_2">
+			<Text>I understand your frustration. My raiders will seek their fortunes elsewhere from now on.</Text>
+		</Row>
+
+		<!-- AI refuses to stop plundering human's trade routes -->
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_DISAGREE_1">
+			<Text>Your caravans are simply too tempting a target. Hire more guards if you wish to protect them.</Text>
+		</Row>
+		<Row Tag="TXT_KEY_GENERIC_RESPONSE_STOP_PLUNDERING_DISAGREE_2">
+			<Text>The desert takes what it will. Do not expect any promises from me.</Text>
+		</Row>
 	</Language_en_US>
 </GameData>

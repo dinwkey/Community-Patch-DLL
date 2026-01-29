@@ -1051,6 +1051,8 @@ protected:
 	static int lIsStopSpyingMessageTooSoon(lua_State* L);
 	static int lIsAskedToStopConverting(lua_State* L);
 	static int lIsAskedToStopDigging(lua_State* L);
+	static int lIsAskedToStopPlundering(lua_State* L);
+	static int lGetNumTradeRoutesPlundered(lua_State* L);
 	static int lIsDoFMessageTooSoon(lua_State* L);
 	static int lIsDoF(lua_State* L);
 	static int lGetDoFCounter(lua_State* L);

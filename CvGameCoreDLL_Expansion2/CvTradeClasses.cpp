@@ -5142,6 +5142,18 @@ bool CvPlayerTrade::PlunderTradeRoute(int iTradeConnectionID, CvUnit* pUnit)
 		}
 		else if (m_pPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
 		{
+			// Check if we broke a promise not to plunder (only matters if they can see it)
+			if (pPlunderPlot->isVisible(eOwningTeam))
+			{
+				if (m_pPlayer->GetDiplomacyAI()->MadeNoPlunderPromise(eOwningPlayer))
+				{
+					// Breaking our promise!
+					m_pPlayer->GetDiplomacyAI()->SetNoPlunderPromiseState(eOwningPlayer, PROMISE_STATE_BROKEN);
+				}
+				// Reset the ability to ask for a promise (they caught us again)
+				GET_PLAYER(eOwningPlayer).GetDiplomacyAI()->SetPlayerAskedNotToPlunder(m_pPlayer->GetID(), false);
+			}
+			
 			// Diplo penalty with owner
 			if (pPlunderPlot->isVisible(eOwningTeam))
 			{
