@@ -213,6 +213,8 @@ public:
 	int GetSwappableArtifactIndex() const;
 	int GetSwappableMusicIndex() const;
 	void SetSwappableGreatWork(GreatWorkClass eGWClass, int iGreatWorkIndex);
+	void ClearSwappableGreatWorkIfMatches(int iGreatWorkIndex);
+	void SanitizeSwappableGreatWorks();
 	void SetSwappableWritingIndex(int iIndex);
 	void SetSwappableArtIndex(int iIndex);
 	void SetSwappableArtifactIndex(int iIndex);
@@ -328,10 +330,10 @@ public:
 	CvString m_strOpinionTooltip;
 	CvString m_strOpinionUnhappinessTooltip;
 
-	int m_iSwappableWritingIndex;
-	int m_iSwappableArtIndex;
-	int m_iSwappableArtifactIndex;
-	int m_iSwappableMusicIndex;
+	mutable int m_iSwappableWritingIndex;
+	mutable int m_iSwappableArtIndex;
+	mutable int m_iSwappableArtifactIndex;
+	mutable int m_iSwappableMusicIndex;
 
 	// PERFORMANCE OPTIMIZATION: Batch theming updates at turn end instead of per-work
 	vector<pair<int, int>> m_BatchThemingUpdates;  // (CityID, BuildingClassID) pairs

@@ -976,6 +976,9 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 	// PERFORMANCE OPTIMIZATION: Initialize batching structures
 	m_bBatchThemingDirty = false;
 	m_BatchThemingUpdates.clear();
+
+	// After init (or re-init), validate any swappable indices in case they were left stale
+	SanitizeSwappableGreatWorks();
 }
 
 // GREAT WORKS
@@ -2522,6 +2525,20 @@ int CvPlayerCulture::GetSwappableWritingIndex() const
 	if (m_iSwappableWritingIndex != -1)
 	{
 		PlayerTypes ePlayer = GC.getGame().GetGameCulture()->GetGreatWorkController(m_iSwappableWritingIndex);
+		// If the work is currently unassigned (NO_PLAYER) it can happen transiently during moves/plunders.
+		// Clear silently in that case. If the work is assigned to someone else, that's a real bug and assert.
+		if (ePlayer == NO_PLAYER)
+		{
+			int iOldIndex = m_iSwappableWritingIndex;
+			m_iSwappableWritingIndex = -1;
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLog;
+				strLog.Format("Turn %d: Cleared swappable writing index %d for player %d (NO_PLAYER controller)", GC.getGame().getGameTurn(), iOldIndex, m_pPlayer->GetID());
+				LOGFILEMGR.GetLog("GreatWorksSwap.log", FILogFile::kDontTimeStamp)->Msg(strLog);
+			}
+			return -1;
+		}
 		ASSERT(ePlayer == m_pPlayer->GetID(), "Player offering to swap a great worked they don't own");
 	}
 	return m_iSwappableWritingIndex;
@@ -2532,6 +2549,18 @@ int CvPlayerCulture::GetSwappableArtIndex() const
 	if (m_iSwappableArtIndex != -1)
 	{
 		PlayerTypes ePlayer = GC.getGame().GetGameCulture()->GetGreatWorkController(m_iSwappableArtIndex);
+		if (ePlayer == NO_PLAYER)
+		{
+			int iOldIndex = m_iSwappableArtIndex;
+			m_iSwappableArtIndex = -1;
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLog;
+				strLog.Format("Turn %d: Cleared swappable art index %d for player %d (NO_PLAYER controller)", GC.getGame().getGameTurn(), iOldIndex, m_pPlayer->GetID());
+				LOGFILEMGR.GetLog("GreatWorksSwap.log", FILogFile::kDontTimeStamp)->Msg(strLog);
+			}
+			return -1;
+		}
 		ASSERT(ePlayer == m_pPlayer->GetID(), "Player offering to swap a great worked they don't own");
 	}
 	return m_iSwappableArtIndex;
@@ -2542,6 +2571,18 @@ int CvPlayerCulture::GetSwappableArtifactIndex() const
 	if (m_iSwappableArtifactIndex != -1)
 	{
 		PlayerTypes ePlayer = GC.getGame().GetGameCulture()->GetGreatWorkController(m_iSwappableArtifactIndex);
+		if (ePlayer == NO_PLAYER)
+		{
+			int iOldIndex = m_iSwappableArtifactIndex;
+			m_iSwappableArtifactIndex = -1;
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLog;
+				strLog.Format("Turn %d: Cleared swappable artifact index %d for player %d (NO_PLAYER controller)", GC.getGame().getGameTurn(), iOldIndex, m_pPlayer->GetID());
+				LOGFILEMGR.GetLog("GreatWorksSwap.log", FILogFile::kDontTimeStamp)->Msg(strLog);
+			}
+			return -1;
+		}
 		ASSERT(ePlayer == m_pPlayer->GetID(), "Player offering to swap a great worked they don't own");
 	}
 	return m_iSwappableArtifactIndex;
@@ -2552,6 +2593,18 @@ int CvPlayerCulture::GetSwappableMusicIndex() const
 	if (m_iSwappableMusicIndex != -1)
 	{
 		PlayerTypes ePlayer = GC.getGame().GetGameCulture()->GetGreatWorkController(m_iSwappableMusicIndex);
+		if (ePlayer == NO_PLAYER)
+		{
+			int iOldIndex = m_iSwappableMusicIndex;
+			m_iSwappableMusicIndex = -1;
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLog;
+				strLog.Format("Turn %d: Cleared swappable music index %d for player %d (NO_PLAYER controller)", GC.getGame().getGameTurn(), iOldIndex, m_pPlayer->GetID());
+				LOGFILEMGR.GetLog("GreatWorksSwap.log", FILogFile::kDontTimeStamp)->Msg(strLog);
+			}
+			return -1;
+		}
 		ASSERT(ePlayer == m_pPlayer->GetID(), "Player offering to swap a great worked they don't own");
 	}
 	return m_iSwappableMusicIndex;
@@ -2603,6 +2656,57 @@ void CvPlayerCulture::SetSwappableGreatWork(GreatWorkClass eGWClass, int iGreatW
 		}
 	}
 	GC.GetEngineUserInterface()->setDirty(GreatWorksScreen_DIRTY_BIT, true);
+}
+
+void CvPlayerCulture::ClearSwappableGreatWorkIfMatches(int iGreatWorkIndex)
+{
+	if (iGreatWorkIndex == -1)
+		return;
+
+	if (m_iSwappableWritingIndex == iGreatWorkIndex)
+		m_iSwappableWritingIndex = -1;
+	if (m_iSwappableArtIndex == iGreatWorkIndex)
+		m_iSwappableArtIndex = -1;
+	if (m_iSwappableArtifactIndex == iGreatWorkIndex)
+		m_iSwappableArtifactIndex = -1;
+	if (m_iSwappableMusicIndex == iGreatWorkIndex)
+		m_iSwappableMusicIndex = -1;
+}
+
+void CvPlayerCulture::SanitizeSwappableGreatWorks()
+{
+	// Ensure any stored swappable indices actually refer to works we still control.
+	// Be defensive: don't call getters that assert; use GameCulture directly and bounds checks.
+	if (m_pPlayer == NULL)
+		return;
+
+	CvGameCulture* pCulture = GC.getGame().GetGameCulture();
+	if (!pCulture)
+		return;
+
+	int iNumWorks = pCulture->GetNumGreatWorks();
+	PlayerTypes eMyID = m_pPlayer->GetID();
+
+	if (m_iSwappableWritingIndex != -1)
+	{
+		if (m_iSwappableWritingIndex < 0 || m_iSwappableWritingIndex >= iNumWorks || pCulture->GetGreatWorkController(m_iSwappableWritingIndex) != eMyID)
+			m_iSwappableWritingIndex = -1;
+	}
+	if (m_iSwappableArtIndex != -1)
+	{
+		if (m_iSwappableArtIndex < 0 || m_iSwappableArtIndex >= iNumWorks || pCulture->GetGreatWorkController(m_iSwappableArtIndex) != eMyID)
+			m_iSwappableArtIndex = -1;
+	}
+	if (m_iSwappableArtifactIndex != -1)
+	{
+		if (m_iSwappableArtifactIndex < 0 || m_iSwappableArtifactIndex >= iNumWorks || pCulture->GetGreatWorkController(m_iSwappableArtifactIndex) != eMyID)
+			m_iSwappableArtifactIndex = -1;
+	}
+	if (m_iSwappableMusicIndex != -1)
+	{
+		if (m_iSwappableMusicIndex < 0 || m_iSwappableMusicIndex >= iNumWorks || pCulture->GetGreatWorkController(m_iSwappableMusicIndex) != eMyID)
+			m_iSwappableMusicIndex = -1;
+	}
 }
 
 void CvPlayerCulture::SetSwappableWritingIndex(int iIndex)
@@ -5848,6 +5952,8 @@ FDataStream& operator>>(FDataStream& loadFrom, CvPlayerCulture& writeTo)
 {
 	CvStreamLoadVisitor serialVisitor(loadFrom);
 	CvPlayerCulture::Serialize(writeTo, serialVisitor);
+	// After deserialization, validate any stored swappable indices (they may be stale across loads)
+	writeTo.SanitizeSwappableGreatWorks();
 	return loadFrom;
 }
 

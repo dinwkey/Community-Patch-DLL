@@ -3939,17 +3939,7 @@ CvCity* CvPlayer::acquireCity(CvCity* pCity, bool bConquest, bool bGift, bool bO
 						vcGreatWorkData.push_back(kData);
 
 						CvPlayer &kOldOwner = GET_PLAYER(eOldOwner);
-						if (kOldOwner.GetCulture()->GetSwappableWritingIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableWritingIndex(-1);
-
-						if (kOldOwner.GetCulture()->GetSwappableArtifactIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableArtifactIndex(-1);
-
-						if (kOldOwner.GetCulture()->GetSwappableArtIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableArtIndex(-1);
-
-						if (kOldOwner.GetCulture()->GetSwappableMusicIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableMusicIndex(-1);
+						kOldOwner.GetCulture()->ClearSwappableGreatWorkIfMatches(iGreatWork);
 					}
 				}
 			}
@@ -18552,6 +18542,7 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 			continue;
 
 		// Now perform the steal
+		kPlayer.GetCulture()->ClearSwappableGreatWorkIfMatches(iGWIndex);
 		pGWCity->GetCityBuildings()->SetBuildingGreatWork(eBuildingClass, iI, -1);
 		pNewGWCity->GetCityBuildings()->SetBuildingGreatWork(eNewBuildingClass, iNewSlotIndex, iGWIndex);
 		iPlundered++;

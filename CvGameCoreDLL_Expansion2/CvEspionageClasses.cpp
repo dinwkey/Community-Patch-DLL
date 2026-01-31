@@ -1424,24 +1424,8 @@ bool CvPlayerEspionage::DoStealGW(CvCity* pPlayerCity, int iGWID)
 	CvCity *pArtCity = m_pPlayer->GetCulture()->GetClosestAvailableGreatWorkSlot(pPlayerCity->getX(), pPlayerCity->getY(), eGreatWorkSlot, eGWBuildingClass, iSlot);
 	if (pArtCity)
 	{
-		// Check if the great work to be stolen is offered for swap, and remove it if so
-		CvPlayerCulture* pDefendingCulture = GET_PLAYER(eDefendingPlayer).GetCulture();
-		if (pDefendingCulture->GetSwappableWritingIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableWritingIndex(-1);
-		}
-		if (pDefendingCulture->GetSwappableArtIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableArtIndex(-1);
-		}
-		if (pDefendingCulture->GetSwappableArtifactIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableArtifactIndex(-1);
-		}
-		if (pDefendingCulture->GetSwappableMusicIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableMusicIndex(-1);
-		}
+		// Clear any stale swappable index on the defending player without using getters that assert
+		GET_PLAYER(eDefendingPlayer).GetCulture()->ClearSwappableGreatWorkIfMatches(iGWID);
 		// remove the work from the targeted city ...
 		pPlayerCity->GetCityBuildings()->SetBuildingGreatWork(eTargetBuildingClass, iTargetSlot, NO_GREAT_WORK);
 		pPlayerCity->UpdateCityYields(YIELD_TOURISM);

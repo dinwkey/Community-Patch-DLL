@@ -6344,6 +6344,10 @@ void CvCityBuildings::SetBuildingGreatWork(BuildingClassTypes eBuildingClass, in
 			{
 				if (iGreatWorkIndex == -1)
 				{
+					if (iOldGreatWorkIndex != -1)
+					{
+						GET_PLAYER(m_pCity->getOwner()).GetCulture()->ClearSwappableGreatWorkIfMatches(iOldGreatWorkIndex);
+					}
 					m_aBuildingGreatWork.erase(it);
 				}
 				else
