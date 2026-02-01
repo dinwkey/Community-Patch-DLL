@@ -46,7 +46,8 @@ File creation safety
 
 - **Strict compilation rule for agents:**
   - Prefer using the clang-based workflow (`build_vp_clang.ps1` / `clang-cl`) for local development and CI checks because it gives faster iteration. **However, all code and binaries must be written and verified to target Visual C++ 2008 SP1 (VC9) ABI and language constraints (C++03 with only TR1 where already available).** Do not assume modern MSVC toolsets (2015/2017/2019/2022) are compatible for release artifacts.
-  - After making any change to C++ sources, run the clang-based build script to verify compilation before committing or opening a PR: `.\\build_vp_clang.ps1 -Config debug` (use `-Config release` for release-targeted changes). Confirm `clang-output/<config>/CvGameCore_Expansion2.dll` and `.pdb` are created and check `clang-output/<config>/build.log` for errors; if the build fails, fix locally and re-run until it succeeds. Additionally, when possible, validate the produced artifacts against a VC9 linker or perform an MSVC2008 build to confirm ABI/linkage compatibility. Add a short note in the commit/PR indicating the clang build passed (e.g., `clang-build: debug successful`) and note any VC9 verification performed.
+  - **Default build config rule:** always build **Debug** unless the user **explicitly** asks for a Release build. Even if the user reports a bug that occurs in Release, still run Debug by default to quickly validate build errors unless the user explicitly requests Release.
+  - After making any change to C++ sources, run the clang-based build script to verify compilation before committing or opening a PR: `.\\build_vp_clang.ps1 -Config debug` (use `-Config release` only when the user explicitly requests a Release build). Confirm `clang-output/<config>/CvGameCore_Expansion2.dll` and `.pdb` are created and check `clang-output/<config>/build.log` for errors; if the build fails, fix locally and re-run until it succeeds. Additionally, when possible, validate the produced artifacts against a VC9 linker or perform an MSVC2008 build to confirm ABI/linkage compatibility. Add a short note in the commit/PR indicating the clang build passed (e.g., `clang-build: debug successful`) and note any VC9 verification performed.
   - **CRITICAL: Run the clang build blocking and wait for completion.** When invoking .\build_vp_clang.ps1 -Config debug, run it interactively in the foreground and stream its output until it finishes; do not start it in the background or detach it. The compilation of hundreds of .cpp files is CPU-intensive and can take 10-30 minutes. Do not interrupt the build once started — allow it to complete before performing follow-up checks or edits.
   - Required environment note: `VS90COMNTOOLS` must point to a valid VS2008 installation for tooling and some scripts (e.g., `build_vp_clang.ps1`) to work.
 
@@ -58,12 +59,17 @@ File creation safety
     2. You changed the **PCH header (`CvGameCoreDLLPCH.h`)** — the incremental script rebuilds the PCH itself but does NOT invalidate all `.obj` files that depend on it.
     3. A **previous build was interrupted** (Ctrl+C, crash, timeout) — partial/corrupt `.obj` files may exist and appear "up-to-date" by timestamp.
     4. You **updated clang, MSVC SDK, or toolchain** — old `.obj` files may have ABI mismatches.
-    5. You **changed preprocessor defines** in the build script (e.g., switching `VPDEBUG`/`NDEBUG`) — existing objects won't reflect the new defines.
+    5. You **changed preprocessor defines** in the build script (e.g., switching `VPDEBUG`/`NDEBUG`) — existing objects won't reflect the new defines. **CRITICAL: Always use full build when switching between Debug and Release configurations** — the incremental build will skip recompilation of `.cpp` files, silently linking Release against Debug-built `.obj` files that lack Release optimizations.
     6. You're seeing **unexplained link errors, runtime crashes, or "it worked before"** issues after incremental builds.
   - **Quick way to force full rebuild with PS1:** delete the build cache folder before running:
     ```powershell
     Remove-Item -Recurse -Force .\clang-build\Debug
     .\build_vp_clang.ps1 -Config debug
+    ```
+  - **Switching Debug ↔ Release: always use full build or clear cache.** The incremental build only tracks `.cpp` file timestamps and skips recompilation if `.obj` files are "newer." When you switch configs (Debug → Release or vice versa), preprocessor defines change but the incremental script doesn't know to recompile. Result: **Release DLL linked against Debug `.obj` files (no optimizations)** or Debug DLL with Release flags (mismatched behavior). Safe approach: use `python build_vp_clang.py --config release` for Release, or explicitly clean the cache first:
+    ```powershell
+    Remove-Item -Recurse -Force .\clang-build\Release
+    .\build_vp_clang.ps1 -Config release
     ```
   - **Incremental build may hang/timeout** on large files (`CvDiplomacyAI.cpp`, `CvPlayer.cpp`) or under low disk space. The PS1 script has a 5-minute per-file and 10-minute total timeout. If builds hang, use the Python full build instead.
 
@@ -104,6 +110,67 @@ File creation safety
   - **Workflows & generators:** update any generator scripts and GitHub Actions to write output to the `docs/` path and to publish from there (or to a `gh-pages` branch). Keep docs self-contained and ensure internal links use relative paths under `docs/`.
 
 If anything here is unclear or you want more detail about a particular area (build flags, a subsystem, or common refactoring locations), tell me which piece to expand and I will update this file.
+
+## AI/Tactical Bug Debugging Guidelines
+
+When debugging AI movement or tactical bugs:
+
+1. **Domain mismatch bugs are common**: When land units consider water plots (or vice versa), danger calculations often fail because:
+   - `CvUnit::GetDanger(pPlot)` evaluates danger from the unit's CURRENT domain perspective
+   - A trebuchet on land won't see naval threats because naval units can't attack land units on land
+   - The danger system doesn't simulate "what if this unit changed domain"
+   - Always check for `bWouldEmbark`, `needsEmbarkation()`, or domain transitions
+
+2. **Logging is essential**: The first step for AI bugs should be adding logging to identify WHICH code path is executing. Key log files:
+   - `PlayerTacticalAILog.csv` - tactical AI decisions
+   - `PlayerHomelandAILog.csv` - homeland AI decisions  
+   - Use `LogTacticalMessage()` or `LogHomelandMessage()` to add custom logging
+
+3. **Verify the DLL is actually being used**: After building, check:
+   - The DLL timestamp in the mod folder matches your build
+   - The file size is reasonable (release ~13MB, debug ~25MB)
+   - Civ5 must be closed before copying the DLL
+
+4. **Common functions to check for retreat/safety bugs**:
+   - `FindSafestPlotInReach()` - evaluates safe retreat plots
+   - `ExecuteMovesToSafestPlot()` - executes retreat moves
+   - `ExecuteWithdrawMoves()` - withdrawal from zones
+   - `MoveToEmptySpaceNearTarget()` - moving toward targets
+
+5. **When checking for enemy units, consider**:
+   - `GetNumEnemyUnitsAdjacent()` only checks adjacent plots
+   - For ranged threats, scan RING2_PLOTS or RING3_PLOTS manually
+   - Use `getUnitByIndex()` loop to find ALL units, not `getBestDefender()` which may miss some
+   - Always specify the correct domain filter (or NO_DOMAIN for all)
+
+6. **Zero-danger classification pitfalls**:
+   - `bIsZeroDanger = (iDanger <= 0)` can be wrong for domain transitions
+   - Water plots may appear zero-danger to land units because naval units can't attack them YET
+   - Always add explicit checks for domain transitions with nearby threats
+
+7. **FindSafestPlotInReach() specifics**:
+   - This is a **static helper** in `TacticalAIHelpers::`, NOT a member of `CvTacticalAI` — `m_pPlayer` is unavailable; use `GET_PLAYER(pUnit->getOwner())` instead
+   - Scoring system: **lower score = better plot**; lists are sorted ascending and `.back()` picks the lowest/best
+   - Plot categories by priority: `aCityList` > `aCoverList` > `aZeroDangerList` > `aDangerList` > `aEmbarkList`
+   - `aEmbarkList` is separate and used only as absolute last resort when no land plots are available
+
+8. **AI "memory" system for vanished units**:
+   - `CvDangerPlots::m_vanishedUnits` stores `(PlayerID, UnitID)` pairs of units seen last turn but no longer visible
+   - Cleared every turn — AI remembers for exactly ONE turn (like a human would)
+   - Access via `CvPlayer::GetVanishedUnits()` or `CvPlayer::IsVanishedUnit(IDInfo)`
+   - When queried, the **live unit** is looked up — so current stats (including promotions) are used
+   - Use this to detect threats that moved into fog-of-war
+
+9. **UnitSet typedef location**:
+   - Defined in `CvDangerPlots.h` as `typedef std::set<std::pair<PlayerTypes,int>> UnitSet`
+   - If needed in another header, either include `CvDangerPlots.h` or duplicate the typedef with a comment
+   - `CvPlayer.h` now has its own copy with `#include <set>` for self-containment
+
+10. **Naval threat scanning for embarkation**:
+    - Use `RING5_PLOTS` (91 plots, 5 tiles) as maximum scan area
+    - Calculate per-unit threat range: `maxMoves() / GD_INT_GET(MOVE_DENOMINATOR)` + `GetRange()` if ranged
+    - Era-based fallback ranges: Ancient/Classical=5, Medieval/Renaissance=7, Industrial+=8
+    - Check both visible units AND vanished units for comprehensive threat detection
 
 
 
