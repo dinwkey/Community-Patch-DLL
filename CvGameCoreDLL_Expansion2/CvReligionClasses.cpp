@@ -36,36 +36,14 @@ CvReligionEntry::~CvReligionEntry()
 {
 }
 
-//------------------------------------------------------------------------------
-bool CvReligionEntry::IsLocalReligion() const
+std::vector<CvReligionEntry*>& CvReligionXMLEntries::GetReligionEntries()
+{
 						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
 					}
 					if (!pCity)
 					{
 						iAvailabilityModifier--;
 					}
-/// Constructor
-CvReligionXMLEntries::CvReligionXMLEntries(void)
-{
-
-}
-
-/// Destructor
-CvReligionXMLEntries::~CvReligionXMLEntries(void)
-{
-	DeleteArray();
-}
-
-/// Returns vector of trait entries
-std::vector<CvReligionEntry*>& CvReligionXMLEntries::GetReligionEntries()
-{
-	return m_paReligionEntries;
-}
-
-/// Number of defined traits
-int CvReligionXMLEntries::GetNumReligions()
-{
-	return m_paReligionEntries.size();
 }
 
 /// Clear trait entries
@@ -335,26 +313,14 @@ void CvGameReligions::SpreadReligionToOneCity(CvCity* pCity)
 
 				for (int iI = RELIGION_PANTHEON + 1; iI < GC.GetGameReligions()->GetNumReligions(); iI++)
 				{
-					ReligionTypes eReligion = (ReligionTypes)iI;
-
-					if (!IsValidTarget(eReligion, pLoopCity, pCity))
-						continue;
-
-					if (pLoopCity->GetCityReligions()->GetNumFollowers(eReligion) > 0)
-					{
-						bool bConnectedWithTrade = false;
-						int iRelativeDistancePercent = 0;
-						if (!IsCityConnectedToCity(eReligion, pLoopCity, pCity, bConnectedWithTrade, iRelativeDistancePercent))
-							continue;
 
 						int iNumTradeRoutes = 0;
-						int iPressure = GetAdjacentCityReligiousPressure(eReligion, pLoopCity, pCity, iNumTradeRoutes, true, false, bConnectedWithTrade, iRelativeDistancePercent);
-						if (iPressure > 0)
-						{
-							pCity->GetCityReligions()->AddReligiousPressure(FOLLOWER_CHANGE_ADJACENT_PRESSURE, eReligion, iPressure);
-							pCity->GetCityReligions()->RecomputeFollowers(FOLLOWER_CHANGE_ADJACENT_PRESSURE);
-							if (iNumTradeRoutes != 0)
-							{
+						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
+					}
+					if (!pCity)
+					{
+						iAvailabilityModifier--;
+					}
 								pCity->GetCityReligions()->IncrementNumTradeRouteConnections(eReligion, iNumTradeRoutes);
 							}
 						}

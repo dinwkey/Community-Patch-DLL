@@ -45918,6 +45918,11 @@ bool CvPlayer::IsVanishedUnit(const IDInfo& id) const
 	return units.find(make_pair(id.eOwner,id.iID)) != units.end();
 }
 
+const UnitSet& CvPlayer::GetVanishedUnits() const
+{
+	return m_pDangerPlots->GetVanishedUnits();
+}
+
 std::vector<CvUnit*> CvPlayer::GetPossibleAttackers(const CvPlot& Plot, TeamTypes eTeamForVisibilityCheck)
 {
 	if (m_pDangerPlots->IsDirty())

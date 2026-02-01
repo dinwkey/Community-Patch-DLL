@@ -16,6 +16,7 @@
 #include "CvUnit.h"
 #include "CvArmyAI.h"
 #include "LinkedList.h"
+#include <set>
 #include "CvPreGame.h"
 #include "CvAchievementUnlocker.h"
 #include "CvUnitCycler.h"
@@ -63,6 +64,7 @@ typedef std::list<CvPopupInfo*> CvPopupQueue;
 typedef std::vector< std::pair<UnitCombatTypes, PromotionTypes> > UnitCombatPromotionArray;
 typedef std::vector< std::pair<UnitClassTypes, PromotionTypes> > UnitClassPromotionArray;
 typedef std::vector< std::pair<CivilizationTypes, LeaderHeadTypes> > CivLeaderArray;
+typedef std::set<std::pair<PlayerTypes,int>> UnitSet;  //also defined in CvDangerPlots.h
 
 const size_t INSTANT_YIELD_HISTORY_LENGTH = 30u;
 
@@ -2481,6 +2483,7 @@ public:
 	int GetPlotDanger(const CvCity* pCity, const CvUnit* pPretendGarrison = NULL, const SUnitIDValueContainer& unitDamageDealt = SUnitIDValueContainer());
 	int GetPlotDanger(const CvPlot& Plot, bool bFixedDamageOnly);
 	bool IsVanishedUnit(const IDInfo& id) const;
+	const UnitSet& GetVanishedUnits() const;
 	std::vector<CvUnit*> GetPossibleAttackers(const CvPlot& Plot, TeamTypes eTeamForVisibilityCheck);
 
 	bool IsKnownAttacker(const CvUnit* pAttacker);

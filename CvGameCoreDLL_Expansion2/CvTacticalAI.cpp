@@ -8526,6 +8526,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 	vector<OptionWithScore<pair<CvPlot*, int>>> aZeroDangerList;
 	vector<OptionWithScore<pair<CvPlot*, int>>> aCoverList;
 	vector<OptionWithScore<pair<CvPlot*, int>>> aDangerList;
+	vector<OptionWithScore<pair<CvPlot*, int>>> aEmbarkList; //LAST RESORT: water plots for land units
 
 	//special behavior for cities and citadels - don't run even if there is a "safe" plot somewhere else
 	CvPlot* pCurrentPlot = pUnit->plot();
@@ -8543,9 +8544,14 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 	if (pUnit->IsCoveringFriendlyCivilian() && pUnit->GetDanger(pCurrentPlot)<pUnit->GetCurrHitPoints()*2)
 		return make_pair(pCurrentPlot, pUnit->getMoves());
 
-	//embarkation allowed for now, we sort it out below
-	ReachablePlots eligiblePlots = pUnit->GetAllPlotsInReachThisTurn(); 
-	for (ReachablePlots::const_iterator it = eligiblePlots.begin(); it != eligiblePlots.end(); ++it)
+	//compute once outside the loop - used for retreat direction check
+	CvPlayer& kPlayer = GET_PLAYER(pUnit->getOwner());
+	int iCurrentCityDistance = kPlayer.GetCityDistancePathLength(pCurrentPlot);
+
+	//Use SAFE_EMBARK_ONLY to filter dangerous embark plots during pathfinding where possible.
+	int iEmbarkFlags = bAllowEmbark ? CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY : CvUnit::MOVEFLAG_NO_EMBARK;
+	ReachablePlots eligiblePlots = TacticalAIHelpers::GetAllPlotsInReachThisTurn(pUnit, pUnit->plot(), iEmbarkFlags);
+	for (ReachablePlots::iterator it = eligiblePlots.begin(); it != eligiblePlots.end(); ++it)
 	{
 		CvPlot* pPlot = GC.getMap().plotByIndexUnchecked(it->iPlotIndex);
 
@@ -8572,7 +8578,6 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		//   prefer the lowest danger value
 
 		// plot danger is a bit unreliable, so we need extra checks
-		CvPlayer& kPlayer = GET_PLAYER(pUnit->getOwner());
 		int iDanger = pUnit->GetDanger(pPlot);
 		int iCityDistance = kPlayer.GetCityDistancePathLength(pPlot);
 		if (iCityDistance == INT_MAX)
@@ -8580,6 +8585,153 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 		bool bIsZeroDanger = (iDanger <= 0);
 		bool bIsInTerritory = (pPlot->getTeam() == kPlayer.getTeam());
+
+		bool bWrongDomain = pPlot->needsEmbarkation(pUnit);
+		bool bWouldEmbark = bWrongDomain && !pUnit->isEmbarked();
+		
+		//RETREAT DIRECTION CHECK: Prefer plots that move us TOWARD friendly cities, not away
+		//A retreating unit should not move further from safety (frontline toward enemy)
+		bool bMovingTowardEnemy = (iCityDistance > iCurrentCityDistance);
+
+		//CRITICAL FIX for domain transition bug:
+		//The GetDanger() system calculates danger from enemy units that can attack a plot THIS turn.
+		//However, it evaluates damage from the DEFENDER's current domain perspective.
+		//For a land unit considering a water plot, GetDanger() uses the land unit's current (land) perspective,
+		//which may show zero danger because naval units "can't attack land units on land."
+		//But if the unit embarks, it becomes vulnerable to naval attacks - this is NOT modeled by GetDanger().
+		//
+		//The proper fix would be to make GetDanger() simulate domain transitions, but that's architecturally
+		//complex and risky. Instead, we explicitly scan for nearby naval threats when considering embarkation.
+		//This catches ships that could attack an embarked unit even if GetDanger() doesn't see them as threats.
+		if (bWouldEmbark)
+		{
+			int iNavalThreats = 0;
+			
+			//Determine scan range based on game era (fallback for unseen naval units)
+			//Naval unit movement by era: Ancient=3-4, Classical=4, Medieval=4-5, Renaissance=5, Industrial+=6
+			//Plus ranged attack range (typically 2) = max effective threat range
+			int iEra = GC.getGame().getCurrentEra();
+			int iBaseNavalScanRange;
+			if (iEra <= 1) // Ancient/Classical
+				iBaseNavalScanRange = 5;  // trireme (4 move) + melee
+			else if (iEra <= 3) // Medieval/Renaissance  
+				iBaseNavalScanRange = 7;  // caravel/frigate (5 move) + ranged (2)
+			else // Industrial+
+				iBaseNavalScanRange = 8;  // ironclad/destroyer (6 move) + ranged (2)
+			
+			//Use the larger of RING5_PLOTS to scan a wide area, we'll filter by actual threat range
+			for (int iI = 0; iI < RING5_PLOTS; iI++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(pPlot, iI);
+				if (!pLoopPlot)
+					continue;
+				
+				int iDist = plotDistance(*pPlot, *pLoopPlot);
+				
+				//Skip plots beyond our maximum scan range
+				if (iDist > iBaseNavalScanRange)
+					continue;
+				
+				//Check all units on this plot
+				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
+				{
+					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
+					if (!pLoopUnit)
+						continue;
+					
+					//Is this an enemy naval unit that can attack?
+					if (pLoopUnit->getDomainType() == DOMAIN_SEA && 
+						pLoopUnit->isEnemy(pUnit->getTeam()) &&
+						pLoopUnit->IsCanAttack())
+					{
+						//Calculate this specific unit's threat range based on its actual stats
+						//maxMoves() includes all promotions (Navigation, etc.)
+						int iUnitMoves = pLoopUnit->maxMoves() / GD_INT_GET(MOVE_DENOMINATOR);
+						int iThreatRange = iUnitMoves;
+						
+						//Add ranged attack range if applicable
+						if (pLoopUnit->IsCanAttackRanged())
+							iThreatRange += pLoopUnit->GetRange();
+						
+						//Is this unit close enough to threaten us?
+						if (iDist <= iThreatRange)
+						{
+							iNavalThreats++;
+							
+							if (GC.getLogging() && GC.getAILogging())
+							{
+								CvString strLogString;
+								strLogString.Format("FindSafestPlotInReach: %s detected naval threat %s at (%d,%d), dist=%d, threatRange=%d (moves=%d, range=%d)",
+									pUnit->getName().GetCString(), pLoopUnit->getName().GetCString(),
+									pLoopPlot->getX(), pLoopPlot->getY(), iDist, iThreatRange, iUnitMoves,
+									pLoopUnit->IsCanAttackRanged() ? pLoopUnit->GetRange() : 0);
+								GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+							}
+						}
+					}
+				}
+			}
+			
+			//Also check "vanished" units - enemy units we saw last turn but can no longer see
+			//The AI remembers these for one turn (like a human would remember ships that moved into fog)
+			//This prevents the AI from being fooled by ships that simply moved out of visibility
+			const UnitSet& vanishedUnits = GET_PLAYER(pUnit->getOwner()).GetVanishedUnits();
+			for (UnitSet::const_iterator it = vanishedUnits.begin(); it != vanishedUnits.end(); ++it)
+			{
+				CvUnit* pVanishedUnit = GET_PLAYER(it->first).getUnit(it->second);
+				if (!pVanishedUnit)
+					continue;
+				
+				//Is this a remembered enemy naval unit that can attack?
+				if (pVanishedUnit->getDomainType() == DOMAIN_SEA && 
+					pVanishedUnit->isEnemy(pUnit->getTeam()) &&
+					pVanishedUnit->IsCanAttack())
+				{
+					//Calculate distance from the vanished unit's last known position to the embark plot
+					int iDist = plotDistance(*pPlot, *pVanishedUnit->plot());
+					
+					//Calculate this unit's threat range based on its actual stats
+					int iUnitMoves = pVanishedUnit->maxMoves() / GD_INT_GET(MOVE_DENOMINATOR);
+					int iThreatRange = iUnitMoves;
+					
+					if (pVanishedUnit->IsCanAttackRanged())
+						iThreatRange += pVanishedUnit->GetRange();
+					
+					//Is this remembered unit close enough to potentially threaten us?
+					//Use a slightly larger range since the unit may have moved toward us
+					if (iDist <= iThreatRange + 2)
+					{
+						iNavalThreats++;
+						
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("FindSafestPlotInReach: %s detected REMEMBERED naval threat %s (last seen at %d,%d), dist=%d, threatRange=%d",
+								pUnit->getName().GetCString(), pVanishedUnit->getName().GetCString(),
+								pVanishedUnit->plot()->getX(), pVanishedUnit->plot()->getY(), iDist, iThreatRange);
+							GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+						}
+					}
+				}
+			}
+			
+			if (iNavalThreats > 0)
+			{
+				bIsZeroDanger = false;
+				//Set a significant danger value - embarking with naval threats is extremely dangerous
+				if (iDanger < iNavalThreats * 100)
+					iDanger = iNavalThreats * 100;
+					
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("FindSafestPlotInReach: %s detected %d total naval threats near embark plot (%d,%d), setting danger=%d",
+						pUnit->getName().GetCString(), iNavalThreats, pPlot->getX(), pPlot->getY(), iDanger);
+					GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+				}
+			}
+		}
+
 		// citadels have low danger but not zero. so we need to make sure we're not abandoning them too easily
 		bool bIsInCityOrCitadel = (pPlot->isFriendlyCity(*pUnit) && !pPlot->getPlotCity()->isInDangerOfFalling()) ||
 			(pUnit->IsCombatUnit() && TacticalAIHelpers::IsPlayerCitadel(pPlot, pUnit->getOwner()) && pUnit->getDomainType() == DOMAIN_LAND);
@@ -8596,9 +8748,6 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				iDanger = pDefender->GetDanger(pPlot);
 			}
 		}
-
-		bool bWrongDomain = pPlot->needsEmbarkation(pUnit);
-		bool bWouldEmbark = bWrongDomain && !pUnit->isEmbarked();
 
 		//avoid overflow further down and useful handling for civilians
 		if (iDanger == INT_MAX)
@@ -8642,8 +8791,9 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		{
 			//try to go where our friends are
 			int iFriendlyUnitsAdjacent = pPlot->GetNumFriendlyUnitsAdjacent(pUnit->getTeam(), NO_DOMAIN, true, pUnit);
-			//don't go where our foes are
-			int iEnemyUnitsAdjacent = pPlot->GetNumEnemyUnitsAdjacent(pUnit->getTeam(), pUnit->getDomainType());
+			//don't go where our foes are - use NO_DOMAIN when embarking so we count naval threats too!
+			DomainTypes eThreatDomain = bWouldEmbark ? NO_DOMAIN : pUnit->getDomainType();
+			int iEnemyUnitsAdjacent = pPlot->GetNumEnemyUnitsAdjacent(pUnit->getTeam(), eThreatDomain);
 			iScore += (iEnemyUnitsAdjacent - iFriendlyUnitsAdjacent) * 13;
 
 			//use city distance as tiebreaker
@@ -8654,9 +8804,52 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				iScore = iScore * 3 + iCityDistance;
 		}
 
-		//discourage water tiles for land units
-		if (bWrongDomain)
-			iScore += 250;
+		//RETREAT DIRECTION: heavily penalize moving TOWARD enemy (further from our cities)
+		//A retreating damaged unit should move toward safety, not toward the frontline
+		if (bMovingTowardEnemy)
+			iScore += 100;
+
+		//THIRD-PARTY SAFE HAVEN for LAND plots (applies to iScore for danger/zero lists)
+		//Retreating into neutral territory where enemy can't follow is tactically smart
+		bool bIsThirdPartySafeHaven = false;
+		if (!bWouldEmbark && !bIsInTerritory)
+		{
+			PlayerTypes ePlotOwner = pPlot->getOwner();
+			if (ePlotOwner != NO_PLAYER)
+			{
+				TeamTypes eOurTeam = pUnit->getTeam();
+				TeamTypes ePlotTeam = pPlot->getTeam();
+				
+				if (ePlotTeam != NO_TEAM && !GET_TEAM(eOurTeam).isAtWar(ePlotTeam))
+				{
+					bool bWeHaveOpenBorders = GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eOurTeam);
+					if (bWeHaveOpenBorders)
+					{
+						//Check if enemies can't follow
+						for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+						{
+							PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+							if (!GET_PLAYER(eEnemy).isAlive())
+								continue;
+							if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+								continue;
+							
+							TeamTypes eEnemyTeam = GET_PLAYER(eEnemy).getTeam();
+							if (!GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eEnemyTeam))
+							{
+								bIsThirdPartySafeHaven = true;
+								iScore -= 50; //bonus for enemy-blocked territory
+								
+								//Extra if third party is at war with enemy
+								if (GET_TEAM(ePlotTeam).isAtWar(eEnemyTeam))
+									iScore -= 30;
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
 
 		if(bIsInCityOrCitadel)
 		{
@@ -8666,13 +8859,142 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		{
 			aCoverList.push_back( OptionWithScore<pair<CvPlot*, int>>(make_pair(pPlot, it->iMovesLeft),iScore) );
 		}
+		else if(bWouldEmbark && bAllowEmbark)
+		{
+			//EMBARKATION IS LAST RESORT for land units - put in separate list
+			//Only consider water plots if NO safe land plots are available
+			//Score based on: distance to own cities, naval threats, escort availability, third-party territory
+			int iEmbarkScore = iCityDistance * 10; //prefer closer to our cities
+			if (bMovingTowardEnemy)
+				iEmbarkScore += 500; //heavily penalize moving toward enemy frontline
+			if (!bIsZeroDanger)
+				iEmbarkScore += iDanger; //factor in detected naval danger
+			//prefer plots in our territory (we can see threats better)
+			if (!bIsInTerritory)
+				iEmbarkScore += 200;
+			
+			//Check for friendly naval escort on this water plot
+			//A friendly naval unit provides some protection, but it's still risky if they could be killed
+			CvUnit* pNavalEscort = pPlot->getBestDefender(pUnit->getOwner());
+			if (pNavalEscort && pNavalEscort->getDomainType() == DOMAIN_SEA && pNavalEscort->IsCombatUnit())
+			{
+				//We have a naval escort! Much safer, but evaluate their survival chance
+				int iEscortDanger = pNavalEscort->GetDanger(pPlot);
+				int iEscortHP = pNavalEscort->GetCurrHitPoints();
+				
+				if (iEscortDanger >= iEscortHP)
+				{
+					//Escort is likely to die - still risky but better than nothing
+					iEmbarkScore -= 100; //small bonus for having doomed escort
+				}
+				else if (iEscortDanger >= iEscortHP / 2)
+				{
+					//Escort is in significant danger
+					iEmbarkScore -= 200; //moderate bonus
+				}
+				else
+				{
+					//Escort is relatively safe - good protection!
+					iEmbarkScore -= 400; //significant bonus for safe escort
+				}
+				
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strLogString;
+					strLogString.Format("FindSafestPlotInReach: %s found naval escort %s at (%d,%d), escort danger=%d/%d HP, embarkScore=%d",
+						pUnit->getName().GetCString(), pNavalEscort->getName().GetCString(),
+						pPlot->getX(), pPlot->getY(), iEscortDanger, iEscortHP, iEmbarkScore);
+					GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+				}
+			}
+			
+			//THIRD-PARTY TERRITORY SAFE HAVEN CHECK
+			//If this plot or adjacent plots are in neutral territory where:
+			//  - We have open borders (can enter)
+			//  - Our enemy does NOT have open borders (can't pursue with melee)
+			//Then this is a potential safe haven - enemy can only attack with ranged
+			PlayerTypes ePlotOwner = pPlot->getOwner();
+			if (ePlotOwner != NO_PLAYER && ePlotOwner != pUnit->getOwner())
+			{
+				TeamTypes eOurTeam = pUnit->getTeam();
+				TeamTypes ePlotTeam = pPlot->getTeam();
+				
+				//Check if this is a third party (not our enemy)
+				if (ePlotTeam != NO_TEAM && !GET_TEAM(eOurTeam).isAtWar(ePlotTeam))
+				{
+					//We're not at war with the plot owner - check open borders
+					bool bWeHaveOpenBorders = GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eOurTeam);
+					
+					if (bWeHaveOpenBorders)
+					{
+						//Check if any of our current enemies lack open borders with this third party
+						bool bEnemyBlocked = false;
+						for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+						{
+							PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+							if (!GET_PLAYER(eEnemy).isAlive())
+								continue;
+							if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+								continue;
+								
+							//This is an enemy - do they have open borders with the third party?
+							TeamTypes eEnemyTeam = GET_PLAYER(eEnemy).getTeam();
+							bool bEnemyHasOpenBorders = GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eEnemyTeam);
+							
+							if (!bEnemyHasOpenBorders)
+							{
+								bEnemyBlocked = true;
+								break;
+							}
+						}
+						
+						if (bEnemyBlocked)
+						{
+							//This third-party territory blocks enemy pursuit! 
+							//Enemy can only attack with ranged units from outside
+							iEmbarkScore -= 300; //significant bonus for safe haven
+							
+							//Extra bonus if the third party is at war with our enemy
+							for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+							{
+								PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+								if (!GET_PLAYER(eEnemy).isAlive())
+									continue;
+								if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+									continue;
+									
+								if (GET_TEAM(ePlotTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+								{
+									//Third party is hostile to our enemy - even safer!
+									iEmbarkScore -= 200;
+									break;
+								}
+							}
+							
+							if (GC.getLogging() && GC.getAILogging())
+							{
+								CvString strLogString;
+								strLogString.Format("FindSafestPlotInReach: %s found third-party safe haven at (%d,%d), owner=%d, embarkScore=%d",
+									pUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(), (int)ePlotOwner, iEmbarkScore);
+								GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+							}
+						}
+					}
+				}
+			}
+			
+			aEmbarkList.push_back( OptionWithScore<pair<CvPlot*, int>>(make_pair(pPlot, it->iMovesLeft), iEmbarkScore) );
+		}
 		else if(bIsZeroDanger)
 		{
 			//if danger is zero, look at distance to closest owned city instead
-			//idea: could also look at number of plots reachable from pPlot to avoid dead ends
-			aZeroDangerList.push_back( OptionWithScore<pair<CvPlot*, int>>(make_pair(pPlot, it->iMovesLeft), bIsInTerritory ? -iCityDistance : -iCityDistance*2) );
+			//but also factor in domain penalty and retreat direction penalty
+			int iZeroScore = bIsInTerritory ? iCityDistance : iCityDistance * 2;
+			if (bMovingTowardEnemy)
+				iZeroScore += 100;
+			aZeroDangerList.push_back( OptionWithScore<pair<CvPlot*, int>>(make_pair(pPlot, it->iMovesLeft), iZeroScore) );
 		}
-		else if(!bWouldEmbark || bAllowEmbark)
+		else if(!bWouldEmbark) //land plots with some danger
 		{
 			aDangerList.push_back( OptionWithScore<pair<CvPlot*, int>>(make_pair(pPlot, it->iMovesLeft),iScore) );
 		}
@@ -8683,14 +9005,26 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 	std::stable_sort(aCoverList.begin(), aCoverList.end());
 	std::stable_sort(aZeroDangerList.begin(), aZeroDangerList.end());
 	std::stable_sort(aDangerList.begin(), aDangerList.end());
+	std::stable_sort(aEmbarkList.begin(), aEmbarkList.end());
+
+	pair<CvPlot*, int> kSelectedMove = make_pair(static_cast<CvPlot*>(NULL), 0);
+	CvPlot* pSelectedPlot = NULL;
+	const char* szListName = "none";
 
 	// Now that we've gathered up our lists of destinations, pick the most promising one
+	// PRIORITY ORDER: city > cover > zeroDanger > danger > embark (last resort!)
 	if (aCityList.size()>0)
-		return aCityList.back().option;
+	{
+		kSelectedMove = aCityList.back().option;
+		pSelectedPlot = kSelectedMove.first;
+		szListName = "city";
+	}
 	else if (aCoverList.size() > 0)
 	{
-		pair<CvPlot*, int> pPlotMove = aCoverList.back().option;
-		CvUnit* pDefender = pPlotMove.first->getBestDefender(pUnit->getOwner());
+		kSelectedMove = aCoverList.back().option;
+		pSelectedPlot = kSelectedMove.first;
+		szListName = "cover";
+		CvUnit* pDefender = pSelectedPlot->getBestDefender(pUnit->getOwner());
 		if (pDefender && pDefender != pUnit)
 		{
 			//taking cover only works if the defender will not move away!
@@ -8702,14 +9036,49 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				pDefender->SetTurnProcessed(true);
 			}
 		}
-		return pPlotMove;
 	}
 	else if (aZeroDangerList.size()>0)
-		return aZeroDangerList.back().option;
+	{
+		kSelectedMove = aZeroDangerList.back().option;
+		pSelectedPlot = kSelectedMove.first;
+		szListName = "zeroDanger";
+	}
 	else if (aDangerList.size()>0)
-		return aDangerList.back().option;
+	{
+		kSelectedMove = aDangerList.back().option;
+		pSelectedPlot = kSelectedMove.first;
+		szListName = "danger";
+	}
+	else if (aEmbarkList.size()>0)
+	{
+		//EMBARKATION IS ABSOLUTE LAST RESORT - only if no land options exist at all
+		//Pick the safest water plot (closest to our cities, fewest naval threats)
+		kSelectedMove = aEmbarkList.back().option;
+		pSelectedPlot = kSelectedMove.first;
+		szListName = "embark(lastResort)";
+		
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString strLogString;
+			strLogString.Format("FindSafestPlotInReach: %s (%d) has NO land options, forced to consider embarkation. Embark candidates=%d",
+				pUnit->getName().GetCString(), pUnit->GetID(), (int)aEmbarkList.size());
+			GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+		}
+	}
 
-	return make_pair(static_cast<CvPlot*>(NULL), 0);
+	//Log selection for debugging embark issues
+	if (GC.getLogging() && GC.getAILogging() && pSelectedPlot && pUnit->getDomainType() == DOMAIN_LAND && pSelectedPlot->isWater())
+	{
+		CvString strLogString;
+		strLogString.Format("FindSafestPlotInReach: %s (%d) at (%d,%d) selected WATER plot (%d,%d) from %s list. Lists: city=%d cover=%d zero=%d danger=%d embark=%d",
+			pUnit->getName().GetCString(), pUnit->GetID(), 
+			pUnit->getX(), pUnit->getY(),
+			pSelectedPlot->getX(), pSelectedPlot->getY(), szListName,
+			(int)aCityList.size(), (int)aCoverList.size(), (int)aZeroDangerList.size(), (int)aDangerList.size(), (int)aEmbarkList.size());
+		GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
+	}
+
+	return kSelectedMove;
 }
 
 void CTacticalUnitArray::push_back(const CvTacticalUnit& unit)
