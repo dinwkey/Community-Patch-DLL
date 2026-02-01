@@ -2727,7 +2727,18 @@ void CvCityCitizens::ClearBlockades()
 
 bool CvCityCitizens::AnyPlotBlockaded() const
 {
-	return !m_vBlockadedPlots.empty();
+	// Compute live instead of relying on cache to avoid stale blockade display
+	// Check all workable plots for this city to preserve previous semantics
+	for (int iI = 0; iI < GetCity()->GetNumWorkablePlots(); iI++)
+	{
+		CvPlot* pPlot = GetCityPlotFromIndex(iI);
+		if (!pPlot || !pPlot->isEffectiveOwner(m_pCity))
+			continue;
+
+		if (pPlot->isBlockaded(m_pCity->getOwner()))
+			return true;
+	}
+	return false;
 }
 
 /// Check all Plots by this City to see if we can actually be working them (if we are)
