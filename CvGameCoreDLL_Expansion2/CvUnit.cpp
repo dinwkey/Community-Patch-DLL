@@ -19743,9 +19743,19 @@ bool CvUnit::IsCoveringFriendlyCivilian() const
 		CvUnit* pLoopUnit = ::GetPlayerUnit(*pUnitNode);
 		pUnitNode = myPlot->nextUnitNode(pUnitNode);
 
-		if(pLoopUnit && pLoopUnit->getTeam() == getTeam())
-			if(!pLoopUnit->IsCanDefend() && pLoopUnit->TurnProcessed())
-				return !kPlayer.GetPossibleAttackers(*myPlot, getTeam()).empty();
+		if(pLoopUnit && pLoopUnit->getTeam() == getTeam() && !pLoopUnit->IsCanDefend())
+		{
+			// Check if we're protecting a valuable civilian (great general, settler, etc.)
+			// Avoid race condition where combat unit moves away before civilian finishes turn.
+			bool bIsValuableCivilian = pLoopUnit->IsGreatGeneral() || pLoopUnit->IsGreatAdmiral() ||
+				pLoopUnit->isFound() || pLoopUnit->AI_getUnitAIType() == UNITAI_SETTLE;
+
+			if (bIsValuableCivilian || pLoopUnit->TurnProcessed())
+			{
+				if (!kPlayer.GetPossibleAttackers(*myPlot, getTeam()).empty())
+					return true;
+			}
+		}
 	}
 
 	return false;
