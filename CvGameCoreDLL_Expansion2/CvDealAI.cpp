@@ -4293,6 +4293,16 @@ void CvDealAI::DoAddOpenBordersToThem(CvDeal* pDeal, PlayerTypes eThem, int& iTo
 				{
 					pDeal->AddOpenBorders(eThem, iDealDuration, false);
 					iTotalValue = GetDealValue(pDeal);
+
+					// If adding Open Borders alone wasn't enough, let the AI try to add GPT as well
+					// so it can offer "Open Borders + GPT" in one adjustment rather than forcing
+					// the human to provide a small lump sum. This helps produce more natural
+					// symmetric offers (e.g., AI: GPT+OB, Human: OB).
+					if (!WithinAcceptableRange(eThem, pDeal->GetMaxValue(), iTotalValue))
+					{
+						// Try to fill the remaining value by adding GPT from them
+						DoAddGPTToThem(pDeal, eThem, iTotalValue, 0);
+					}
 				}
 			}
 		}
@@ -4310,25 +4320,22 @@ void CvDealAI::DoAddOpenBordersToUs(CvDeal* pDeal, PlayerTypes eThem, int& iTota
 
 	int iDealDuration = pDeal->GetDuration();
 
-	if ((iThresholdValue != 0 || !WithinAcceptableRange(iTotalValue)) && (iThresholdValue == 0 || iTotalValue >= iThresholdValue))
+	if ((iThresholdValue != 0 || !WithinAcceptableRange(iTotalValue)) && (iThresholdValue == 0 || iTotalValue >= iThresholdValue) && !pDeal->IsOpenBordersTrade(eMyPlayer))
 	{
-		if (!pDeal->IsOpenBordersTrade(eMyPlayer))
+		// See if we can actually trade it to them
+		if (pDeal->IsPossibleToTradeItem(eMyPlayer, eThem, TRADE_ITEM_OPEN_BORDERS))
 		{
-			// See if we can actually trade it to them
-			if (pDeal->IsPossibleToTradeItem(eMyPlayer, eThem, TRADE_ITEM_OPEN_BORDERS))
-			{
-				int iItemValue = GetTradeItemValue(TRADE_ITEM_OPEN_BORDERS, /*bFromMe*/ true, eThem, -1, -1, -1, /*bFlag1*/false, iDealDuration, true);
+			int iItemValue = GetTradeItemValue(TRADE_ITEM_OPEN_BORDERS, /*bFromMe*/ true, eThem, -1, -1, -1, /*bFlag1*/false, iDealDuration, true);
 
-				// If adding this to the deal doesn't take it under the min limit, do it
-				if (iItemValue == INT_MAX)
-				{
-					return;
-				}
-				if (!TooMuchAdded(iTotalValue - iThresholdValue, iItemValue, true))
-				{
-					pDeal->AddOpenBorders(eMyPlayer, iDealDuration, false);
-					iTotalValue = GetDealValue(pDeal);
-				}
+			// If adding this to the deal doesn't take it under the min limit, do it
+			if (iItemValue == INT_MAX)
+			{
+				return;
+			}
+			if (!TooMuchAdded(iTotalValue - iThresholdValue, iItemValue, true))
+			{
+				pDeal->AddOpenBorders(eMyPlayer, iDealDuration, false);
+				iTotalValue = GetDealValue(pDeal);
 			}
 		}
 	}
