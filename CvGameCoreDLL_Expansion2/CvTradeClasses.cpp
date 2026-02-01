@@ -6660,6 +6660,36 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 		{
 			iScore *= 2;
 		}
+
+		// Grand Strategy: Science/Spaceship Victory - boost routes that give us science
+		if (m_pPlayer->GetDiplomacyAI()->IsGoingForSpaceshipVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToSpaceshipVictory())
+		{
+			// Boost based on science score - we want tech from trade routes
+			if (iScienceScore > 0)
+			{
+				iScore += iScienceScore * 2; // Extra emphasis on science-yielding routes
+			}
+			// Penalize routes that give the other player more science than us (they might be competing)
+			if (iTechDelta < 0)
+			{
+				iScore /= 2;
+			}
+		}
+
+		// Grand Strategy: Domination Victory - prioritize gold for military, avoid helping rivals
+		if (m_pPlayer->GetDiplomacyAI()->IsGoingForWorldConquest() || m_pPlayer->GetDiplomacyAI()->IsCloseToWorldConquest())
+		{
+			// Boost gold routes - we need money for our military
+			if (iGoldScore > 0)
+			{
+				iScore += iGoldScore;
+			}
+			// Strongly penalize routes that benefit potential rivals significantly
+			if (!bFriendOrAlly && !bStrategicTradePartner && iOtherGoldAmount > iGoldAmount)
+			{
+				iScore /= 3;
+			}
+		}
 	}
 
 	//If we aren't connected to a player, and we benefit from this, ramp up the score!
@@ -6700,6 +6730,37 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	}
 	if(GET_PLAYER(kTradeConnection.m_eDestOwner).isMinorCiv())
 	{
+		// Grand Strategy: Diplomatic Victory - strongly boost trade routes to city-states
+		if (m_pPlayer->GetDiplomacyAI()->IsGoingForDiploVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToDiploVictory())
+		{
+			CvMinorCivAI* pMinorCivAI = GET_PLAYER(kTradeConnection.m_eDestOwner).GetMinorCivAI();
+			
+			// Big bonus for city-states we're not yet allied with (need more influence)
+			if (!pMinorCivAI->IsAllies(m_pPlayer->GetID()))
+			{
+				// Even bigger bonus if we're friends but not allies - close to securing their vote
+				if (pMinorCivAI->IsFriends(m_pPlayer->GetID()))
+				{
+					iScore *= 4;
+				}
+				else
+				{
+					iScore *= 3;
+				}
+			}
+			else
+			{
+				// Still boost routes to allies to maintain influence
+				iScore *= 2;
+			}
+			
+			// Extra bonus if this is a new connection (first trade route to this city-state)
+			if (!GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
+			{
+				iScore *= 2;
+			}
+		}
+
 		int iCityLoop = 0;
 		for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
 		{
@@ -6806,6 +6867,19 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv() && GET_PLAYER(kTradeConnection.m_eDestOwner).GetPlayerTraits()->IsCanPlunderWithoutWar())
 	{
 		iScore *= 5;
+	}
+
+	// Avoid helping major civs who are close to winning (unless they're our friends)
+	if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv() && !bFriendOrAlly && !bStrategicTradePartner)
+	{
+		CvDiplomacyAI* pTheirDiploAI = GET_PLAYER(kTradeConnection.m_eDestOwner).GetDiplomacyAI();
+		
+		// Heavily penalize routes to civs close to any victory
+		if (pTheirDiploAI->IsCloseToWorldConquest() || pTheirDiploAI->IsCloseToDiploVictory() || 
+			pTheirDiploAI->IsCloseToSpaceshipVictory() || pTheirDiploAI->IsCloseToCultureVictory())
+		{
+			iScore /= 5;
+		}
 	}
 
 	ret.m_iScore = (iScore > INT_MAX) ? INT_MAX : ((iScore < INT_MIN) ? INT_MIN : (int)iScore);
