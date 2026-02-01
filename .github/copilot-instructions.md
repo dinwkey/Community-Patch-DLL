@@ -29,6 +29,19 @@ File creation safety
  3. Launch `Civilization5.exe` and in Visual Studio: Debug > Attach to Process > select `Civilization5.exe`.
  4. Enable logging for deeper clues by editing `My Games\Sid Meier's Civilization V\config.ini` and turning on the listed logging flags (see `DEVELOPMENT.md`). Logs appear in `My Games\Sid Meier's Civilization V\Logs`.
 
+- **Copying Lua/XML/SQL to game folders (follow `VPSetupData.iss` paths):**
+  - **MODS root:** `Documents\My Games\Sid Meier's Civilization 5\MODS`.
+  - **Steam DLC root:** `...\Steam\steamapps\common\Sid Meier's Civilization V\Assets\DLC`.
+  - **With EUI (FullEUI / Civ43EUI):**
+    - Do **NOT** copy `(1) Community Patch\LUA` or `(2) Vox Populi\LUA` into MODS (installer excludes them).
+    - Copy Lua changes for EUI UI into **(3a) VP - EUI Compatibility Files\LUA** under MODS.
+    - Copy UI changes for EUI core into **DLC\UI_bc1\...** (e.g., `Core\EUI_core_library.lua`, `CityBanners\CityBannerManager.lua`, `CityView\CityView.lua`, `UnitPanel\UnitPanel.lua`).
+    - Copy SQL/XML text changes into the relevant MODS subfolders (e.g., `(2) Vox Populi\Database Changes\Text\...`).
+  - **Without EUI (FullNoEUI / Civ43NoEUI):**
+    - Copy `(1) Community Patch\LUA` and `(2) Vox Populi\LUA` into MODS.
+    - Do **NOT** copy UI_bc1 to DLC.
+  - Always mirror the installer destinations in `VPSetupData.iss` (not the repo folder names) when copying to game folders.
+
 - **Repo conventions & patterns to follow:**
   - Large, monolithic C++ codebase using precompiled headers and many translation units — prefer small, localized edits and rebuild only what you must.
   - Most gameplay-level changes live in the mod folders (Lua/SQL/XML); modify those when you can to avoid rebuilding DLL.
