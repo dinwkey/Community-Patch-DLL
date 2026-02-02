@@ -28430,6 +28430,18 @@ void CvDiplomacyAI::DoAggressiveMilitaryStatement(PlayerTypes ePlayer, DiploStat
 	if (AvoidExchangesWithPlayer(ePlayer, /*bWarOnly*/ true))
 		return;
 
+	// Don't provoke a potential enemy if we can't afford another war - this could trigger them to attack us!
+	if (GetPlayer()->IsNoNewWars())
+		return;
+
+	// Don't provoke them if we have cities exposed to their attack - we'd be inviting them to strike
+	if (GetPlayer()->GetMilitaryAI()->IsExposedToEnemy(NULL, ePlayer))
+		return;
+
+	// Don't provoke them if they're significantly stronger - we can't back up our threat
+	if (GetMilitaryStrengthComparedToUs(ePlayer) >= STRENGTH_POWERFUL)
+		return;
+
 	// Check other player status
 	for (int iThirdPartyLoop = 0; iThirdPartyLoop < MAX_MAJOR_CIVS; iThirdPartyLoop++)
 	{
