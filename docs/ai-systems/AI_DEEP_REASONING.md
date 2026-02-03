@@ -421,7 +421,13 @@ Rather than using a general-purpose LLM, train a **Civ5-specific distilled model
 
 ### 4.6 Alternative: Copilot Bridge (Free-Tier Cloud LLM)
 
-For users who want LLM capabilities without API costs, **VSCode Copilot Bridge** provides access to Copilot's models via localhost HTTP.
+For users who want LLM capabilities without API costs, **[VSCode Copilot Bridge](https://github.com/larsbaunwall/vscode-copilot-bridge)** provides access to Copilot's models via localhost HTTP using VS Code's official Language Model API (`vscode.lm`).
+
+**Key characteristics:**
+- Uses **only** the public VS Code Language Model API — NOT a reverse-engineered proxy
+- Requires active GitHub Copilot subscription
+- Local-first: all traffic stays on-device, no telemetry collected
+- Subject to GitHub ToS and Acceptable Use Policy
 
 **Architecture:**
 
@@ -430,12 +436,12 @@ For users who want LLM capabilities without API costs, **VSCode Copilot Bridge**
 │  COPILOT BRIDGE ARCHITECTURE                                    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Civ5 (32-bit) ──HTTP POST──► localhost:3000 ──► Copilot Bridge │
+│  Civ5 (32-bit) ──HTTP POST──► 127.0.0.1:<port> ──► Copilot Bridge
 │       │                            │                   │        │
-│  Game state JSON              Bridge server         VSCode      │
-│  "Should I attack?"           (Node.js)            Copilot API  │
+│  Game state JSON              Polka server          VSCode      │
+│  "Should I attack?"          (in VS Code)       vscode.lm API   │
 │       │                            │                   │        │
-│       ◄─────────HTTP Response──────┘◄──────────────────┘        │
+│       ◄────────SSE Response────────┘◄──────────────────┘        │
 │  "Wait 3 turns,                                                 │
 │   target is winning war"                                        │
 │                                                                 │
@@ -444,7 +450,44 @@ For users who want LLM capabilities without API costs, **VSCode Copilot Bridge**
 
 <!-- Future: Add PNG diagram to docs/images/copilot-bridge.png -->
 
-**Reference implementation:** [vscode-copilot-bridge](https://github.com/larsbaunwall/vscode-copilot-bridge)
+**OpenAI-compatible endpoints:**
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/v1/chat/completions` | Chat completions (OpenAI-style) |
+| `/v1/models` | List available models |
+| `/health` | Health check, diagnostics |
+
+**Configuration options:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `bridge.enabled` | `false` | Auto-start with VS Code |
+| `bridge.port` | `0` (ephemeral) | Server port (check status for assigned port) |
+| `bridge.token` | `""` | **Required** bearer token for auth |
+| `bridge.historyWindow` | `3` | Retained conversation turns |
+| `bridge.maxConcurrent` | `1` | Max parallel requests |
+| `bridge.verbose` | `false` | Debug logging |
+
+**Security model:**
+- 🔒 **Localhost-only** — binds to `127.0.0.1`, cannot be exposed to network (non-configurable)
+- 🔑 **Mandatory bearer token** — requests without valid `Authorization: Bearer <token>` get `401 Unauthorized`
+- 📊 **No telemetry** — zero data transmitted to author or third parties
+
+**Scope and limitations:**
+
+| ✅ Supported | ❌ Not Supported |
+|--------------|------------------|
+| Local, single-user loopback | Multi-user / shared deployments |
+| Testing local agents / CLI | CI/CD automation |
+| Educational / experimental | Public or commercial API hosting |
+| Personal experimentation | Server-side deployments |
+
+**Critical constraints:**
+- **VS Code must stay open** — bridge runs only while editor is active
+- **Requires Copilot subscription** — uses your personal Copilot session
+- **Concurrency limited** — default 1 request at a time (tunable but affects editor responsiveness)
+- **Ephemeral port** — check "Copilot Bridge: Status" command for assigned port
 
 **Free-tier model selection:**
 
@@ -454,6 +497,8 @@ For users who want LLM capabilities without API costs, **VSCode Copilot Bridge**
 | **GPT-5-mini** | Very Fast (<1s) | Good | Frequent queries |
 | **Grok Code Fast 1** | Very Fast (<1s) | Good (code-aware) | Code-aware decisions |
 
+> ℹ️ The bridge auto-discovers models via `vscode.lm.selectChatModels()` — any model registered with VS Code's Language Model API is available.
+
 **Rate limit budget (free tier ~50 req/hr):**
 
 | Approach | Queries/Turn | 500-turn Game | Fits Limit? |
@@ -462,11 +507,34 @@ For users who want LLM capabilities without API costs, **VSCode Copilot Bridge**
 | Major decisions only | 0.1-0.2 | 50-100 | ⚠️ Borderline |
 | Cached + filtered | 0.05 | 25 | ✅ Safe |
 
+**Quick start:**
+
+```bash
+# 1. Install extension from VS Marketplace (thinkability.copilot-bridge)
+# 2. Set token in VS Code settings: Copilot Bridge > Token
+# 3. Command Palette > "Copilot Bridge: Enable"
+# 4. Check status: "Copilot Bridge: Status" (shows port)
+
+# Test with curl:
+export PORT=<port-from-status>
+export BRIDGE_TOKEN="<your-token>"
+
+curl -H "Authorization: Bearer $BRIDGE_TOKEN" \
+  http://127.0.0.1:$PORT/v1/models
+
+curl -N \
+  -H "Authorization: Bearer $BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-copilot","messages":[{"role":"user","content":"hello"}]}' \
+  http://127.0.0.1:$PORT/v1/chat/completions
+```
+
 **When to use Copilot Bridge:**
 - Already have Copilot subscription
 - Don't want to pay for API keys
 - Simpler setup than full Vox Deorum
 - VSCode is always open during play
+- Want zero telemetry/data collection
 
 ### 4.7 Hybrid: Vox Deorum + Copilot Bridge
 
@@ -486,7 +554,7 @@ Combine Vox Deorum's mature architecture with Copilot Bridge's free models by ro
 │                                                      │                      │
 │                                                      ▼                      │
 │                                              Copilot Bridge ──► VSCode      │
-│                                              (localhost:3000)    Copilot    │
+│                                          (127.0.0.1:<port>)    vscode.lm    │
 │                                                                             │
 │  Benefits:                                                                  │
 │   ✅ Vox Deorum's mature MCP architecture                                   │
@@ -494,6 +562,7 @@ Combine Vox Deorum's mature architecture with Copilot Bridge's free models by ro
 │   ✅ Session replay for debugging                                           │
 │   ✅ Free-tier Copilot models (no API key costs)                            │
 │   ✅ Codebase awareness from Copilot                                        │
+│   ✅ Zero telemetry — all local                                             │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -511,18 +580,26 @@ This means **no modifications required** — just configure Vox Deorum's LiteLLM
 
 ```python
 # Configure LiteLLM to use Copilot Bridge
+# Note: port is ephemeral — check "Copilot Bridge: Status" for assigned port
 import litellm
 
-litellm.api_base = "http://localhost:3000/v1"
-litellm.api_key = "not-needed"  # Bridge handles auth via VSCode
+BRIDGE_PORT = 12345  # Replace with actual port from status
+BRIDGE_TOKEN = "your-secret-token"  # Same token configured in VS Code settings
+
+litellm.api_base = f"http://127.0.0.1:{BRIDGE_PORT}/v1"
+litellm.api_key = BRIDGE_TOKEN  # Required — requests without token get 401
 ```
 
 **Setup steps:**
 
-1. Install and run Copilot Bridge (requires VSCode with Copilot)
-2. Install Vox Deorum normally
-3. Configure Vox Deorum's LiteLLM to use `http://localhost:3000/v1` as API base
-4. Play with free Copilot models + full Vox Deorum features
+1. Install Copilot Bridge extension (requires VSCode with Copilot signed in)
+2. Set `bridge.token` in VS Code settings (mandatory for auth)
+3. Run "Copilot Bridge: Enable" from Command Palette
+4. Note the port from "Copilot Bridge: Status"
+5. Install Vox Deorum normally
+6. Configure Vox Deorum's LiteLLM to use `http://127.0.0.1:<port>/v1` as API base
+7. Set the same bearer token as API key
+8. Play with free Copilot models + full Vox Deorum features
 
 **Considerations:**
 
