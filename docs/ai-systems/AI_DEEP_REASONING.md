@@ -13,15 +13,17 @@
 
 The current VP/CP AI makes decisions based on **immediate game state** without projecting future outcomes or remembering past patterns. This document explores architectural approaches to enable deeper strategic reasoning:
 
-| Approach | Complexity | Memory Impact | Latency | In-Process? | Value |
-|----------|------------|---------------|---------|-------------|-------|
+| Approach | Complexity | Memory/Cost | Latency | In-Process? | Value |
+|----------|------------|-------------|---------|-------------|-------|
 | Extended Memory (5-turn) | Low | ~15-50 MB | None | ✅ Yes | High |
 | Traditional ML (XGBoost) | Medium | ~10-50 MB | 0.01-0.1 ms | ✅ Yes | High |
-| Copilot Bridge (cloud LLM) | Low-Medium | None | 1-3 sec | ❌ No | High |
-| Self-Hosted LLM | High | 6-8 GB VRAM | 5-10 sec | ❌ No | Experimental |
-| Out-of-Process 64-bit | Medium | Unlimited | 0.1-5 ms | ❌ No | Medium |
+| Vox Deorum (LLM) | Low | API key | 1-5 sec | ❌ No | ⭐ High |
+| Copilot Bridge (free LLM) | Medium | Free tier | 1-3 sec | ❌ No | Medium |
+| Self-Hosted LLM | High | 6-8 GB VRAM | 5-10 sec | ❌ No | Medium |
 
-**Recommended path:** Implement in phases — Memory → ML → Copilot Bridge (or self-hosted LLM).
+**Recommended path:** 
+- **Phase 1-2:** Memory → ML (in-process improvements)
+- **LLM integration:** Use **[Vox Deorum](https://github.com/CIVITAS-John/vox-deorum)** — production-ready, built for VP/CP
 
 ---
 
@@ -358,9 +360,68 @@ Rather than using a general-purpose LLM, train a **Civ5-specific distilled model
 - Trade route selection
 - Minor diplomatic responses
 
-### 4.5 Alternative: Copilot Bridge (Cloud LLM via localhost)
+### 4.5 Vox Deorum: Production-Ready LLM Integration
 
-Instead of self-hosting an LLM, use a **VSCode Copilot Bridge** to access cloud models via localhost HTTP. This avoids VRAM usage entirely.
+**[Vox Deorum](https://github.com/CIVITAS-John/vox-deorum)** is a mature, production-ready LLM integration specifically built for Vox Populi. It provides a complete architecture with game state tools, session replay, and multi-model support.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  VOX DEORUM ARCHITECTURE                                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Civ 5 ↔ Community Patch DLL ↔ Bridge Service ↔ MCP Server     │
+│           (Named Pipe)         (REST/SSE)       (MCP/HTTP)      │
+│                                                      │          │
+│                                                      ▼          │
+│                                               Vox Agents → LLM  │
+│                                                                 │
+│  Components:                                                    │
+│   • civ5-dll    - Modified game DLL for IPC                     │
+│   • bridge-service - REST API & game communication              │
+│   • mcp-server  - Game state tools via Model Context Protocol   │
+│   • vox-agents  - LLM decision engine                           │
+│   • civ5-mod    - Lua integration scripts                       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+<!-- Future: Add PNG diagram to docs/images/vox-deorum-arch.png -->
+
+**Key Features:**
+- **LLM-enhanced AI Opponent** — Play against LLM-powered civilizations
+- **Chat with LLM Spokespersons** — Interactive diplomacy with AI players
+- **Session Replay** — Review and debug AI decisions with [Vox Deorum Replayer](https://github.com/CIVITAS-John/vox-deorum-replay)
+- **Any LLM** — Supports GPT, Claude, local models via LiteLLM
+- **MCP (Model Context Protocol)** — Standardized tool interface for game state
+
+**Installation:**
+1. Download installer from [releases page](https://github.com/CIVITAS-John/vox-deorum/releases)
+2. Run setup wizard (handles everything automatically)
+3. Launch via "Vox Deorum" in Start Menu or `scripts\vox-deorum.cmd`
+
+**Prerequisites:**
+- Windows 10/11
+- Civilization V (with both expansion packs)
+- API key from LLM provider (or use local models)
+
+**Why Vox Deorum over DIY:**
+
+| Factor | DIY (WinHTTP) | Vox Deorum |
+|--------|---------------|------------|
+| Setup time | Days-weeks | Minutes |
+| Game state access | Manual extraction | MCP tools built-in |
+| Session debugging | None | Full replay system |
+| DLL modifications | DIY | Pre-modified included |
+| Active development | N/A | ✅ (v0.6.3, 33 releases) |
+| Community support | None | GitHub issues, docs |
+
+**Recommendation:** For serious LLM integration, **start with Vox Deorum**. Only build custom solutions if you have specific requirements it doesn't meet.
+
+### 4.6 Alternative: Copilot Bridge (Free-Tier Cloud LLM)
+
+For users who want LLM capabilities without API costs, **VSCode Copilot Bridge** provides access to Copilot's models via localhost HTTP.
 
 **Architecture:**
 
@@ -383,54 +444,15 @@ Instead of self-hosting an LLM, use a **VSCode Copilot Bridge** to access cloud 
 
 <!-- Future: Add PNG diagram to docs/images/copilot-bridge.png -->
 
-**Comparison: Self-Hosted vs Copilot Bridge:**
-
-| Factor | Self-Hosted (llama.cpp) | Copilot Bridge |
-|--------|------------------------|----------------|
-| Setup complexity | High (model download, VRAM) | Low (npm install) |
-| VRAM required | 6-8 GB | None |
-| Cost | Free after setup | Copilot subscription or free tier |
-| Latency | 5-10 sec (local GPU) | 1-3 sec (cloud) |
-| Codebase awareness | Must provide context | ✅ Already has VP/CP context |
-| Requires VSCode | No | Yes |
-| Offline capable | ✅ Yes | ❌ No |
-| Rate limits | None | Yes (free tier ~50/hr) |
-
 **Reference implementation:** [vscode-copilot-bridge](https://github.com/larsbaunwall/vscode-copilot-bridge)
 
-### 4.6 Free-Tier Model Selection (Copilot Bridge)
-
-When using Copilot Bridge with free-tier models, choose based on speed vs reasoning:
+**Free-tier model selection:**
 
 | Model | Speed | Reasoning | Best For |
 |-------|-------|-----------|----------|
 | **GPT-4o** | Fast (1-2s) | Excellent | Complex strategic decisions |
-| **GPT-4.1** | Medium | Excellent | Balanced option |
 | **GPT-5-mini** | Very Fast (<1s) | Good | Frequent queries |
 | **Grok Code Fast 1** | Very Fast (<1s) | Good (code-aware) | Code-aware decisions |
-| **Raptor Mini** | Fast | Medium | Simple classifications |
-
-**Recommendation:** Use **GPT-5-mini** or **Grok Code Fast 1** for 90% of queries (fast, good enough). Reserve **GPT-4o** for rare complex decisions.
-
-**Tiered query strategy:**
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  TIERED MODEL STRATEGY                                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Query Type          Frequency      Model           Budget      │
-│  ─────────────────────────────────────────────────────────────  │
-│  Quick filter        Every turn     GPT-5-mini      90%         │
-│  "Is this worth      (~50/game)     or Grok Fast    of quota    │
-│   considering?"                                                 │
-│                                                                 │
-│  Strategic decision  Rare           GPT-4o          10%         │
-│  "Should I declare   (~5/game)                      of quota    │
-│   war on X?"                                                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
 
 **Rate limit budget (free tier ~50 req/hr):**
 
@@ -440,84 +462,115 @@ When using Copilot Bridge with free-tier models, choose based on speed vs reason
 | Major decisions only | 0.1-0.2 | 50-100 | ⚠️ Borderline |
 | Cached + filtered | 0.05 | 25 | ✅ Safe |
 
-**Key insight:** Use heuristics first, query LLM only when:
-- Heuristics are uncertain (score near threshold)
-- High-stakes decisions (war, major diplomacy)
-- Situation changed significantly since last query
+**When to use Copilot Bridge:**
+- Already have Copilot subscription
+- Don't want to pay for API keys
+- Simpler setup than full Vox Deorum
+- VSCode is always open during play
 
-**C++ integration (WinHTTP):**
+### 4.7 Hybrid: Vox Deorum + Copilot Bridge
 
-```cpp
-#include <winhttp.h>
-#pragma comment(lib, "winhttp.lib")
+Combine Vox Deorum's mature architecture with Copilot Bridge's free models by routing Vox Deorum's LLM requests through Copilot.
 
-enum class LLMTier { FAST, SMART, FALLBACK };
+**Architecture:**
 
-std::string QueryCopilotBridge(const std::string& prompt, LLMTier tier)
-{
-    // Check rate limit budget
-    if (g_fastModelQueries > 45 && tier == LLMTier::FAST)
-        return "";  // Trigger fallback to heuristics
-    
-    HINTERNET hSession = WinHttpOpen(L"Civ5AI/1.0", 
-        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
-    HINTERNET hConnect = WinHttpConnect(hSession, 
-        L"localhost", 3000, 0);  // Bridge port
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, 
-        L"POST", L"/chat", NULL, NULL, NULL, 0);
-    
-    // Model selection based on tier
-    std::string model = (tier == LLMTier::SMART) ? "gpt-4o" : "gpt-5-mini";
-    std::string body = "{\"model\":\"" + model + "\",\"prompt\":\"" + prompt + "\"}";
-    
-    WinHttpSendRequest(hRequest, L"Content-Type: application/json",
-        -1, (LPVOID)body.c_str(), body.length(), body.length(), 0);
-    WinHttpReceiveResponse(hRequest, NULL);
-    
-    // Read and return response...
-    return response;
-}
-
-// Usage with tiered fallback
-void CvDiplomacyAI::ConsiderWarDecision(PlayerTypes eTarget)
-{
-    std::string prompt = FormatWarDecisionPrompt(eTarget);
-    
-    // Try fast model first
-    std::string response = QueryCopilotBridge(prompt, LLMTier::FAST);
-    
-    if (response == "UNCERTAIN" && g_smartModelQueries < 5)
-    {
-        // Escalate to smarter model for complex cases
-        response = QueryCopilotBridge(detailedPrompt, LLMTier::SMART);
-        g_smartModelQueries++;
-    }
-    
-    if (response.empty())
-    {
-        // Fallback to traditional heuristics
-        UseTraditionalScoring(eTarget);
-        return;
-    }
-    
-    ParseAndApplyRecommendation(response);
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  VOX DEORUM + COPILOT BRIDGE HYBRID                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Civ 5 ↔ CP DLL ↔ Bridge Service ↔ MCP Server ↔ Vox Agents                 │
+│           (Named Pipe)   (REST/SSE)    (MCP)         │                      │
+│                                                      ▼                      │
+│                                              LiteLLM Proxy                  │
+│                                                      │                      │
+│                                                      ▼                      │
+│                                              Copilot Bridge ──► VSCode      │
+│                                              (localhost:3000)    Copilot    │
+│                                                                             │
+│  Benefits:                                                                  │
+│   ✅ Vox Deorum's mature MCP architecture                                   │
+│   ✅ Game state tools already implemented                                   │
+│   ✅ Session replay for debugging                                           │
+│   ✅ Free-tier Copilot models (no API key costs)                            │
+│   ✅ Codebase awareness from Copilot                                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Prompt optimization for fast models:**
+<!-- Future: Add PNG diagram to docs/images/vox-deorum-copilot-hybrid.png -->
 
-```cpp
-// BAD: Too verbose
-"You are an expert Civilization 5 AI advisor. Consider the complex 
-geopolitical situation including military strength ratios..."
+**How it works:**
 
-// GOOD: Direct, structured (works better with fast models)
-"Civ5 war decision. My strength: 1250. Target: 890. Target at war: yes.
-Target winning: yes. My approach: hostile. Proximity: neighbor.
-Reply ONLY: ATTACK / WAIT_N / AVOID"
+Vox Deorum uses **LiteLLM** as its LLM proxy. Configure LiteLLM to route requests to Copilot Bridge:
+
+```python
+# Configure LiteLLM to use Copilot Bridge
+import litellm
+
+litellm.api_base = "http://localhost:3000/v1"
+litellm.api_key = "not-needed"  # Bridge handles auth
 ```
 
-### 4.7 Training Data Collection
+**Required modifications to Copilot Bridge:**
+
+Copilot Bridge needs an OpenAI-compatible endpoint for LiteLLM:
+
+```javascript
+// vscode-copilot-bridge/src/openai-compat.js
+app.post('/v1/chat/completions', async (req, res) => {
+    const { messages, model, tools } = req.body;
+    
+    // Convert to Copilot format
+    const copilotResponse = await queryCopilot(messages, model);
+    
+    // Return OpenAI-compatible response
+    res.json({
+        choices: [{ message: { content: copilotResponse } }],
+        usage: { total_tokens: 0 }
+    });
+});
+```
+
+**Considerations:**
+
+| Factor | Challenge | Mitigation |
+|--------|-----------|------------|
+| API compatibility | LiteLLM expects OpenAI format | Add `/v1/chat/completions` endpoint |
+| Tool calling | MCP tools need proper handling | May need prompt-based tools |
+| Rate limits | Free tier ~50/hr | Use tiered strategy, cache responses |
+| VSCode requirement | Must keep VSCode open | Acceptable for development |
+
+**When to use hybrid:**
+- Want Vox Deorum features (replay, MCP tools)
+- Don't want to pay for API keys
+- Willing to do some integration work
+
+### 4.8 LLM Approach Comparison
+
+| Factor | Vox Deorum (Direct) | Copilot Bridge (DIY) | Hybrid |
+|--------|---------------------|---------------------|--------|
+| **Maturity** | ⭐ Production-ready | Medium (DIY) | Experimental |
+| **Setup complexity** | Low (installer) | Medium | High |
+| **Cost** | API key required | Free (Copilot sub) | Free (Copilot sub) |
+| **Game state tools** | ✅ MCP included | ❌ DIY | ✅ MCP included |
+| **Session replay** | ✅ Yes | ❌ No | ✅ Yes |
+| **Model flexibility** | Any LLM | Copilot only | Copilot only |
+| **Offline capable** | ✅ With local models | ❌ No | ❌ No |
+| **VSCode required** | ❌ No | ✅ Yes | ✅ Yes |
+| **Rate limits** | API-based | ~50/hr free | ~50/hr free |
+
+**Recommendations:**
+
+| Scenario | Best Choice |
+|----------|-------------|
+| Serious LLM integration, have API budget | **Vox Deorum** |
+| Want free models, simple one-off queries | **Copilot Bridge** |
+| Want Vox Deorum features + free models | **Hybrid** (if you enjoy tinkering) |
+| Offline/privacy required | **Vox Deorum + local model** |
+| Just exploring, minimal setup | **Copilot Bridge** |
+
+### 4.9 Training Data Collection
 
 ```cpp
 // Add to CvDiplomacyAI for data collection
@@ -1177,14 +1230,25 @@ Based on revised assessment, the implementation roadmap could include:
 
 ### 9.2 External References
 
+**LLM Integration:**
+- [Vox Deorum](https://github.com/CIVITAS-John/vox-deorum) — ⭐ Production-ready LLM integration for VP/CP
+- [Vox Deorum Replayer](https://github.com/CIVITAS-John/vox-deorum-replay) — Session replay viewer
+- [vscode-copilot-bridge](https://github.com/larsbaunwall/vscode-copilot-bridge) — Copilot API via localhost
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — Efficient local LLM inference
+- [LiteLLM](https://github.com/BerriAI/litellm) — Unified LLM API proxy
+
+**Machine Learning:**
 - [XGBoost](https://xgboost.readthedocs.io/) — Gradient boosted trees library
 - [LightGBM](https://lightgbm.readthedocs.io/) — Fast gradient boosting framework
 - [scikit-learn](https://scikit-learn.org/) — Python ML library for training
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) — Efficient LLM inference
 - [LoRA Fine-tuning](https://arxiv.org/abs/2106.09685) — Parameter-efficient training
+
+**AI Techniques:**
 - [MCTS Survey](https://ieeexplore.ieee.org/document/6145622) — Monte Carlo Tree Search methods
 - [Behavioral Cloning](https://arxiv.org/abs/1011.0686) — Imitation learning fundamentals
 - [CMA-ES](https://en.wikipedia.org/wiki/CMA-ES) — Evolution strategy for parameter optimization
+
+**Community:**
 - [Civ5 AI Analysis (CivFanatics)](https://forums.civfanatics.com/) — Community AI discussions
 
 ---
