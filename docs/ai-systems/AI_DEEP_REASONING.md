@@ -5,7 +5,9 @@
 **Last Updated:** February 2026  
 **Status:** Architecture Exploration & Planning
 
-**Related:** [AI_SYSTEMS_REVIEW.md](AI_SYSTEMS_REVIEW.md) — Issues backlog and improvement tracking
+**Related:**
+- [AI_SYSTEMS_REVIEW.md](AI_SYSTEMS_REVIEW.md) — Issues backlog and improvement tracking
+- [EXTENDED_MEMORY_SYSTEM.md](EXTENDED_MEMORY_SYSTEM.md) — **Implementation spec for multi-turn memory** ⭐
 
 ---
 
@@ -15,7 +17,7 @@ The current VP/CP AI makes decisions based on **immediate game state** without p
 
 | Approach | Complexity | Memory/Cost | Latency | In-Process? | Value |
 |----------|------------|-------------|---------|-------------|-------|
-| Extended Memory (5-turn) | Low | ~15-50 MB | None | ✅ Yes | High |
+| [Extended Memory](EXTENDED_MEMORY_SYSTEM.md) | Low | ~300 KB | None | ✅ Yes | High |
 | Traditional ML (XGBoost) | Medium | ~10-50 MB | 0.01-0.1 ms | ✅ Yes | High |
 | Vox Deorum (LLM) | Low | API key | 1-5 sec | ❌ No | ⭐ High |
 | Copilot Bridge (free LLM) | Medium | Free tier | 1-3 sec | ❌ No | Medium |
@@ -79,6 +81,10 @@ The AI evaluates **current turn state only**:
 ---
 
 ## 2. Extended Memory System
+
+> **📋 Full implementation specification:** [EXTENDED_MEMORY_SYSTEM.md](EXTENDED_MEMORY_SYSTEM.md)
+>
+> This section provides an overview. See the linked document for complete data structures, code examples, and implementation steps.
 
 ### 2.1 Design Goals
 
