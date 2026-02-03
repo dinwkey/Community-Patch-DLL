@@ -502,56 +502,48 @@ Combine Vox Deorum's mature architecture with Copilot Bridge's free models by ro
 
 **How it works:**
 
-Vox Deorum uses **LiteLLM** as its LLM proxy. Configure LiteLLM to route requests to Copilot Bridge:
+Copilot Bridge already exposes **OpenAI-compatible endpoints** out of the box:
+- `/v1/chat/completions` — Chat completions API
+- `/v1/models` — List available models
+- `/health` — Health check
+
+This means **no modifications required** — just configure Vox Deorum's LiteLLM to point to Copilot Bridge:
 
 ```python
 # Configure LiteLLM to use Copilot Bridge
 import litellm
 
 litellm.api_base = "http://localhost:3000/v1"
-litellm.api_key = "not-needed"  # Bridge handles auth
+litellm.api_key = "not-needed"  # Bridge handles auth via VSCode
 ```
 
-**Required modifications to Copilot Bridge:**
+**Setup steps:**
 
-Copilot Bridge needs an OpenAI-compatible endpoint for LiteLLM:
-
-```javascript
-// vscode-copilot-bridge/src/openai-compat.js
-app.post('/v1/chat/completions', async (req, res) => {
-    const { messages, model, tools } = req.body;
-    
-    // Convert to Copilot format
-    const copilotResponse = await queryCopilot(messages, model);
-    
-    // Return OpenAI-compatible response
-    res.json({
-        choices: [{ message: { content: copilotResponse } }],
-        usage: { total_tokens: 0 }
-    });
-});
-```
+1. Install and run Copilot Bridge (requires VSCode with Copilot)
+2. Install Vox Deorum normally
+3. Configure Vox Deorum's LiteLLM to use `http://localhost:3000/v1` as API base
+4. Play with free Copilot models + full Vox Deorum features
 
 **Considerations:**
 
-| Factor | Challenge | Mitigation |
-|--------|-----------|------------|
-| API compatibility | LiteLLM expects OpenAI format | Add `/v1/chat/completions` endpoint |
-| Tool calling | MCP tools need proper handling | May need prompt-based tools |
-| Rate limits | Free tier ~50/hr | Use tiered strategy, cache responses |
-| VSCode requirement | Must keep VSCode open | Acceptable for development |
+| Factor | Notes |
+|--------|-------|
+| Tool calling | MCP tools may need prompt-based fallback if Copilot doesn't support function calling |
+| Rate limits | Free tier ~50/hr — use tiered strategy, cache responses |
+| VSCode requirement | Must keep VSCode open during play |
+| Streaming | Copilot Bridge supports SSE streaming for real-time responses |
 
 **When to use hybrid:**
 - Want Vox Deorum features (replay, MCP tools)
 - Don't want to pay for API keys
-- Willing to do some integration work
+- Have Copilot subscription (free or paid)
 
 ### 4.8 LLM Approach Comparison
 
 | Factor | Vox Deorum (Direct) | Copilot Bridge (DIY) | Hybrid |
 |--------|---------------------|---------------------|--------|
-| **Maturity** | ⭐ Production-ready | Medium (DIY) | Experimental |
-| **Setup complexity** | Low (installer) | Medium | High |
+| **Maturity** | ⭐ Production-ready | Medium (DIY) | Good (both mature) |
+| **Setup complexity** | Low (installer) | Medium | Medium |
 | **Cost** | API key required | Free (Copilot sub) | Free (Copilot sub) |
 | **Game state tools** | ✅ MCP included | ❌ DIY | ✅ MCP included |
 | **Session replay** | ✅ Yes | ❌ No | ✅ Yes |
