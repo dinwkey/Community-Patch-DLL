@@ -13,13 +13,14 @@
 
 The current VP/CP AI makes decisions based on **immediate game state** without projecting future outcomes or remembering past patterns. This document explores architectural approaches to enable deeper strategic reasoning:
 
-| Approach | Complexity | Memory Impact | Latency | Value |
-|----------|------------|---------------|---------|-------|
-| Extended Memory (5-turn) | Low | ~15-50 MB | None | High |
-| Out-of-Process 64-bit | Medium | Unlimited | 0.1-5 ms | Medium |
-| LLM Integration | High | External | 5-10 sec | Experimental |
+| Approach | Complexity | Memory Impact | Latency | In-Process? | Value |
+|----------|------------|---------------|---------|-------------|-------|
+| Extended Memory (5-turn) | Low | ~15-50 MB | None | ✅ Yes | High |
+| Traditional ML (XGBoost) | Medium | ~10-50 MB | 0.01-0.1 ms | ✅ Yes | High |
+| Out-of-Process 64-bit | Medium | Unlimited | 0.1-5 ms | ❌ No | Medium |
+| LLM Integration | High | External | 5-10 sec | ❌ No | Experimental |
 
-**Recommended path:** Implement in phases, starting with lean in-process memory.
+**Recommended path:** Implement in phases — Memory → ML → (optional) IPC → (experimental) LLM.
 
 ---
 
@@ -392,7 +393,236 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 
 ---
 
-## 5. Implementation Roadmap
+## 5. Traditional Machine Learning Approaches
+
+### 5.1 Why ML Before LLM?
+
+Traditional ML models are **orders of magnitude lighter** than LLMs and can run entirely in-process:
+
+| Approach | Model Size | Inference Time | GPU Required? | In-Process? |
+|----------|------------|----------------|---------------|-------------|
+| **LLM (7B)** | 4-6 GB | 5-10 sec | Yes (VRAM) | ❌ No (64-bit) |
+| **Gradient Boosted Trees** | 1-50 MB | 0.01-0.1 ms | No | ✅ Yes |
+| **Small Neural Net (MLP)** | 1-10 MB | 0.1-1 ms | No | ✅ Yes |
+| **Random Forest** | 10-100 MB | 0.1-1 ms | No | ✅ Yes |
+| **Logistic Regression** | <1 MB | <0.01 ms | No | ✅ Yes |
+
+**Key insight:** Civ5 game state is **tabular data** (numbers: strength, gold, cities, relationships). This is exactly what gradient boosted trees excel at.
+
+### 5.2 Recommended: Gradient Boosted Trees (XGBoost/LightGBM)
+
+**Why this approach:**
+- State-of-the-art for tabular data classification
+- Fast inference (microseconds)
+- Interpretable feature importance (explains decisions)
+- Battle-tested in production systems
+- Small model size (5-50 MB)
+
+**Limitations:**
+- Doesn't handle sequences natively (need feature engineering for history)
+- Requires labeled training data
+
+### 5.3 Feature Engineering
+
+The game state must be converted to numeric features for ML:
+
+```cpp
+// Features for war decision classification
+struct WarDecisionFeatures
+{
+    // === Strength Ratios ===
+    float myMilitaryStrength;
+    float targetMilitaryStrength;
+    float strengthRatio;              // my / target
+    float strengthDifference;         // my - target
+    
+    // === Situational Awareness ===
+    float targetCurrentWarCount;      // How many wars is target in?
+    float targetWarStateAvg;          // Avg war state (-2=losing, +2=winning)
+    float myCurrentWarCount;
+    float myWarStateAvg;
+    
+    // === Geographic ===
+    float proximity;                  // 1=neighbor, 2=close, 3=far, 4=distant
+    float sharedBorderTiles;
+    float distanceToNearestCity;
+    
+    // === Historical (from Memory System) ===
+    float turnsKnown;
+    float turnsAtWar;
+    float turnsAtPeace;
+    float recentBetrayals;            // Broken promises in last 30 turns
+    float militaryTrend;              // +1=building up, -1=declining
+    float attacksOnMeRecently;
+    
+    // === Economic ===
+    float myGoldPerTurn;
+    float targetGoldPerTurn;
+    float goldRatio;
+    float myTechEra;
+    float targetTechEra;
+    float techDifference;
+    
+    // === Diplomatic Context ===
+    float myApproachToTarget;         // -2=hostile to +2=friendly
+    float targetApproachToMe;
+    float numMutualFriends;
+    float numMutualEnemies;
+    
+    // ~30-40 features total
+};
+```
+
+### 5.4 Training Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ML TRAINING PIPELINE (Offline, Python)                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. DATA COLLECTION (during gameplay)                           │
+│     • Log decision points + context to CSV                      │
+│     • Track outcomes 10-30 turns later                          │
+│     • Collect 10K+ examples                                     │
+│                                                                 │
+│  2. LABELING                                                    │
+│     • War declared → did we win? capture cities? lose cities?   │
+│     • Peace made → was it good timing?                          │
+│     • Labels: GOOD_DECISION, BAD_DECISION, NEUTRAL              │
+│                                                                 │
+│  3. TRAINING (Python)                                           │
+│     • XGBoost or LightGBM classifier                            │
+│     • Cross-validation, hyperparameter tuning                   │
+│     • Export feature importance for interpretability            │
+│                                                                 │
+│  4. EXPORT TO C++                                               │
+│     • Option A: XGBoost C API (link library)                    │
+│     • Option B: Export as pure C++ if-else code                 │
+│     • Option C: ONNX Runtime                                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+<!-- Future: Add PNG diagram to docs/images/ml-training-pipeline.png -->
+
+### 5.5 C++ Integration Options
+
+| Method | 32-bit? | Dependencies | Complexity | Notes |
+|--------|---------|--------------|------------|-------|
+| **Export as if-else** | ✅ | None | Low | Tree → C++ code generator |
+| **XGBoost C API** | ✅ | libxgboost | Medium | Full model, needs linking |
+| **ONNX Runtime** | ✅ | onnxruntime | Medium | Universal format |
+| **Custom MLP** | ✅ | None | Medium | Hand-code ~200 lines |
+
+**Simplest approach:** Export trained decision tree as pure C++ if-else statements:
+
+```cpp
+// Auto-generated from trained XGBoost model
+float PredictWarSuccess(const WarDecisionFeatures& f)
+{
+    // Tree 0
+    float score0 = 0.0f;
+    if (f.strengthRatio < 1.2f) {
+        if (f.targetCurrentWarCount < 1.5f) {
+            score0 = -0.15f;  // Target not distracted, we're weaker
+        } else {
+            score0 = 0.05f;   // Target distracted
+        }
+    } else {
+        if (f.proximity < 2.5f) {
+            score0 = 0.25f;   // We're stronger and close
+        } else {
+            score0 = 0.10f;   // We're stronger but far
+        }
+    }
+    
+    // Tree 1, Tree 2, ... (50-100 trees typical)
+    // ...
+    
+    // Sum all tree scores, apply sigmoid
+    float totalScore = score0 + score1 + /* ... */;
+    return 1.0f / (1.0f + exp(-totalScore));  // Probability 0-1
+}
+```
+
+Zero dependencies, compiles directly into DLL, microsecond inference.
+
+### 5.6 Alternative: Small Neural Network (MLP)
+
+For more complex patterns, a 3-layer MLP can be hand-coded:
+
+```cpp
+// Simple MLP: 30 inputs → 64 hidden → 32 hidden → 3 outputs
+class SimpleMLPClassifier
+{
+    float weights1[30][64];   // ~7.5 KB
+    float bias1[64];
+    float weights2[64][32];   // ~8 KB
+    float bias2[32];
+    float weights3[32][3];    // ~0.4 KB
+    float bias3[3];
+    // Total: ~16 KB
+    
+    void Forward(const float* input, float* output)
+    {
+        float hidden1[64], hidden2[32];
+        
+        // Layer 1: input → hidden1 (ReLU)
+        for (int j = 0; j < 64; j++) {
+            hidden1[j] = bias1[j];
+            for (int i = 0; i < 30; i++)
+                hidden1[j] += input[i] * weights1[i][j];
+            hidden1[j] = fmax(0.0f, hidden1[j]);  // ReLU
+        }
+        
+        // Layer 2: hidden1 → hidden2 (ReLU)
+        for (int j = 0; j < 32; j++) {
+            hidden2[j] = bias2[j];
+            for (int i = 0; i < 64; i++)
+                hidden2[j] += hidden1[i] * weights2[i][j];
+            hidden2[j] = fmax(0.0f, hidden2[j]);
+        }
+        
+        // Layer 3: hidden2 → output (softmax)
+        for (int j = 0; j < 3; j++) {
+            output[j] = bias3[j];
+            for (int i = 0; i < 32; i++)
+                output[j] += hidden2[i] * weights3[i][j];
+        }
+        Softmax(output, 3);
+    }
+};
+```
+
+Weights loaded from file at game start (~16 KB), inference in microseconds.
+
+### 5.7 Decision Types Suitable for ML
+
+| Decision | Features | Output | Priority |
+|----------|----------|--------|----------|
+| **Should declare war?** | Strength, situation, history | {YES, WAIT, NO} | ⭐ High |
+| **Accept peace offer?** | War state, losses, terms | {ACCEPT, REJECT} | High |
+| **Approach to player** | History, power, diplomacy | {HOSTILE...FRIENDLY} | Medium |
+| **Attack this target?** | Target strength, defenses | {ATTACK, SKIP} | Medium |
+| **Settle city here?** | Resources, danger, expansion | Score 0-1 | Lower |
+
+### 5.8 Comparison: ML vs LLM vs Heuristics
+
+| Aspect | Heuristics | ML (XGBoost) | LLM |
+|--------|------------|--------------|-----|
+| **Inference time** | <0.001 ms | 0.01-0.1 ms | 5-10 sec |
+| **Memory** | 0 | 10-50 MB | 4-6 GB |
+| **In-process?** | ✅ | ✅ | ❌ |
+| **Learns from data** | ❌ | ✅ | ✅ |
+| **Handles nuance** | Limited | Good | Excellent |
+| **Explainable** | ✅ | ✅ (feature importance) | ⚠️ (with prompting) |
+| **Training effort** | N/A | Medium (10K examples) | High (fine-tuning) |
+
+**Recommendation:** Use ML for frequent decisions (every turn), reserve LLM for rare high-stakes decisions (war declarations, major pivots).
+
+---
+
+## 6. Implementation Roadmap
 
 ### Phase 1: Lean In-Process Memory (Recommended Start)
 
@@ -408,11 +638,38 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 | Integrate in `SelectBestApproach...()` | Factor in betrayal history |
 | Add logging for validation | Verify memory is populated correctly |
 
-### Phase 2: IPC Bridge Infrastructure
+### Phase 1.5: Data Collection for ML
+
+**Effort:** 1-2 weeks  
+**Risk:** Low  
+**Value:** Enables Phase 2
+
+| Task | Description |
+|------|-------------|
+| Add decision logging | Log war/peace decisions + context to CSV |
+| Add outcome tracking | Record results 10-30 turns after decision |
+| Play test games | Collect 5K-10K decision examples |
+| Export for training | Python scripts to process logs |
+
+### Phase 2: ML Model Training & Integration
 
 **Effort:** 3-4 weeks  
 **Risk:** Medium  
-**Value:** Medium (enables Phase 3)
+**Value:** High
+
+| Task | Description |
+|------|-------------|
+| Train XGBoost model | Python, cross-validation, hyperparameter tuning |
+| Export to C++ | Generate if-else code or link XGBoost C API |
+| Integrate in decision points | `DoUpdateWarTargets()`, approach selection |
+| A/B testing | Compare ML decisions vs heuristics |
+| Tune thresholds | Adjust confidence thresholds for action |
+
+### Phase 3: IPC Bridge Infrastructure (Optional)
+
+**Effort:** 3-4 weeks  
+**Risk:** Medium  
+**Value:** Medium (enables Phase 4)
 
 | Task | Description |
 |------|-------------|
@@ -422,7 +679,7 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 | Add query interface in DLL | `QueryCompanion(type, context)` |
 | Implement pattern analysis in Python | Trend detection, prediction |
 
-### Phase 3: LLM Integration (Experimental)
+### Phase 4: LLM Integration (Experimental)
 
 **Effort:** 2-3 months  
 **Risk:** High  
@@ -440,7 +697,7 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 
 ---
 
-## 6. Reference Hardware Configuration
+## 7. Reference Hardware Configuration
 
 ### 6.1 Test System Specifications
 
@@ -497,7 +754,7 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 2. Add Civilization V
 3. Set "Preferred graphics processor" to **Integrated Graphics**
 
-### 6.5 LLM Inference Server Resource Usage
+### 7.5 LLM Inference Server Resource Usage
 
 | Model | VRAM | RAM | Inference Time |
 |-------|------|-----|----------------|
@@ -509,9 +766,9 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 
 ---
 
-## 7. Open Questions & Future Research
+## 8. Open Questions & Future Research
 
-### 7.1 Unanswered Questions
+### 8.1 Unanswered Questions
 
 1. **How to handle LLM latency?**
    - Pre-compute decisions at turn start while human is reviewing?
@@ -529,7 +786,7 @@ void LogStrategicDecision(StrategicDecisionLog& log)
    - LLM inference takes 5-10 seconds — acceptable in multiplayer?
    - Need deterministic fallback for sync?
 
-### 7.2 Alternative Approaches Not Explored
+### 8.2 Alternative Approaches Not Explored
 
 | Approach | Pros | Cons |
 |----------|------|------|
@@ -540,17 +797,20 @@ void LogStrategicDecision(StrategicDecisionLog& log)
 
 ---
 
-## 8. References & Related Work
+## 9. References & Related Work
 
-### 8.1 Internal Documentation
+### 9.1 Internal Documentation
 
 - [AI_SYSTEMS_REVIEW.md](AI_SYSTEMS_REVIEW.md) — Issues backlog and improvement tracking
 - `CvDiplomacyAI.cpp` — Core diplomatic decision-making
 - `CvMilitaryAI.cpp` — Military threat assessment and targeting
 - `CvGrandStrategyAI.cpp` — Long-term victory planning
 
-### 8.2 External References
+### 9.2 External References
 
+- [XGBoost](https://xgboost.readthedocs.io/) — Gradient boosted trees library
+- [LightGBM](https://lightgbm.readthedocs.io/) — Fast gradient boosting framework
+- [scikit-learn](https://scikit-learn.org/) — Python ML library for training
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) — Efficient LLM inference
 - [LoRA Fine-tuning](https://arxiv.org/abs/2106.09685) — Parameter-efficient training
 - [Civ5 AI Analysis (CivFanatics)](https://forums.civfanatics.com/) — Community AI discussions
