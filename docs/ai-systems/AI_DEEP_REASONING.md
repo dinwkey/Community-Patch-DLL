@@ -17,10 +17,11 @@ The current VP/CP AI makes decisions based on **immediate game state** without p
 |----------|------------|---------------|---------|-------------|-------|
 | Extended Memory (5-turn) | Low | ~15-50 MB | None | ✅ Yes | High |
 | Traditional ML (XGBoost) | Medium | ~10-50 MB | 0.01-0.1 ms | ✅ Yes | High |
+| Copilot Bridge (cloud LLM) | Low-Medium | None | 1-3 sec | ❌ No | High |
+| Self-Hosted LLM | High | 6-8 GB VRAM | 5-10 sec | ❌ No | Experimental |
 | Out-of-Process 64-bit | Medium | Unlimited | 0.1-5 ms | ❌ No | Medium |
-| LLM Integration | High | External | 5-10 sec | ❌ No | Experimental |
 
-**Recommended path:** Implement in phases — Memory → ML → (optional) IPC → (experimental) LLM.
+**Recommended path:** Implement in phases — Memory → ML → Copilot Bridge (or self-hosted LLM).
 
 ---
 
@@ -357,7 +358,166 @@ Rather than using a general-purpose LLM, train a **Civ5-specific distilled model
 - Trade route selection
 - Minor diplomatic responses
 
-### 4.5 Training Data Collection
+### 4.5 Alternative: Copilot Bridge (Cloud LLM via localhost)
+
+Instead of self-hosting an LLM, use a **VSCode Copilot Bridge** to access cloud models via localhost HTTP. This avoids VRAM usage entirely.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  COPILOT BRIDGE ARCHITECTURE                                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Civ5 (32-bit) ──HTTP POST──► localhost:3000 ──► Copilot Bridge │
+│       │                            │                   │        │
+│  Game state JSON              Bridge server         VSCode      │
+│  "Should I attack?"           (Node.js)            Copilot API  │
+│       │                            │                   │        │
+│       ◄─────────HTTP Response──────┘◄──────────────────┘        │
+│  "Wait 3 turns,                                                 │
+│   target is winning war"                                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+<!-- Future: Add PNG diagram to docs/images/copilot-bridge.png -->
+
+**Comparison: Self-Hosted vs Copilot Bridge:**
+
+| Factor | Self-Hosted (llama.cpp) | Copilot Bridge |
+|--------|------------------------|----------------|
+| Setup complexity | High (model download, VRAM) | Low (npm install) |
+| VRAM required | 6-8 GB | None |
+| Cost | Free after setup | Copilot subscription or free tier |
+| Latency | 5-10 sec (local GPU) | 1-3 sec (cloud) |
+| Codebase awareness | Must provide context | ✅ Already has VP/CP context |
+| Requires VSCode | No | Yes |
+| Offline capable | ✅ Yes | ❌ No |
+| Rate limits | None | Yes (free tier ~50/hr) |
+
+**Reference implementation:** [vscode-copilot-bridge](https://github.com/larsbaunwall/vscode-copilot-bridge)
+
+### 4.6 Free-Tier Model Selection (Copilot Bridge)
+
+When using Copilot Bridge with free-tier models, choose based on speed vs reasoning:
+
+| Model | Speed | Reasoning | Best For |
+|-------|-------|-----------|----------|
+| **GPT-4o** | Fast (1-2s) | Excellent | Complex strategic decisions |
+| **GPT-4.1** | Medium | Excellent | Balanced option |
+| **GPT-5-mini** | Very Fast (<1s) | Good | Frequent queries |
+| **Grok Code Fast 1** | Very Fast (<1s) | Good (code-aware) | Code-aware decisions |
+| **Raptor Mini** | Fast | Medium | Simple classifications |
+
+**Recommendation:** Use **GPT-5-mini** or **Grok Code Fast 1** for 90% of queries (fast, good enough). Reserve **GPT-4o** for rare complex decisions.
+
+**Tiered query strategy:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  TIERED MODEL STRATEGY                                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Query Type          Frequency      Model           Budget      │
+│  ─────────────────────────────────────────────────────────────  │
+│  Quick filter        Every turn     GPT-5-mini      90%         │
+│  "Is this worth      (~50/game)     or Grok Fast    of quota    │
+│   considering?"                                                 │
+│                                                                 │
+│  Strategic decision  Rare           GPT-4o          10%         │
+│  "Should I declare   (~5/game)                      of quota    │
+│   war on X?"                                                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Rate limit budget (free tier ~50 req/hr):**
+
+| Approach | Queries/Turn | 500-turn Game | Fits Limit? |
+|----------|--------------|---------------|-------------|
+| Every decision | 5-10 | 2500-5000 | ❌ Way over |
+| Major decisions only | 0.1-0.2 | 50-100 | ⚠️ Borderline |
+| Cached + filtered | 0.05 | 25 | ✅ Safe |
+
+**Key insight:** Use heuristics first, query LLM only when:
+- Heuristics are uncertain (score near threshold)
+- High-stakes decisions (war, major diplomacy)
+- Situation changed significantly since last query
+
+**C++ integration (WinHTTP):**
+
+```cpp
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
+
+enum class LLMTier { FAST, SMART, FALLBACK };
+
+std::string QueryCopilotBridge(const std::string& prompt, LLMTier tier)
+{
+    // Check rate limit budget
+    if (g_fastModelQueries > 45 && tier == LLMTier::FAST)
+        return "";  // Trigger fallback to heuristics
+    
+    HINTERNET hSession = WinHttpOpen(L"Civ5AI/1.0", 
+        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
+    HINTERNET hConnect = WinHttpConnect(hSession, 
+        L"localhost", 3000, 0);  // Bridge port
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, 
+        L"POST", L"/chat", NULL, NULL, NULL, 0);
+    
+    // Model selection based on tier
+    std::string model = (tier == LLMTier::SMART) ? "gpt-4o" : "gpt-5-mini";
+    std::string body = "{\"model\":\"" + model + "\",\"prompt\":\"" + prompt + "\"}";
+    
+    WinHttpSendRequest(hRequest, L"Content-Type: application/json",
+        -1, (LPVOID)body.c_str(), body.length(), body.length(), 0);
+    WinHttpReceiveResponse(hRequest, NULL);
+    
+    // Read and return response...
+    return response;
+}
+
+// Usage with tiered fallback
+void CvDiplomacyAI::ConsiderWarDecision(PlayerTypes eTarget)
+{
+    std::string prompt = FormatWarDecisionPrompt(eTarget);
+    
+    // Try fast model first
+    std::string response = QueryCopilotBridge(prompt, LLMTier::FAST);
+    
+    if (response == "UNCERTAIN" && g_smartModelQueries < 5)
+    {
+        // Escalate to smarter model for complex cases
+        response = QueryCopilotBridge(detailedPrompt, LLMTier::SMART);
+        g_smartModelQueries++;
+    }
+    
+    if (response.empty())
+    {
+        // Fallback to traditional heuristics
+        UseTraditionalScoring(eTarget);
+        return;
+    }
+    
+    ParseAndApplyRecommendation(response);
+}
+```
+
+**Prompt optimization for fast models:**
+
+```cpp
+// BAD: Too verbose
+"You are an expert Civilization 5 AI advisor. Consider the complex 
+geopolitical situation including military strength ratios..."
+
+// GOOD: Direct, structured (works better with fast models)
+"Civ5 war decision. My strength: 1250. Target: 890. Target at war: yes.
+Target winning: yes. My approach: hostile. Proximity: neighbor.
+Reply ONLY: ATTACK / WAIT_N / AVOID"
+```
+
+### 4.7 Training Data Collection
 
 ```cpp
 // Add to CvDiplomacyAI for data collection
