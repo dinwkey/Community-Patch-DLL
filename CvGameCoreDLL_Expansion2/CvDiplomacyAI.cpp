@@ -23686,7 +23686,7 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 							for (int iWarLoop = 0; iWarLoop < MAX_CIV_PLAYERS; iWarLoop++)
 							{
 								PlayerTypes eWarPlayer = (PlayerTypes)iWarLoop;
-								if (eWarPlayer != GetID() && GET_PLAYER(*it).IsAtWarWith(eWarPlayer))
+								if (eWarPlayer != GetID() && GET_PLAYER(*it).IsAtWarWith(eWarPlayer) && GET_PLAYER(eWarPlayer).isMajorCiv())
 								{
 									WarStateTypes eTheirWarState = GET_PLAYER(*it).GetDiplomacyAI()->GetWarState(eWarPlayer);
 									if (eTheirWarState >= WAR_STATE_NEARLY_WON)
@@ -23697,14 +23697,9 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 								}
 							}
 							// If they'll be free soon and they're still reasonably strong, don't risk it
-							if (bTargetWillBeFree && GetMilitaryStrengthComparedToUs(*it) >= STRENGTH_AVERAGE)
-							{
-								// Skip this opportunistic strike - too risky
-							}
-							else
-							{
+							bool bTargetStrong = GetMilitaryStrengthComparedToUs(*it) >= STRENGTH_AVERAGE;
+							if (!(bTargetWillBeFree && bTargetStrong))
 								bOpportunisticStrike = true;
-							}
 						}
 					}
 				}
@@ -23763,7 +23758,7 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 							for (int iWarLoop = 0; iWarLoop < MAX_CIV_PLAYERS; iWarLoop++)
 							{
 								PlayerTypes eWarPlayer = (PlayerTypes)iWarLoop;
-								if (eWarPlayer != GetID() && GET_PLAYER(*it).IsAtWarWith(eWarPlayer))
+								if (eWarPlayer != GetID() && GET_PLAYER(*it).IsAtWarWith(eWarPlayer) && GET_PLAYER(eWarPlayer).isMajorCiv())
 								{
 									WarStateTypes eTheirWarState = GET_PLAYER(*it).GetDiplomacyAI()->GetWarState(eWarPlayer);
 									if (eTheirWarState >= WAR_STATE_NEARLY_WON)
@@ -23774,10 +23769,9 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 								}
 							}
 							// If they'll be free soon and they're still reasonably strong, don't risk it
-							if (!(bTargetWillBeFree && GetMilitaryStrengthComparedToUs(*it) >= STRENGTH_AVERAGE))
-							{
+							bool bTargetStrong = GetMilitaryStrengthComparedToUs(*it) >= STRENGTH_AVERAGE;
+							if (!(bTargetWillBeFree && bTargetStrong))
 								bValidApproach = true;
-							}
 						}
 					}
 				}
