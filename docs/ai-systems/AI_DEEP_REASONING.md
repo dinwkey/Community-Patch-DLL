@@ -17,7 +17,7 @@ The current VP/CP AI makes decisions based on **immediate game state** without p
 
 | Approach | Complexity | Memory/Cost | Latency | In-Process? | Value |
 |----------|------------|-------------|---------|-------------|-------|
-| [Extended Memory](EXTENDED_MEMORY_SYSTEM.md) | Low | ~300 KB | None | ✅ Yes | High |
+| [Extended Memory](EXTENDED_MEMORY_SYSTEM.md) | Low | ~135-200 KB | None | ✅ Yes | High |
 | Traditional ML (XGBoost) | Medium | ~10-50 MB | 0.01-0.1 ms | ✅ Yes | High |
 | Vox Deorum (LLM) | Low | API key | 1-5 sec | ❌ No | ⭐ High |
 | Copilot Bridge (free LLM) | Medium | Free tier | 1-3 sec | ❌ No | Medium |

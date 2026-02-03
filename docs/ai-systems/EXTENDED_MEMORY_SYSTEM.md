@@ -43,10 +43,12 @@ A hybrid memory system with two components:
 
 | Component | Purpose | Storage |
 |-----------|---------|---------|
-| **Aggregate Snapshots** | Per-civ summary stats over 10 turns | ~275 KB |
+| **Aggregate Snapshots** | Per-civ summary stats over 10 turns | ~200 KB (43 civs) |
 | **Per-Unit Tracking** | Individual unit sightings with fog prediction | ~5-25 KB |
 
-**Total: ~300 KB** — trivial compared to 1.2-2 GB headroom (LAA on 64-bit Windows).
+**Total: ~225 KB typical** — trivial compared to 1.2-2 GB headroom (LAA on 64-bit Windows).
+
+> **Note:** VP default is 43 major civs + 20 city states. Extended mods can go up to 62 major civs.
 
 ---
 
@@ -77,27 +79,29 @@ A hybrid memory system with two components:
 
 ### Aggregate Snapshots
 
-**Per-snapshot size (with 62 civs — `MOD_GLOBAL_MAX_MAJOR_CIVS`):**
+**Per-snapshot size (with 43 major civs — VP default):**
 
 | Field | Size |
 |-------|------|
 | `turn` | 2B |
-| `warState[62]` | 62B |
-| `approach[62]` | 62B |
-| `theirMilitaryNearUs[62]` | 62B |
-| `theirMilitaryStrength[62]` | 62B |
-| `proximity[62]` | 62B |
-| `siegeUnitsNearUs[62]` | 62B |
-| `navalUnitsNearUs[62]` | 62B |
+| `warState[43]` | 43B |
+| `approach[43]` | 43B |
+| `theirMilitaryNearUs[43]` | 43B |
+| `theirMilitaryStrength[43]` | 43B |
+| `proximity[43]` | 43B |
+| `siegeUnitsNearUs[43]` | 43B |
+| `navalUnitsNearUs[43]` | 43B |
 | Scalar fields | 9B |
-| **Total per snapshot** | **~445 bytes** |
+| **Total per snapshot** | **~312 bytes** |
+
+> **Note:** City states (20 default) are tracked separately via minor civ diplomacy and don't need full memory snapshots.
 
 **Total for all civs:**
 
 | Config | 10 Turns | Total |
 |--------|----------|-------|
-| 36 civs (default) | 445B × 10 × 36 | **160 KB** |
-| 62 civs (max) | 445B × 10 × 62 | **276 KB** |
+| 43 civs (VP default) | 312B × 10 × 43 | **134 KB** |
+| 62 civs (extended max) | 445B × 10 × 62 | **276 KB** |
 
 ### Per-Unit Tracking
 
@@ -111,8 +115,9 @@ A hybrid memory system with two components:
 
 | Configuration | Aggregates | Per-Unit | Total |
 |---------------|------------|----------|-------|
-| 36 civs, peace | 160 KB | 1 KB | **161 KB** |
-| 62 civs, war | 276 KB | 5 KB | **281 KB** |
+| 43 civs, peace (typical) | 134 KB | 1 KB | **135 KB** |
+| 43 civs, active war | 134 KB | 5 KB | **139 KB** |
+| 62 civs, war (extended) | 276 KB | 5 KB | **281 KB** |
 | Worst case | 276 KB | 25 KB | **~300 KB** |
 
 **Conclusion:** Fits easily within available memory headroom.
@@ -169,23 +174,23 @@ enum SnapshotFlags
 
 ```cpp
 // Per-civ state snapshot captured each turn
-// Size: ~445 bytes (with 62 civs)
+// Size: ~312 bytes (43 civs) or ~445 bytes (62 civs)
 struct TurnSnapshot
 {
     // === Validity & Timestamp ===
     int16   turn;                                   // 2B — 0 = invalid/empty slot
     
-    // === Per-Civ Arrays ===
-    int8    warState[MAX_MAJOR_CIVS];               // 62B — WarStateTypes enum
-    int8    approach[MAX_MAJOR_CIVS];               // 62B — CivApproachTypes enum
-    uint8   theirMilitaryNearUs[MAX_MAJOR_CIVS];    // 62B — Unit count near our borders
-    uint8   theirMilitaryStrength[MAX_MAJOR_CIVS];  // 62B — Scaled 0-255
-    uint8   proximity[MAX_MAJOR_CIVS];              // 62B — PlayerProximityTypes enum
-    uint8   siegeUnitsNearUs[MAX_MAJOR_CIVS];       // 62B — Siege = attack signal
-    uint8   navalUnitsNearUs[MAX_MAJOR_CIVS];       // 62B — Coastal threat
+    // === Per-Civ Arrays (sized by MAX_MAJOR_CIVS: 43 default, 62 extended) ===
+    int8    warState[MAX_MAJOR_CIVS];               // 43-62B — WarStateTypes enum
+    int8    approach[MAX_MAJOR_CIVS];               // 43-62B — CivApproachTypes enum
+    uint8   theirMilitaryNearUs[MAX_MAJOR_CIVS];    // 43-62B — Unit count near our borders
+    uint8   theirMilitaryStrength[MAX_MAJOR_CIVS];  // 43-62B — Scaled 0-255
+    uint8   proximity[MAX_MAJOR_CIVS];              // 43-62B — PlayerProximityTypes enum
+    uint8   siegeUnitsNearUs[MAX_MAJOR_CIVS];       // 43-62B — Siege = attack signal
+    uint8   navalUnitsNearUs[MAX_MAJOR_CIVS];       // 43-62B — Coastal threat
     
     // === Our State (Scalars) ===
-    uint8   militaryRank;                           // 1B — Our rank 1-62 (1 = strongest)
+    uint8   militaryRank;                           // 1B — Our rank 1-43/62 (1 = strongest)
     uint8   numCities;                              // 1B — Our city count
     int16   goldPerTurn;                            // 2B — Our GPT (can be negative)
     uint8   numUnitsNearBorders;                    // 1B — Total enemy units near us (all civs)
@@ -204,7 +209,7 @@ struct TurnSnapshot
 // Per-civ memory store with circular buffer
 struct CivMemory
 {
-    TurnSnapshot history[AI_MEMORY_DEPTH];  // 10 turns × 445B = 4.45 KB
+    TurnSnapshot history[AI_MEMORY_DEPTH];  // 10 turns × 312B = 3.12 KB (43 civs)
     uint8        currentIndex;              // Which slot is "newest" (0-9)
     uint8        validCount;                // How many slots are populated (0-10)
     
@@ -933,18 +938,18 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 
 ## Appendix A: Field Reference
 
-### TurnSnapshot Fields (445 bytes @ 62 civs)
+### TurnSnapshot Fields (~312 bytes @ 43 civs, ~445 bytes @ 62 civs)
 
 | Field | Type | Size | Getter to populate |
 |-------|------|------|-------------------|
 | `turn` | `int16` | 2B | `GC.getGame().getGameTurn()` |
-| `warState[]` | `int8[62]` | 62B | `GetWarState(ePlayer)` |
-| `approach[]` | `int8[62]` | 62B | `GetCivApproach(ePlayer)` |
-| `theirMilitaryNearUs[]` | `uint8[62]` | 62B | `GetEnemyMilitaryNearUs(ePlayer)` — may need new |
-| `theirMilitaryStrength[]` | `uint8[62]` | 62B | `GET_PLAYER(ePlayer).GetMilitaryMight()` scaled |
-| `proximity[]` | `uint8[62]` | 62B | `GetPlayer()->GetProximityToPlayer(ePlayer)` |
-| `siegeUnitsNearUs[]` | `uint8[62]` | 62B | New function needed |
-| `navalUnitsNearUs[]` | `uint8[62]` | 62B | New function needed |
+| `warState[]` | `int8[43-62]` | 43-62B | `GetWarState(ePlayer)` |
+| `approach[]` | `int8[43-62]` | 43-62B | `GetCivApproach(ePlayer)` |
+| `theirMilitaryNearUs[]` | `uint8[43-62]` | 43-62B | `GetEnemyMilitaryNearUs(ePlayer)` — may need new |
+| `theirMilitaryStrength[]` | `uint8[43-62]` | 43-62B | `GET_PLAYER(ePlayer).GetMilitaryMight()` scaled |
+| `proximity[]` | `uint8[43-62]` | 43-62B | `GetPlayer()->GetProximityToPlayer(ePlayer)` |
+| `siegeUnitsNearUs[]` | `uint8[43-62]` | 43-62B | New function needed |
+| `navalUnitsNearUs[]` | `uint8[43-62]` | 43-62B | New function needed |
 | `militaryRank` | `uint8` | 1B | Calculate from `GetMilitaryMight()` ranking |
 | `numCities` | `uint8` | 1B | `getNumCities()` |
 | `goldPerTurn` | `int16` | 2B | `calculateGoldRate()` |
