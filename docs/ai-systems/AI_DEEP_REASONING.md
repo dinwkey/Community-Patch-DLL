@@ -786,14 +786,222 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
    - LLM inference takes 5-10 seconds — acceptable in multiplayer?
    - Need deterministic fallback for sync?
 
-### 8.2 Alternative Approaches Not Explored
+### 8.2 Alternative Approaches — Revised Assessment
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Monte Carlo Tree Search | Theoretically optimal | Civ5 state space too large |
-| Neural network policy | Fast inference | Needs massive training data |
-| Rule-based expert system | Interpretable | Brittle, hard to tune |
-| Genetic algorithms | Finds novel strategies | Slow evolution, hard to explain |
+The following approaches were initially dismissed but deserve more nuanced consideration:
+
+#### 8.2.1 Monte Carlo Tree Search (MCTS)
+
+**Initial dismissal:** "Civ5 state space too large"
+
+**Revised assessment:**
+
+| Factor | Analysis |
+|--------|----------|
+| State space | ~10^50+ states (vs Chess ~10^47, Go ~10^170) |
+| Branching factor | Hundreds of actions per turn |
+| Simulation speed | Can't simulate Civ5 turns fast (unlike Chess/Go) |
+| Full-game MCTS | ❌ Not feasible |
+| **Limited MCTS** | ✅ Viable for subproblems |
+
+**Viable use cases:**
+- **Tactical combat** — 5-10 units, 2-3 turn lookahead
+- **City siege planning** — Simulate assault outcomes
+- **Exploration decisions** — Where to send scouts (small state space)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  LIMITED MCTS FOR TACTICAL COMBAT                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Current State ──► Build Tree ──► Simulate ──► Best Move        │
+│       │               │              │             │            │
+│   5-10 units      2-3 turns      100-1000       Attack X?       │
+│   Small area      lookahead      playouts       Move to Y?      │
+│                                                                 │
+│  Constraints:                                                   │
+│   • Limit to visible battlefield only                           │
+│   • Max 3 turn horizon                                          │
+│   • Max 1000 simulations per decision                           │
+│   • Time budget: 100-500ms                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+<!-- Future: Add PNG diagram to docs/images/mcts-tactical.png -->
+
+**Recommendation:** Consider for CvTacticalAI combat decisions only.
+
+---
+
+#### 8.2.2 Neural Network Policy (Imitation Learning)
+
+**Initial dismissal:** "Needs massive training data"
+
+**Revised assessment:**
+
+| Factor | Analysis |
+|--------|----------|
+| Reinforcement learning | ❌ Impractical (millions of self-play games needed) |
+| Self-play speed | 500 turns × 1-5 sec = 8-40 min/game |
+| **Imitation learning** | ✅ Feasible with 10K-50K examples |
+| Data sources | AI decision logs, human multiplayer replays |
+
+**Imitation learning (behavioral cloning) is viable:**
+
+1. **Log current AI decisions** — Free data, millions of decisions per playthrough
+2. **Collect human replays** — Multiplayer games from skilled players
+3. **Train small policy network** — Predict "what would a good player do?"
+4. **Use as fast intuition** — Quick filter before expensive scoring
+
+```cpp
+// Imitation learning integration
+float GetQuickIntuition(const GameState& state, ActionType action)
+{
+    // Small MLP trained on human/AI decisions
+    // Returns probability this action is "good"
+    float features[50];
+    ExtractFeatures(state, action, features);
+    return policyNetwork.Forward(features);  // 0.0 - 1.0
+}
+
+void DoUpdateWarTargets()
+{
+    // Use intuition as first filter
+    for (each potential target)
+    {
+        float intuition = GetQuickIntuition(state, DECLARE_WAR, target);
+        if (intuition < 0.2f)
+            continue;  // Skip unlikely candidates early
+        
+        // Full scoring for remaining candidates
+        int score = ScoreWarTarget(target);  // Expensive
+    }
+}
+```
+
+**Recommendation:** Add to Phase 2 as training data source alongside XGBoost.
+
+---
+
+#### 8.2.3 Rule-Based Expert System
+
+**Initial dismissal:** "Brittle, hard to tune"
+
+**Revised assessment:** This IS the current VP/CP AI. The 20K+ lines in CvDiplomacyAI.cpp are a rule-based expert system.
+
+| Factor | Analysis |
+|--------|----------|
+| Current state | Already implemented (entire AI codebase) |
+| Brittleness | Yes, edge cases break rules |
+| Tuning difficulty | Yes, changing one rule affects others |
+| Interpretability | High — every decision is explainable |
+
+**The question isn't "should we use it?" but "how do we improve it?"**
+
+**Improvement strategies:**
+
+1. **Learned thresholds** — Use ML to find optimal cutoff values
+   ```cpp
+   // Before: hardcoded
+   if (strengthRatio > 1.5f) { /* attack */ }
+   
+   // After: learned from data
+   if (strengthRatio > g_learnedAttackThreshold) { /* attack */ }
+   ```
+
+2. **Fuzzy logic** — Replace hard cutoffs with gradual membership
+   ```cpp
+   // Before: binary
+   bool isStrong = (strength > 1000);
+   
+   // After: fuzzy
+   float strongness = FuzzyMembership(strength, /*low*/500, /*high*/1500);
+   // Returns 0.0 at 500, 1.0 at 1500, 0.5 at 1000
+   ```
+
+3. **Modular rules** — Isolate rules for easier tuning
+   ```cpp
+   // Each factor contributes independently
+   float warScore = 0.0f;
+   warScore += g_weights.strengthFactor * EvalStrength(target);
+   warScore += g_weights.proximityFactor * EvalProximity(target);
+   warScore += g_weights.opportunityFactor * EvalOpportunity(target);
+   // Weights can be tuned/learned independently
+   ```
+
+**Recommendation:** Don't dismiss — this is the foundation. ML/LLM enhance it, not replace it.
+
+---
+
+#### 8.2.4 Genetic Algorithms (Evolutionary Optimization)
+
+**Initial dismissal:** "Slow evolution, hard to explain"
+
+**Revised assessment:**
+
+| Factor | Analysis |
+|--------|----------|
+| Evolving full AI | ❌ Impractical (50+ hours per generation) |
+| **Parameter tuning** | ✅ Viable for offline optimization |
+| Fitness evaluation | Win rate, score, cities captured |
+| Runtime use | ❌ Not for real-time decisions |
+
+**Viable use case: Automated hyperparameter optimization**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  GENETIC ALGORITHM FOR PARAMETER TUNING (Offline)               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Define tunable parameters (20-50 values):                   │
+│     • Aggression thresholds                                     │
+│     • Strength ratio cutoffs                                    │
+│     • Diplomatic weight factors                                 │
+│     • War target scoring multipliers                            │
+│                                                                 │
+│  2. Evolution loop:                                             │
+│     • Population: 50 parameter sets                             │
+│     • Fitness: Play 10 games each, measure win rate             │
+│     • Selection: Keep top 20%                                   │
+│     • Crossover + mutation: Generate next generation            │
+│     • Repeat 50-100 generations                                 │
+│                                                                 │
+│  3. Time estimate:                                              │
+│     • 50 individuals × 10 games × 30 min = 250 hours/generation │
+│     • Run on cloud/cluster over weekend                         │
+│     • Or use faster proxy (shorter games, fewer civs)           │
+│                                                                 │
+│  4. Output: Optimized parameter values for release build        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+<!-- Future: Add PNG diagram to docs/images/genetic-tuning.png -->
+
+**Recommendation:** Consider for automated balance tuning, not runtime AI.
+
+---
+
+### 8.3 Revised Approach Summary
+
+| Approach | Original | Revised | Best Use Case |
+|----------|----------|---------|---------------|
+| **MCTS** | ❌ Not feasible | ⚠️ Limited | Tactical combat (2-3 turn lookahead) |
+| **Neural Policy** | ❌ Too much data | ✅ Feasible | Imitation learning from AI/human logs |
+| **Expert System** | ❌ Brittle | ✅ Current foundation | Improve with learned thresholds |
+| **Genetic Algorithms** | ❌ Too slow | ⚠️ Offline only | Hyperparameter optimization |
+
+### 8.4 Updated Implementation Considerations
+
+Based on revised assessment, the implementation roadmap could include:
+
+| Phase | Addition | Effort | Value |
+|-------|----------|--------|-------|
+| Phase 1.5 | Log AI decisions for imitation learning | +1 week | High |
+| Phase 2 | Train imitation policy alongside XGBoost | +2 weeks | High |
+| Phase 2.5 | Limited MCTS for tactical combat | +3 weeks | Medium |
+| Offline | Genetic algorithm for parameter tuning | +2 weeks setup | Medium |
 
 ---
 
@@ -805,6 +1013,7 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 - `CvDiplomacyAI.cpp` — Core diplomatic decision-making
 - `CvMilitaryAI.cpp` — Military threat assessment and targeting
 - `CvGrandStrategyAI.cpp` — Long-term victory planning
+- `CvTacticalAI.cpp` — Unit-level tactical decisions (MCTS candidate)
 
 ### 9.2 External References
 
@@ -813,6 +1022,9 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 - [scikit-learn](https://scikit-learn.org/) — Python ML library for training
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) — Efficient LLM inference
 - [LoRA Fine-tuning](https://arxiv.org/abs/2106.09685) — Parameter-efficient training
+- [MCTS Survey](https://ieeexplore.ieee.org/document/6145622) — Monte Carlo Tree Search methods
+- [Behavioral Cloning](https://arxiv.org/abs/1011.0686) — Imitation learning fundamentals
+- [CMA-ES](https://en.wikipedia.org/wiki/CMA-ES) — Evolution strategy for parameter optimization
 - [Civ5 AI Analysis (CivFanatics)](https://forums.civfanatics.com/) — Community AI discussions
 
 ---
