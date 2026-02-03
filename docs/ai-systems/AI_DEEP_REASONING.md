@@ -84,9 +84,9 @@ Enable the AI to:
 - Track opponent war outcomes (who's winning/losing)
 - Notice resource/gold trends
 
-### 2.2 Memory Budget Analysis (32-bit Constraint)
+### 2.2 Memory Budget Analysis (32-bit Process on 64-bit Windows)
 
-**Civ5 is a 32-bit process with ~3.2 GB ceiling.**
+**Civ5 is a 32-bit process but is Large Address Aware (LAA).** On 64-bit Windows, this allows access to the full 4 GB virtual address space.
 
 | Component | Typical Usage |
 |-----------|---------------|
@@ -95,15 +95,18 @@ Enable the AI to:
 | 63 civ AI state | 400-600 MB |
 | UI/textures | 300-500 MB |
 | **Typical total** | **2.0 - 2.8 GB** |
-| **Available headroom** | **400-800 MB** |
+| **LAA ceiling (64-bit Windows)** | **4 GB** |
+| **Available headroom** | **1.2 - 2.0 GB** |
 
 **Memory system options:**
 
-| Implementation | Size | Fits in 32-bit? |
-|----------------|------|-----------------|
-| Lean (5 turns, essential only) | 15-20 MB | ✅ Yes |
+| Implementation | Size | Fits? |
+|----------------|------|-------|
+| Lean (5 turns, essential only) | 15-20 MB | ✅ Easily |
 | Medium (10 turns, richer data) | 50-80 MB | ✅ Yes |
-| Rich (10 turns, full state) | 150+ MB | ⚠️ Risky |
+| Rich (10 turns, full state) | 150-200 MB | ✅ Yes |
+
+**Note:** With LAA on 64-bit Windows, even the "rich" memory implementation fits comfortably. The out-of-process architecture is primarily needed for LLM inference (which requires 64-bit process), not for memory constraints.
 
 ### 2.3 Data Structure Design (Pseudocode)
 
@@ -201,15 +204,15 @@ bool CivMemory::BrokePromiseRecently(PlayerTypes eTarget, int withinTurns)
 
 ### 3.1 Why Out-of-Process?
 
-| Constraint | In-Process (32-bit) | Out-of-Process (64-bit) |
-|------------|---------------------|-------------------------|
-| Memory limit | ~3.2 GB total | Unlimited |
-| LLM inference | ❌ Impossible | ✅ Possible |
-| Rich history | ⚠️ Limited | ✅ Full state |
+| Constraint | In-Process (32-bit LAA) | Out-of-Process (64-bit) |
+|------------|-------------------------|-------------------------|
+| Memory limit | 4 GB (sufficient) | Unlimited |
+| LLM inference | ❌ Impossible (needs 64-bit) | ✅ Possible |
+| Rich history | ✅ Fits with LAA | ✅ Full state |
 | Latency | Zero | 0.1-5 ms IPC |
 | Complexity | Low | Medium |
 
-**Recommendation:** Use in-process for lean memory, out-of-process only when LLM is needed.
+**Recommendation:** Use in-process for memory system (LAA provides enough headroom). Out-of-process is only needed for LLM inference, which requires 64-bit libraries.
 
 ### 3.2 IPC Architecture
 
