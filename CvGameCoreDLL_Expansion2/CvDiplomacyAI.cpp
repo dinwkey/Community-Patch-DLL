@@ -23668,7 +23668,49 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 
 			// Are we not allowing new wars?
 			if (GetPlayer()->IsNoNewWars() && !IsEndgameAggressiveTo(*it) && !IsCapitalCapturedBy(*it, true, false))
-				continue;
+			{
+				// Exception: Allow opportunistic strikes against exposed neighbor cities when we're hostile
+				// This lets us grab weakly defended cities (e.g., recently conquered) even while in another war
+				bool bOpportunisticStrike = false;
+				if (GetCivApproach(*it) == CIV_APPROACH_HOSTILE && GetPlayer()->GetProximityToPlayer(*it) == PLAYER_PROXIMITY_NEIGHBORS)
+				{
+					// They must be an easy target with an exposed city we can hit
+					if (IsEasyTarget(*it) && GetPlayer()->GetMilitaryAI()->HavePreferredAttackTarget(*it))
+					{
+						// And our own cities must not be exposed to them (don't open ourselves to counter-attack)
+						if (!GetPlayer()->GetMilitaryAI()->IsExposedToEnemy(NULL, *it))
+						{
+							// Caution: Don't strike if they're about to win their current war (they'll be free to retaliate soon)
+							// Also don't strike if they're still militarily strong (distracted but dangerous)
+							bool bTargetWillBeFree = false;
+							for (int iWarLoop = 0; iWarLoop < MAX_CIV_PLAYERS; iWarLoop++)
+							{
+								PlayerTypes eWarPlayer = (PlayerTypes)iWarLoop;
+								if (eWarPlayer != GetID() && GET_PLAYER(*it).IsAtWarWith(eWarPlayer))
+								{
+									WarStateTypes eTheirWarState = GET_PLAYER(*it).GetDiplomacyAI()->GetWarState(eWarPlayer);
+									if (eTheirWarState >= WAR_STATE_NEARLY_WON)
+									{
+										bTargetWillBeFree = true;
+										break;
+									}
+								}
+							}
+							// If they'll be free soon and they're still reasonably strong, don't risk it
+							if (bTargetWillBeFree && GetMilitaryStrengthComparedToUs(*it) >= STRENGTH_AVERAGE)
+							{
+								// Skip this opportunistic strike - too risky
+							}
+							else
+							{
+								bOpportunisticStrike = true;
+							}
+						}
+					}
+				}
+				if (!bOpportunisticStrike)
+					continue;
+			}
 
 			// Can we declare war?
 			if (!GET_TEAM(GetTeam()).canDeclareWar(GET_PLAYER(*it).getTeam(), GetID()))
@@ -23708,6 +23750,36 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 				else if (eProximity == PLAYER_PROXIMITY_NEIGHBORS)
 				{
 					bValidApproach = true;
+				}
+				// Opportunistic strike: Attack CLOSE players if they have an exposed city and we're safe
+				else if (eProximity == PLAYER_PROXIMITY_CLOSE)
+				{
+					if (IsEasyTarget(*it) && GetPlayer()->GetMilitaryAI()->HavePreferredAttackTarget(*it))
+					{
+						if (!GetPlayer()->GetMilitaryAI()->IsExposedToEnemy(NULL, *it))
+						{
+							// Caution: Don't strike if they're about to win their current war (they'll be free to retaliate soon)
+							bool bTargetWillBeFree = false;
+							for (int iWarLoop = 0; iWarLoop < MAX_CIV_PLAYERS; iWarLoop++)
+							{
+								PlayerTypes eWarPlayer = (PlayerTypes)iWarLoop;
+								if (eWarPlayer != GetID() && GET_PLAYER(*it).IsAtWarWith(eWarPlayer))
+								{
+									WarStateTypes eTheirWarState = GET_PLAYER(*it).GetDiplomacyAI()->GetWarState(eWarPlayer);
+									if (eTheirWarState >= WAR_STATE_NEARLY_WON)
+									{
+										bTargetWillBeFree = true;
+										break;
+									}
+								}
+							}
+							// If they'll be free soon and they're still reasonably strong, don't risk it
+							if (!(bTargetWillBeFree && GetMilitaryStrengthComparedToUs(*it) >= STRENGTH_AVERAGE))
+							{
+								bValidApproach = true;
+							}
+						}
+					}
 				}
 			}
 			else if (eApproach == CIV_APPROACH_DECEPTIVE)
