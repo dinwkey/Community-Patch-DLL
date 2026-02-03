@@ -5,6 +5,8 @@
 **Last Updated:** January 2026  
 **Status:** Review & Issues Identification
 
+**Related:** [AI_DEEP_REASONING.md](AI_DEEP_REASONING.md) — Architecture guide for extended memory, IPC, and LLM integration
+
 ---
 
 ## Executive Summary
