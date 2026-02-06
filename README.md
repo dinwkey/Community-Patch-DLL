@@ -1,3 +1,4 @@
+[![Build](https://github.com/dinwkey/Community-Patch-DLL/actions/workflows/build_vp.yml/badge.svg?branch=feature%2Fcopilot)](https://github.com/dinwkey/Community-Patch-DLL/actions/workflows/build_vp.yml)
 # Community-Patch-DLL
 
 This is the repository for the Civ V SDK + Vox Populi Mod. 
