@@ -236,6 +236,40 @@ CvAIGrandStrategyXMLEntries* CvGrandStrategyAI::GetAIGrandStrategies()
 	return m_pAIGrandStrategies;
 }
 
+int CvGrandStrategyAI::GetMemoryThreatWeight() const
+{
+	if (!m_pPlayer || !m_pPlayer->isMajorCiv())
+		return 0;
+
+	CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return 0;
+
+	int iThreat = 0;
+	PlayerTypes ePlayer = m_pPlayer->GetID();
+	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
+	{
+		PlayerTypes eOther = (PlayerTypes)iPlayer;
+		if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive())
+			continue;
+
+		if (GET_PLAYER(eOther).GetProximityToPlayer(ePlayer) < PLAYER_PROXIMITY_CLOSE)
+			continue;
+
+		if (pDiploAI->IsAttackLikelyImminent(eOther))
+			iThreat += 40;
+		if (pDiploAI->IsSiegeWarningActive(eOther))
+			iThreat += 25;
+		if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
+			iThreat += 15;
+
+		if (iThreat >= 100)
+			return 100;
+	}
+
+	return min(100, iThreat);
+}
+
 /// Runs every turn to determine what the player's Active Grand Strategy is and to change Priority Levels as necessary
 void CvGrandStrategyAI::DoTurn()
 {
@@ -245,6 +279,7 @@ void CvGrandStrategyAI::DoTurn()
 	AIGrandStrategyTypes eGrandStrategy;
 	CvAIGrandStrategyXMLEntry* pGrandStrategy = NULL;
 	CvString strGrandStrategyName;
+	int iMemoryThreatWeight = GetMemoryThreatWeight();
 
 	//Only run this on turns we need it.
 	if ((GetActiveGrandStrategy() != NO_AIGRANDSTRATEGY && GetNumTurnsSinceActiveSet() == 0) || (GetActiveGrandStrategy() == NO_AIGRANDSTRATEGY))
@@ -292,6 +327,15 @@ void CvGrandStrategyAI::DoTurn()
 			if (GetActiveGrandStrategy() == eGrandStrategy && GetActiveGrandStrategy() != NO_AIGRANDSTRATEGY)
 			{
 				iPriority += /*50*/ GD_INT_GET(AI_GRAND_STRATEGY_CURRENT_STRATEGY_WEIGHT);
+			}
+
+			// Memory-driven defense bias: push toward conquest (military focus) when attack looks imminent
+			if (iMemoryThreatWeight > 0)
+			{
+				if (strGrandStrategyName == "AIGRANDSTRATEGY_CONQUEST")
+					iPriority += iMemoryThreatWeight / 2;
+				else
+					iPriority -= iMemoryThreatWeight / 3;
 			}
 
 			SetGrandStrategyPriority(eGrandStrategy, max(1, iPriority));

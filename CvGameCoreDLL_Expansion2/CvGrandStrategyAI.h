@@ -86,6 +86,7 @@ private:
 
 	void LogGrandStrategies(const vector<int>& vGrandStrategyPriorities);
 	void LogGuessOtherPlayerGrandStrategy(const vector<int>& vGrandStrategyPriorities, PlayerTypes ePlayer);
+	int GetMemoryThreatWeight() const;
 
 	CvPlayer* m_pPlayer;
 	CvAIGrandStrategyXMLEntries* m_pAIGrandStrategies;
