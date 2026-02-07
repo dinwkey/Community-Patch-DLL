@@ -445,10 +445,13 @@ void CvTacticalAI::UpdateVisibilityFromBorders(CvPlot* pPlot)
 
 // PRIVATE METHODS
 
+static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer);
+
 /// Make lists of everything we might want to target with the tactical AI this turn
 void CvTacticalAI::FindTacticalTargets()
 {
 	CvPlayerTrade* pPlayerTrade = m_pPlayer->GetTrade();
+	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
 
 	bool bNoBarbsAllowedYet = GC.getGame().getGameTurn() < GC.getGame().GetBarbarianReleaseTurn();
 	vector<PlayerTypes> vUnfriendlyMajors = m_pPlayer->GetUnfriendlyMajors();
@@ -540,6 +543,8 @@ void CvTacticalAI::FindTacticalTargets()
 				if (bSuspectedBarbCamp && (m_pPlayer->isMajorCiv() || m_pPlayer->isBarbarian()))
 				{
 					int iBaseScore = pLoopPlot->isVisible(m_pPlayer->getTeam()) ? 100 : 50;
+					if (bImminentAttack)
+						iBaseScore = max(10, iBaseScore / 2);
 					newTarget.SetTargetType(AI_TACTICAL_TARGET_BARBARIAN_CAMP);
 					newTarget.SetAuxIntData(iBaseScore - m_pPlayer->GetCityDistancePathLength(pLoopPlot));
 					m_AllTargets.push_back(newTarget);
@@ -549,6 +554,8 @@ void CvTacticalAI::FindTacticalTargets()
 				if(!m_pPlayer->isMinorCiv() && pLoopPlot->isRevealedGoody(m_pPlayer->getTeam()))
 				{
 					int iBaseScore = pLoopPlot->isVisible(m_pPlayer->getTeam()) ? 100 : 50;
+					if (bImminentAttack)
+						iBaseScore = max(10, iBaseScore / 2);
 					newTarget.SetTargetType(AI_TACTICAL_TARGET_GOODY);
 					newTarget.SetAuxIntData(iBaseScore - m_pPlayer->GetCityDistancePathLength(pLoopPlot));
 					m_AllTargets.push_back(newTarget);
@@ -561,7 +568,7 @@ void CvTacticalAI::FindTacticalTargets()
 					!pLoopPlot->IsImprovementPillaged())
 				{
 					newTarget.SetTargetType(AI_TACTICAL_TARGET_ENEMY_CITADEL);
-					newTarget.SetAuxIntData(80);
+					newTarget.SetAuxIntData(bImminentAttack ? 60 : 80);
 					m_AllTargets.push_back(newTarget);
 				}
 				
@@ -579,7 +586,10 @@ void CvTacticalAI::FindTacticalTargets()
 					{
 						newTarget.SetTargetType(AI_TACTICAL_TARGET_ENEMY_CITADEL);
 						// Priority based on defense strength - higher defense = higher priority to pillage
-						newTarget.SetAuxIntData(40 + pkImprovementInfo->GetDefenseModifier() / 2);
+						int iScore = 40 + pkImprovementInfo->GetDefenseModifier() / 2;
+						if (bImminentAttack)
+							iScore = max(10, iScore - 15);
+						newTarget.SetAuxIntData(iScore);
 						m_AllTargets.push_back(newTarget);
 					}
 				}
@@ -599,17 +609,26 @@ void CvTacticalAI::FindTacticalTargets()
 					if (eResourceUsage == RESOURCEUSAGE_STRATEGIC)
 					{
 						newTarget.SetTargetType(AI_TACTICAL_TARGET_IMPROVEMENT_RESOURCE);
-						newTarget.SetAuxIntData(80+iExtraScore);
+						int iScore = 80 + iExtraScore;
+						if (bImminentAttack)
+							iScore = max(10, iScore - 20);
+						newTarget.SetAuxIntData(iScore);
 					}
 					else if (eResourceUsage == RESOURCEUSAGE_LUXURY)
 					{
 						newTarget.SetTargetType(AI_TACTICAL_TARGET_IMPROVEMENT_RESOURCE);
-						newTarget.SetAuxIntData(40+iExtraScore);
+						int iScore = 40 + iExtraScore;
+						if (bImminentAttack)
+							iScore = max(10, iScore - 15);
+						newTarget.SetAuxIntData(iScore);
 					}
 					else
 					{
 						newTarget.SetTargetType(AI_TACTICAL_TARGET_IMPROVEMENT);
-						newTarget.SetAuxIntData(5+iExtraScore);
+						int iScore = 5 + iExtraScore;
+						if (bImminentAttack)
+							iScore = max(1, iScore - 5);
+						newTarget.SetAuxIntData(iScore);
 					}
 
 					m_AllTargets.push_back(newTarget);
@@ -623,7 +642,7 @@ void CvTacticalAI::FindTacticalTargets()
 					!GetTacticalAnalysisMap()->IsInEnemyDominatedZone(pLoopPlot))
 				{
 					newTarget.SetTargetType(AI_TACTICAL_TARGET_IMPROVEMENT);
-					newTarget.SetAuxIntData(10);
+					newTarget.SetAuxIntData(bImminentAttack ? 5 : 10);
 					m_AllTargets.push_back(newTarget);
 				}
 
@@ -631,7 +650,7 @@ void CvTacticalAI::FindTacticalTargets()
 				if (pLoopPlot->isVisible(m_pPlayer->getTeam()) && pPlayerTrade->ContainsEnemyTradeUnit(pLoopPlot))
 				{
 					newTarget.SetTargetType( pLoopPlot->isWater() ? AI_TACTICAL_TARGET_TRADE_UNIT_SEA : AI_TACTICAL_TARGET_TRADE_UNIT_LAND);
-					newTarget.SetAuxIntData(35);
+					newTarget.SetAuxIntData(bImminentAttack ? 20 : 35);
 					m_AllTargets.push_back(newTarget);
 				}
 
@@ -4032,6 +4051,7 @@ void CvTacticalAI::UpdateTargetScores()
 	// If so, we should prioritize clearing enemy AA/interceptors with ground forces first
 	bool bHaveAirUnits = false;
 	int iAirUnitCount = 0;
+	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
 	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
 	{
 		CvUnit* pUnit = m_pPlayer->getUnit(*it);
@@ -4049,15 +4069,30 @@ void CvTacticalAI::UpdateTargetScores()
 		{
 			//try to attack target close to our units first
 			vector<CvUnit*> myUnits = pPlot->GetAdjacentFriendlyCombatUnits(m_pPlayer->getTeam(), 3, pPlot->getDomain());
-			it->SetAuxIntData(it->GetAuxIntData() + myUnits.size());
+			int iScore = it->GetAuxIntData() + (int)myUnits.size();
 
 			//try to attack targets close to our cities first
 			int iDist = m_pPlayer->GetCityDistanceInPlots(pPlot);
 			if (iDist != INT_MAX)
 			{
 				int iDistScore = max(0, 5 - iDist);
-				it->SetAuxIntData(it->GetAuxIntData() + iDistScore);
+				iScore += iDistScore;
 			}
+
+			if (bImminentAttack)
+			{
+				if (pPlot->getTeam() != m_pPlayer->getTeam())
+				{
+					int iDistancePenalty = (iDist == INT_MAX) ? 0 : max(0, iDist - 2);
+					iScore -= iDistancePenalty * 2;
+				}
+
+				CvCity* pAdjacentCity = pPlot->GetAdjacentCity();
+				if (pAdjacentCity && pAdjacentCity->getOwner() == m_pPlayer->GetID())
+					iScore += 10;
+			}
+
+			it->SetAuxIntData(max(1, iScore));
 			
 			CvUnit* pTargetUnit = it->GetUnitPtr();
 			if (!pTargetUnit)
