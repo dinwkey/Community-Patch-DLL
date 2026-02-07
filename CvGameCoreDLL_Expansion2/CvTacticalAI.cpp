@@ -2346,21 +2346,34 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		int iThreatLevel = pCity->getThreatValue();
 		bool bHighThreat = (iThreatLevel >= 50); // High threat from diplomacy/proximity
 		bool bAggressiveNeighbor = false;
+		bool bMemoryImminent = false;
+		bool bMemorySiege = false;
+		bool bMemoryBuildup = false;
+		CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
 		
-		// Check for aggressive military posture from nearby players
-		for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS && !bAggressiveNeighbor; iPlayer++)
+		// Check for aggressive posture and memory signals from nearby players
+		for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS; iPlayer++)
 		{
 			PlayerTypes eOther = (PlayerTypes)iPlayer;
-			if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive())
+			if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive() || GET_PLAYER(eOther).isMinorCiv())
 				continue;
 			
-			// Check if this player has aggressive posture toward us
-			if (m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM)
-			{
-				// And they're close enough to threaten this city
-				if (GET_PLAYER(eOther).GetProximityToPlayer(m_pPlayer->GetID()) >= PLAYER_PROXIMITY_CLOSE)
-					bAggressiveNeighbor = true;
-			}
+			// Only consider nearby civs for city-level garrison decisions
+			if (GET_PLAYER(eOther).GetProximityToPlayer(m_pPlayer->GetID()) < PLAYER_PROXIMITY_CLOSE)
+				continue;
+			
+			if (pDiploAI->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM)
+				bAggressiveNeighbor = true;
+
+			if (pDiploAI->IsAttackLikelyImminent(eOther))
+				bMemoryImminent = true;
+			if (pDiploAI->IsSiegeWarningActive(eOther))
+				bMemorySiege = true;
+			if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
+				bMemoryBuildup = true;
+
+			if (bAggressiveNeighbor && bMemoryImminent && bMemorySiege && bMemoryBuildup)
+				break;
 		}
 		
 		// Count enemy units in wider area (proactive detection)
@@ -2414,7 +2427,8 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 
 		// ignore core cities here (handled by homeland ai)
 		// BUT proactively garrison if we detect emerging threat!
-		bool bProactiveThreat = bHighThreat || bAggressiveNeighbor || bEnemyBuildupNearby || bCoastalThreat;
+		bool bProactiveThreat = bHighThreat || bAggressiveNeighbor || bEnemyBuildupNearby || bCoastalThreat ||
+			bMemoryImminent || bMemorySiege || bMemoryBuildup;
 		if (!pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && 
 		    !m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity,NO_PLAYER) && !bProactiveThreat)
 			continue;
