@@ -972,6 +972,16 @@ void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pT
 		pSighting->flags = ComputeFlags(pUnit);
 		pSighting->movementPoints = (unsigned char)min(255, pUnit->maxMoves() / max(1, GD_INT_GET(MOVE_DENOMINATOR)));
 	}
+	else if (bCanSeeFrom && pFrom)
+	{
+		// We saw the origin but not the destination; treat origin as last confirmed.
+		pSighting->x = (short)pFrom->getX();
+		pSighting->y = (short)pFrom->getY();
+		pSighting->lastSeenTurn = (short)GC.getGame().getGameTurn();
+		pSighting->health = (unsigned char)((pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints()));
+		pSighting->flags = ComputeFlags(pUnit);
+		pSighting->movementPoints = (unsigned char)min(255, pUnit->maxMoves() / max(1, GD_INT_GET(MOVE_DENOMINATOR)));
+	}
 	// else: unit entered fog — keep last confirmed position, but we captured the direction above
 
 	// Infer intent from context (only meaningful when we had a direction)
@@ -1104,10 +1114,16 @@ int CvUnitSightingManager::GetGhostsInSearchCone(int centerX, int centerY,
 		if (iDist > maxDist)
 			continue;
 
-		if (IsPlotInSearchCone(&s, centerX, centerY, currentTurn))
+		int dx = (int)s.x - centerX;
+		int dy = (int)s.y - centerY;
+		if (dirX != 0 || dirY != 0)
 		{
-			results.push_back(&s);
+			int dot = dx * dirX + dy * dirY;
+			if (dot <= 0)
+				continue;
 		}
+
+		results.push_back(&s);
 	}
 
 	return (int)results.size();
