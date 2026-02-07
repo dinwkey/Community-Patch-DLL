@@ -344,6 +344,7 @@ void CvMilitaryAI::Reset()
 	m_iNumCarrierNavalUnits = 0;
 	m_iNumMissileUnits = 0;
 	m_iNumActiveUniqueUnits = 0;
+	m_iMemoryThreatWeight = 0;
 
 	for(int iI = 0; iI < m_pAIStrategies->GetNumMilitaryAIStrategies(); iI++)
 	{
@@ -495,6 +496,7 @@ void CvMilitaryAI::SetTurnStrategyAdopted(MilitaryAIStrategyTypes eStrategy, int
 /// Process through all the military activities for a player's turn
 void CvMilitaryAI::DoTurn()
 {
+	m_iMemoryThreatWeight = CalculateMemoryThreatWeight();
 	ScanForBarbarians();
 	UpdateBaseData();
 	UpdateDefenseState();
@@ -2010,6 +2012,10 @@ int CvMilitaryAI::GetAlliedThreatMultiplier()
 	return min(150, iMultiplier); // Cap at 150% max
 }
 
+/// Aggregate memory-threat weight across all nearby majors.
+/// The underlying signal functions (IsAttackLikelyImminent, IsSiegeWarningActive,
+/// IsPlayerBuildingUpNearUs) already incorporate intent filtering internally,
+/// so no additional IsLikelyIntentAgainstUs gate is required here.
 int CvMilitaryAI::CalculateMemoryThreatWeight() const
 {
 	if (!m_pPlayer || !m_pPlayer->isMajorCiv())
@@ -2634,11 +2640,9 @@ void CvMilitaryAI::UpdateDefenseState()
 
 	if (m_pPlayer->GetNumEffectiveCoastalCities() > 0)
 	{
-		if (iMemoryThreatWeight >= 80)
-		{
-			m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
-		}
-		else if (iMemoryThreatWeight >= 40 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
+		// Memory signals are domain-agnostic; only escalate naval to NEEDED, not CRITICAL.
+		// Actual naval siege already triggers CRITICAL via the per-city check above.
+		if (iMemoryThreatWeight >= 40 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
 		{
 			m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
 		}
@@ -3796,7 +3800,6 @@ void CvMilitaryAI::LogAvailableForces()
 		int iCapitalX = 0;
 		int iCapitalY = 0;
 		CvCity* pCapital = GetPlayer()->getCapitalCity();
-			int iMemoryThreatWeight = m_iMemoryThreatWeight;
 		if(pCapital)
 		{
 			iCapitalX = pCapital->getX();

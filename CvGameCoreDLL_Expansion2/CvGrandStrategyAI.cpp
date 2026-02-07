@@ -10,6 +10,7 @@
 #include "CvEconomicAI.h"
 #include "CvCitySpecializationAI.h"
 #include "CvDiplomacyAI.h"
+#include "CvMilitaryAI.h"
 #include "CvMinorCivAI.h"
 #include "ICvDLLUserInterface.h"
 #include "CvSpanSerialization.h"
@@ -238,36 +239,11 @@ CvAIGrandStrategyXMLEntries* CvGrandStrategyAI::GetAIGrandStrategies()
 
 int CvGrandStrategyAI::GetMemoryThreatWeight() const
 {
+	// Delegate to MilitaryAI's cached per-turn value to avoid duplicating the calculation
 	if (!m_pPlayer || !m_pPlayer->isMajorCiv())
 		return 0;
 
-	CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
-	if (!pDiploAI)
-		return 0;
-
-	int iThreat = 0;
-	PlayerTypes ePlayer = m_pPlayer->GetID();
-	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
-	{
-		PlayerTypes eOther = (PlayerTypes)iPlayer;
-		if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive())
-			continue;
-
-		if (GET_PLAYER(eOther).GetProximityToPlayer(ePlayer) < PLAYER_PROXIMITY_CLOSE)
-			continue;
-
-		if (pDiploAI->IsAttackLikelyImminent(eOther))
-			iThreat += 40;
-		if (pDiploAI->IsSiegeWarningActive(eOther))
-			iThreat += 25;
-		if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
-			iThreat += 15;
-
-		if (iThreat >= 100)
-			return 100;
-	}
-
-	return min(100, iThreat);
+	return m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
 }
 
 /// Runs every turn to determine what the player's Active Grand Strategy is and to change Priority Levels as necessary

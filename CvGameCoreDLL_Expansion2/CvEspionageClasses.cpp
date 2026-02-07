@@ -8249,10 +8249,11 @@ int CvEspionageAI::GetPlayerModifier(PlayerTypes eTargetPlayer, bool bOnlyDiplo)
 		}
 	}
 
-	iDiploModifier += iMemoryMod;
-
 	iDiploModifier *= 100 + 10 * (m_pPlayer->GetDiplomacyAI()->GetDiploBalance() - 5);
 	iDiploModifier /= 100;
+
+	// Add memory-based modifier after personality scaling (objective threat data)
+	iDiploModifier += iMemoryMod;
 
 	if (bOnlyDiplo)
 		return iDiploModifier;
@@ -8358,33 +8359,9 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 
 		// low base value because of the XP counterspies get per turn
 		int iScore = GD_INT_GET(ESPIONAGE_XP_PER_TURN_COUNTERSPY);
-		int iMemoryThreat = 0;
-		for (int iLoopPlayer = 0; iLoopPlayer < MAX_MAJOR_CIVS; iLoopPlayer++)
-		{
-			PlayerTypes eOther = (PlayerTypes)iLoopPlayer;
-			if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive())
-				continue;
-			if (GET_PLAYER(eOther).isMinorCiv() || GET_PLAYER(eOther).getTeam() == m_pPlayer->getTeam())
-				continue;
-			if (!m_pPlayer->GetDiplomacyAI()->IsHasMet(eOther))
-				continue;
-			if (!pDiplomacyAI->IsLikelyIntentAgainstUs(eOther))
-				continue;
 
-			iMemoryThreat += 10;
-			if (pDiplomacyAI->IsPlayerBuildingUpNearUs(eOther))
-				iMemoryThreat += 10;
-			if (pDiplomacyAI->IsSiegeWarningActive(eOther))
-				iMemoryThreat += 15;
-			if (pDiplomacyAI->IsAttackLikelyImminent(eOther))
-				iMemoryThreat += 25;
-
-			if (iMemoryThreat >= 100)
-			{
-				iMemoryThreat = 100;
-				break;
-			}
-		}
+		// Use MilitaryAI's cached memory threat weight instead of duplicating the calculation
+		int iMemoryThreat = m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
 		if (iMemoryThreat > 0)
 		{
 			// Boost counterspy focus when memory signals a likely attack.

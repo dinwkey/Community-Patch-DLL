@@ -775,7 +775,8 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				}
 				if (bMemoryThreat && iValue > 0)
 					iBonus += iValue * 10 + iMemoryThreatWeight;
-				iBonus += iValue * 30;
+				else
+					iBonus += iValue * 30;
 			}
 		}
 		//Land Units Critically Needed?
@@ -851,7 +852,8 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				}
 				if (bMemoryThreat && iValue > 0)
 					iBonus += iValue * 10 + iMemoryThreatWeight;
-				iBonus += iValue * 30;
+				else
+					iBonus += iValue * 30;
 			}
 		}
 
