@@ -294,6 +294,10 @@ public:
 	{
 		return m_iNumMissileUnits;
 	}
+	int GetMemoryThreatWeight() const
+	{
+		return m_iMemoryThreatWeight;
+	}
 
 private:
 
@@ -308,6 +312,7 @@ private:
 	int CalculateProximityWeightedThreat(DomainTypes eDomain);
 	bool AreEnemiesMovingTowardUs(DomainTypes eDomain);
 	int GetAlliedThreatMultiplier();
+	int CalculateMemoryThreatWeight() const;
 	
 	// Issue 7.2: Urgent flavor propagation for immediate threat response
 	void PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues);
@@ -368,6 +373,7 @@ private:
 	int m_iPreviousMilitaryUnitCount;  // last known military unit count
 	int m_iLastRebalanceTurn;  // track when rebalancing last occurred
 	int m_iArmyBalanceScore;  // 0-100 score of army health
+	int m_iMemoryThreatWeight; // cached per-turn memory threat score
 
 	// Internal calculated values - must be serialized
 	int m_iNumberOfTimesOpsBuildSkippedOver;

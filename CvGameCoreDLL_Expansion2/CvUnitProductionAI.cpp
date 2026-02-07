@@ -294,8 +294,10 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			return SR_UNITSUPPLY;
 	}
 
+	int iMemoryThreatWeight = kPlayer.GetMilitaryAI()->GetMemoryThreatWeight();
+	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 	//only war with majors count
-	bool bAtWar = (kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0);
+	bool bAtWar = (kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0) || bMemoryThreat;
 	if (!bFree && kPlayer.isMinorCiv())
 	{
 		if (bNeedsSupply)
@@ -771,6 +773,8 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						iValue *= iWarValue;
 					}
 				}
+				if (bMemoryThreat && iValue > 0)
+					iBonus += iValue * 10 + iMemoryThreatWeight;
 				iBonus += iValue * 30;
 			}
 		}
@@ -845,6 +849,8 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						iValue *= iWarValue;
 					}
 				}
+				if (bMemoryThreat && iValue > 0)
+					iBonus += iValue * 10 + iMemoryThreatWeight;
 				iBonus += iValue * 30;
 			}
 		}

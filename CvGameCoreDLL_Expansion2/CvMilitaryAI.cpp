@@ -1843,6 +1843,12 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 
 	int iFlavorOffense = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_OFFENSE"));
 	int iOffenseModifier = 100 + m_pPlayer->GetDiplomacyAI()->GetBoldness() + iFlavorOffense;
+	if (m_iMemoryThreatWeight > 0)
+	{
+		// Memory-driven defense bias when imminent threats are detected
+		iDefenseModifier += m_iMemoryThreatWeight / 2;
+		iOffenseModifier = max(50, iOffenseModifier - m_iMemoryThreatWeight / 2);
+	}
 
 	iLandDefenseWeight = iLandDefenseWeight * iDefenseModifier;
 	iNavalDefenseWeight = iNavalDefenseWeight * iDefenseModifier;
@@ -1999,6 +2005,40 @@ int CvMilitaryAI::GetAlliedThreatMultiplier()
 	}
 	
 	return min(150, iMultiplier); // Cap at 150% max
+}
+
+int CvMilitaryAI::CalculateMemoryThreatWeight() const
+{
+	if (!m_pPlayer || !m_pPlayer->isMajorCiv())
+		return 0;
+
+	CvDiplomacyAI* pDiploAI = m_pDiplomacyAI ? m_pDiplomacyAI : m_pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return 0;
+
+	int iThreat = 0;
+	PlayerTypes ePlayer = m_pPlayer->GetID();
+	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
+	{
+		PlayerTypes eOther = (PlayerTypes)iPlayer;
+		if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive())
+			continue;
+
+		if (GET_PLAYER(eOther).GetProximityToPlayer(ePlayer) < PLAYER_PROXIMITY_CLOSE)
+			continue;
+
+		if (pDiploAI->IsAttackLikelyImminent(eOther))
+			iThreat += 40;
+		if (pDiploAI->IsSiegeWarningActive(eOther))
+			iThreat += 25;
+		if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
+			iThreat += 15;
+
+		if (iThreat >= 100)
+			return 100;
+	}
+
+	return min(100, iThreat);
 }
 
 /// Issue 7.2: Propagate urgent flavor changes to diplomacy AI immediately
@@ -2442,6 +2482,7 @@ void CvMilitaryAI::UpdateDefenseState()
 	// Predict if enemies moving toward us (Issue 4.1)
 	bool bEnemiesMovingTowardUsLand = AreEnemiesMovingTowardUs(DOMAIN_LAND);
 	bool bEnemiesMovingTowardUsSea = AreEnemiesMovingTowardUs(DOMAIN_SEA);
+	int iMemoryThreatWeight = m_iMemoryThreatWeight;
 
 	// Proximity-weighted threat (Issue 4.1)
 	int iLandThreat = CalculateProximityWeightedThreat(DOMAIN_LAND);
@@ -2491,6 +2532,16 @@ void CvMilitaryAI::UpdateDefenseState()
 
 	// Issue 4.1: Apply proximity-weighted land threat
 	if(iLandThreat > 0 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
+	}
+
+	// Memory-based early warning (imminent/siege/buildup)
+	if (iMemoryThreatWeight >= 80)
+	{
+		m_eLandDefenseState = DEFENSE_STATE_CRITICAL;
+	}
+	else if (iMemoryThreatWeight >= 40 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
 	{
 		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 	}
@@ -2576,6 +2627,18 @@ void CvMilitaryAI::UpdateDefenseState()
 	if(iNavalThreat > 0 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
 	{
 		m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
+	}
+
+	if (m_pPlayer->GetNumEffectiveCoastalCities() > 0)
+	{
+		if (iMemoryThreatWeight >= 80)
+		{
+			m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
+		}
+		else if (iMemoryThreatWeight >= 40 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
+		{
+			m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
+		}
 	}
 }
 
@@ -3723,12 +3786,14 @@ void CvMilitaryAI::LogAvailableForces()
 		int iCapitalX = 0;
 		int iCapitalY = 0;
 		CvCity* pCapital = GetPlayer()->getCapitalCity();
+			int iMemoryThreatWeight = m_iMemoryThreatWeight;
 		if(pCapital)
 		{
 			iCapitalX = pCapital->getX();
 			iCapitalY = pCapital->getY();
 		}
 		*/
+
 
 		// Open the right file
 		CvString playerName = GetPlayer()->getCivilizationShortDescription();
