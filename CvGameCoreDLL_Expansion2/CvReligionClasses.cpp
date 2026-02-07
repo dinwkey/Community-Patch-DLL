@@ -313,26 +313,14 @@ void CvGameReligions::SpreadReligionToOneCity(CvCity* pCity)
 
 				for (int iI = RELIGION_PANTHEON + 1; iI < GC.GetGameReligions()->GetNumReligions(); iI++)
 				{
-
-						int iNumTradeRoutes = 0;
+					}
+				}
 						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
 					}
 					if (!pCity)
 					{
 						iAvailabilityModifier--;
 					}
-								pCity->GetCityReligions()->IncrementNumTradeRouteConnections(eReligion, iNumTradeRoutes);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-bool CvGameReligions::IsValidTarget(ReligionTypes eReligion, CvCity* pFromCity, CvCity* pToCity)
-{
 	if (pFromCity->getOwner() != pToCity->getOwner())
 	{
 		if (GET_PLAYER(pFromCity->getOwner()).GetPlayerTraits()->IsNoNaturalReligionSpread())
@@ -8587,35 +8575,13 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 						CvTechEntry* pkTechInfo = GC.getTechInfo(ePrereqTech);
 						if (!pkTechInfo)
 							continue;
-
-<<<<<<< HEAD
-						if (ePrereqTech == NO_TECH || GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->HasTech(ePrereqTech))
-						{
-							iAvailabilityModifier = 6;
-						}
-						else
-						{
-							CvTechEntry* pkTechInfo = GC.getTechInfo(ePrereqTech);
-							if (!pkTechInfo)
-								continue;
-
-							int iEraNeeded = pkTechInfo->GetEra();
-							int iCurrentEra = m_pPlayer->GetCurrentEra();
-							iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
-						}
-						if (!pCity)
-						{
-							iAvailabilityModifier--;
-						}
-=======
 						int iEraNeeded = pkTechInfo->GetEra();
 						int iCurrentEra = m_pPlayer->GetCurrentEra();
-						iAvailabilityModifier = iCurrentEra >= iEraNeeded ? 4 : 2;
+						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
 					}
 					if (!pCity)
 					{
 						iAvailabilityModifier--;
->>>>>>> 576ea65df (Restore Religion System Optimizations from backup branch)
 					}
 				}
 			}
