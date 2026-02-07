@@ -8202,6 +8202,17 @@ int CvEspionageAI::GetPlayerModifier(PlayerTypes eTargetPlayer, bool bOnlyDiplo)
 	CvDiplomacyAI* pTargetDiploAI = GET_PLAYER(eTargetPlayer).GetDiplomacyAI();
 
 	int iDiploModifier = 0; // diplomacy modifier
+	int iMemoryMod = 0;
+	if (pDiploAI->IsLikelyIntentAgainstUs(eTargetPlayer))
+	{
+		iMemoryMod += 10;
+		if (pDiploAI->IsPlayerBuildingUpNearUs(eTargetPlayer))
+			iMemoryMod += 15;
+		if (pDiploAI->IsSiegeWarningActive(eTargetPlayer))
+			iMemoryMod += 20;
+		if (pDiploAI->IsAttackLikelyImminent(eTargetPlayer))
+			iMemoryMod += 30;
+	}
 
 	if (GET_TEAM(eTeam).isAtWar(eTargetTeam) || pDiploAI->GetCivApproach(eTargetPlayer) == CIV_APPROACH_WAR)
 	{
@@ -8237,6 +8248,8 @@ int CvEspionageAI::GetPlayerModifier(PlayerTypes eTargetPlayer, bool bOnlyDiplo)
 			iDiploModifier += 15;
 		}
 	}
+
+	iDiploModifier += iMemoryMod;
 
 	iDiploModifier *= 100 + 10 * (m_pPlayer->GetDiplomacyAI()->GetDiploBalance() - 5);
 	iDiploModifier /= 100;
@@ -8345,6 +8358,42 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 
 		// low base value because of the XP counterspies get per turn
 		int iScore = GD_INT_GET(ESPIONAGE_XP_PER_TURN_COUNTERSPY);
+		int iMemoryThreat = 0;
+		for (int iLoopPlayer = 0; iLoopPlayer < MAX_MAJOR_CIVS; iLoopPlayer++)
+		{
+			PlayerTypes eOther = (PlayerTypes)iLoopPlayer;
+			if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive())
+				continue;
+			if (GET_PLAYER(eOther).isMinorCiv() || GET_PLAYER(eOther).getTeam() == m_pPlayer->getTeam())
+				continue;
+			if (!m_pPlayer->GetDiplomacyAI()->IsHasMet(eOther))
+				continue;
+			if (!pDiplomacyAI->IsLikelyIntentAgainstUs(eOther))
+				continue;
+
+			iMemoryThreat += 10;
+			if (pDiplomacyAI->IsPlayerBuildingUpNearUs(eOther))
+				iMemoryThreat += 10;
+			if (pDiplomacyAI->IsSiegeWarningActive(eOther))
+				iMemoryThreat += 15;
+			if (pDiplomacyAI->IsAttackLikelyImminent(eOther))
+				iMemoryThreat += 25;
+
+			if (iMemoryThreat >= 100)
+			{
+				iMemoryThreat = 100;
+				break;
+			}
+		}
+		if (iMemoryThreat > 0)
+		{
+			// Boost counterspy focus when memory signals a likely attack.
+			iScore += iMemoryThreat;
+			if (pCity->isCapital())
+				iScore += iMemoryThreat / 2;
+			if (pCity->isUnderSiege())
+				iScore += iMemoryThreat;
+		}
 
 		if (pkMissionInfo->isCounterspyBlockSapCity())
 		{
@@ -8447,6 +8496,19 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 			return -1;
 
 		PlayerTypes eTargetPlayer = pCity->getOwner();
+		int iThreatWeight = 0;
+		if (pDiplomacyAI->IsLikelyIntentAgainstUs(eTargetPlayer))
+		{
+			iThreatWeight += 10;
+			if (pDiplomacyAI->IsPlayerBuildingUpNearUs(eTargetPlayer))
+				iThreatWeight += 15;
+			if (pDiplomacyAI->IsSiegeWarningActive(eTargetPlayer))
+				iThreatWeight += 20;
+			if (pDiplomacyAI->IsAttackLikelyImminent(eTargetPlayer))
+				iThreatWeight += 30;
+			if (iThreatWeight > 100)
+				iThreatWeight = 100;
+		}
 
 		// mission requirements (excluding cooldowns and network point requirements) not met?
 		CityEventTypes eParentEvent = m_pPlayer->GetEspionage()->GetSpyMissionEvent();
@@ -8500,6 +8562,8 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 		}
 		if (pkMissionInfo->getBlockBuildingTurns() > 0)
 		{
+			if (iThreatWeight > 0)
+				iScore += iThreatWeight / 2;
 			// only check while we're in the city
 			if (iSpyIndex >= 0 && pCity->GetCityEspionage()->GetRevealCityScreen(ePlayer))
 			{
@@ -8605,6 +8669,8 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 		}
 		if (pkMissionInfo->getSapCityTurns() > 0)
 		{
+			if (iThreatWeight > 0)
+				iScore += iThreatWeight;
 			if (m_pPlayer->IsAtWarWith(eTargetPlayer) || pDiplomacyAI->GetCivApproach(eTargetPlayer) == CIV_APPROACH_WAR)
 			{
 				if (pDiplomacyAI->GetTargetValue(eTargetPlayer) == TARGET_VALUE_FAVORABLE || pDiplomacyAI->GetTargetValue(eTargetPlayer) == TARGET_VALUE_SOFT)
