@@ -1040,6 +1040,9 @@ map<int, SPath> CvMilitaryAI::GetArmyPathsFromCity(CvCity* pMusterCity, bool bWa
 
 bool CvMilitaryAI::RequestCityAttack(PlayerTypes eIntendedTarget, int iNumUnitsWillingToBuild, bool bCareful)
 {
+	if (bCareful && m_iMemoryThreatWeight >= 60 && (m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED))
+		return false;
+
 	//note that a given target might be repeated with different muster points / army types
 	for (size_t i = 0; i < m_potentialAttackTargets.size(); i++)
 	{
@@ -3122,6 +3125,9 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 
 void CvMilitaryAI::DoCityAttacks(PlayerTypes ePlayer)
 {
+	if (m_iMemoryThreatWeight >= 60 && (m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED))
+		return;
+
 	//Not perfect, as some operations are mixed, but it will keep us from sending everyone to slaughter all at once.
 	int iReservesTotal = ((m_iNumLandUnits + m_iNumNavalUnits) - (m_iNumNavalUnitsInArmies + m_iNumLandUnitsInArmies));
 	if (iReservesTotal >= m_iRecLandUnits || (m_pPlayer->GetNumOffensiveOperations(DOMAIN_LAND)+m_pPlayer->GetNumOffensiveOperations(DOMAIN_SEA)) <= 0)
@@ -3149,6 +3155,9 @@ void CvMilitaryAI::UpdateOperations()
 	vector<CvCity*> coastCities = m_pPlayer->GetThreatenedCities(true);
 	CvCity* pThreatenedCoastalCityA = coastCities.size()<1 ? NULL : coastCities[0];
 	CvCity* pThreatenedCoastalCityB = coastCities.size()<2 ? NULL : coastCities[1];
+	int iMemoryThreatWeight = m_iMemoryThreatWeight;
+	bool bMemoryThreatHigh = (iMemoryThreatWeight >= 60);
+	bool bDefensivePressure = (pThreatenedCityA || pThreatenedCoastalCityA || m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED);
 
 	// Are any of our strategies inappropriate given the type of war we are fighting
 	for (int iPlayerLoop = 0; iPlayerLoop < MAX_PLAYERS; iPlayerLoop++)
@@ -3192,7 +3201,8 @@ void CvMilitaryAI::UpdateOperations()
 
 				//finally offense
 				DoNuke(eLoopPlayer);
-				DoCityAttacks(eLoopPlayer);
+				if (!bMemoryThreatHigh || !bDefensivePressure)
+					DoCityAttacks(eLoopPlayer);
 			}
 		}
 	}
