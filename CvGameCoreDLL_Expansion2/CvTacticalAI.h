@@ -344,6 +344,7 @@ public:
 	// Public turn update routines
 	void Update();
 	void CleanUp();
+	bool IsImminentAttackCached() const { return m_bImminentAttack; }
 
 	// temporary focus of attention
 	void AddFocusArea(CvPlot* pPlot, int iRadius, int iDuration);
@@ -522,6 +523,9 @@ private:
 	int m_iRecruitRange;
 	int m_iLandBarbarianRange;
 	int m_iSeaBarbarianRange;
+
+	// Cached per-turn state
+	bool m_bImminentAttack; // computed once in Update(), true if any nearby major has IsAttackLikelyImminent
 
 	// Dominance zone info
 	int m_eCurrentTargetType;

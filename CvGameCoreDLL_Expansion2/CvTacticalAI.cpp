@@ -159,6 +159,7 @@ void CvTacticalAI::Init(CvPlayer* pPlayer)
 	m_pPlayer = pPlayer;
 
 	m_tacticalMap.Reset(m_pPlayer ? m_pPlayer->GetID() : NO_PLAYER);
+	m_bImminentAttack = false;
 
 	// Initialize AI constants from XML
 	m_iRecruitRange = /*8*/ GD_INT_GET(AI_TACTICAL_RECRUIT_RANGE);
@@ -263,8 +264,13 @@ void CvTacticalAI::RecruitUnits()
 }
 
 /// Update the AI for units
+// Forward declaration - defined later in this file
+static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer);
+
 void CvTacticalAI::Update()
 {
+	m_bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+
 	UpdateVisibility();
 	DropOldFocusAreas();
 	FindTacticalTargets();
@@ -445,13 +451,11 @@ void CvTacticalAI::UpdateVisibilityFromBorders(CvPlot* pPlot)
 
 // PRIVATE METHODS
 
-static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer);
-
 /// Make lists of everything we might want to target with the tactical AI this turn
 void CvTacticalAI::FindTacticalTargets()
 {
 	CvPlayerTrade* pPlayerTrade = m_pPlayer->GetTrade();
-	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+	bool bImminentAttack = m_bImminentAttack;
 
 	bool bNoBarbsAllowedYet = GC.getGame().getGameTurn() < GC.getGame().GetBarbarianReleaseTurn();
 	vector<PlayerTypes> vUnfriendlyMajors = m_pPlayer->GetUnfriendlyMajors();
@@ -776,7 +780,7 @@ static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer)
 	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
 	{
 		PlayerTypes eOther = (PlayerTypes)iPlayer;
-		if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive() || GET_PLAYER(eOther).isMinorCiv())
+		if (eOther == ePlayer || !GET_PLAYER(eOther).isAlive())
 			continue;
 
 		if (GET_PLAYER(eOther).GetProximityToPlayer(ePlayer) < PLAYER_PROXIMITY_CLOSE)
@@ -795,7 +799,7 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 		return false;
 	
 	const int RETREAT_DAMAGE_THRESHOLD = 20; // Retreat if losing > 20% of army
-	const int iRetreatDamageThreshold = IsMemoryAttackImminentForPlayer(m_pPlayer) ? 15 : RETREAT_DAMAGE_THRESHOLD;
+	const int iRetreatDamageThreshold = m_bImminentAttack ? 15 : RETREAT_DAMAGE_THRESHOLD;
 	
 	int iTotalHealth = 0;
 	int iTotalMaxHealth = 0;
@@ -1558,7 +1562,7 @@ void CvTacticalAI::ExecuteBarbarianTheft()
 void CvTacticalAI::PlotMovesToSafety(bool bCombatUnits)
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_SAFETY);
-	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+	bool bImminentAttack = m_bImminentAttack;
 
 	// Loop through all recruited units
 	for(list<int>::const_iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); it++)
@@ -1584,8 +1588,9 @@ void CvTacticalAI::PlotMovesToSafety(bool bCombatUnits)
 					}
 					else if (bImminentAttack)
 					{
+						// Under imminent attack: retreat wounded units earlier to regroup
 						int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints());
-						if ((iDangerLevel > 0 || pUnit->plot()->IsKnownVisibleToEnemy(m_pPlayer->GetID())) && iHealthPercent < 85)
+						if (iHealthPercent < 85)
 							bAddUnit = true;
 					}
 				}
@@ -2380,7 +2385,7 @@ void CvTacticalAI::PlotBarbarianCampDefense()
 void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_GARRISON);
-	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+	bool bImminentAttack = m_bImminentAttack;
 
 	for (CvTacticalTarget* pTarget = GetFirstZoneTarget(AI_TACTICAL_TARGET_FRIENDLY_CITY); pTarget!=NULL; pTarget = GetNextZoneTarget())
 	{
@@ -2406,6 +2411,8 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
 		
 		// Check for aggressive posture and memory signals from nearby players
+		// Memory signals are scoped per-city: only apply if the threatening player has forces
+		// geographically relevant to THIS city (within ~15 tiles)
 		for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS; iPlayer++)
 		{
 			PlayerTypes eOther = (PlayerTypes)iPlayer;
@@ -2419,12 +2426,17 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			if (pDiploAI->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM)
 				bAggressiveNeighbor = true;
 
-			if (pDiploAI->IsAttackLikelyImminent(eOther))
-				bMemoryImminent = true;
-			if (pDiploAI->IsSiegeWarningActive(eOther))
-				bMemorySiege = true;
-			if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
-				bMemoryBuildup = true;
+			// Memory signals only matter for this city if the enemy is geographically close
+			CvCity* pEnemyNearCity = GET_PLAYER(eOther).GetClosestCity(pPlot, 15, false);
+			if (pEnemyNearCity)
+			{
+				if (pDiploAI->IsAttackLikelyImminent(eOther))
+					bMemoryImminent = true;
+				if (pDiploAI->IsSiegeWarningActive(eOther))
+					bMemorySiege = true;
+				if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
+					bMemoryBuildup = true;
+			}
 
 			if (bAggressiveNeighbor && bMemoryImminent && bMemorySiege && bMemoryBuildup)
 				break;
@@ -3270,7 +3282,7 @@ void CvTacticalAI::PlotReinforcementMoves(CvTacticalDominanceZone* pTargetZone)
 	if (!pZoneCity)
 		return;
 	bool bPreposition = false;
-	if (pZoneCity->getTeam() == m_pPlayer->getTeam() && IsMemoryAttackImminentForPlayer(m_pPlayer))
+	if (pZoneCity->getTeam() == m_pPlayer->getTeam() && m_bImminentAttack)
 	{
 		if (pZoneCity->isBorderCity() || m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pZoneCity, NO_PLAYER))
 			bPreposition = true;
@@ -4051,7 +4063,7 @@ void CvTacticalAI::UpdateTargetScores()
 	// If so, we should prioritize clearing enemy AA/interceptors with ground forces first
 	bool bHaveAirUnits = false;
 	int iAirUnitCount = 0;
-	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+	bool bImminentAttack = m_bImminentAttack;
 	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
 	{
 		CvUnit* pUnit = m_pPlayer->getUnit(*it);
@@ -4081,15 +4093,16 @@ void CvTacticalAI::UpdateTargetScores()
 
 			if (bImminentAttack)
 			{
+				// Penalize distant enemy targets outside our territory
 				if (pPlot->getTeam() != m_pPlayer->getTeam())
 				{
 					int iDistancePenalty = (iDist == INT_MAX) ? 0 : max(0, iDist - 2);
 					iScore -= iDistancePenalty * 2;
 				}
 
-				CvCity* pAdjacentCity = pPlot->GetAdjacentCity();
-				if (pAdjacentCity && pAdjacentCity->getOwner() == m_pPlayer->GetID())
-					iScore += 10;
+				// Graduated bonus for enemies close to our cities (not just adjacent)
+				if (iDist != INT_MAX && iDist <= 3)
+					iScore += max(1, 12 - iDist * 3); // +9 at dist 1, +6 at dist 2, +3 at dist 3
 			}
 
 			it->SetAuxIntData(max(1, iScore));
@@ -5875,11 +5888,10 @@ void CvTacticalAI::ExecuteMovesToSafestPlot(CvUnit* pUnit)
 {
 	if (!pUnit)
 		return;
-	bool bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
 	CvPlot* pUnitPlot = pUnit->plot();
 
-	//see if we can do damage before retreating
-	if (!bImminentAttack && pUnit->canMoveAfterAttacking() && (pUnit->getMoves()>GD_INT_GET(MOVE_DENOMINATOR) || pUnit->IsFreeAttackMoves()) && pUnit->canRangeStrike())
+	//see if we can do damage before retreating (skip only if imminent AND unit can't move after attacking)
+	if (pUnit->canMoveAfterAttacking() && (pUnit->getMoves()>GD_INT_GET(MOVE_DENOMINATOR) || pUnit->IsFreeAttackMoves()) && pUnit->canRangeStrike())
 		TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit,true);
 
 	//so easy
@@ -5910,7 +5922,8 @@ void CvTacticalAI::ExecuteMovesToSafestPlot(CvUnit* pUnit)
 		//typical citadel case
 		if (pUnitPlot == pBestPlotMove.first)
 		{
-			if (!bImminentAttack && pUnit->GetCurrHitPoints() > pUnit->GetMaxHitPoints() * 3 / 5)
+			// When imminent, only shoot if we won't need to move (unit stays put anyway)
+			if (pUnit->GetCurrHitPoints() > pUnit->GetMaxHitPoints() * 3 / 5)
 				TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit);
 
 			//make sure the unit stays put!
@@ -5919,7 +5932,7 @@ void CvTacticalAI::ExecuteMovesToSafestPlot(CvUnit* pUnit)
 		else
 		{
 			//try to do some damage if we have movement points to spare
-			if (!bImminentAttack && (iMovesRemaining > GD_INT_GET(MOVE_DENOMINATOR) || pUnit->IsFreeAttackMoves()) && pUnit->canRangeStrike() && pUnit->canMoveAfterAttacking())
+			if ((iMovesRemaining > GD_INT_GET(MOVE_DENOMINATOR) || pUnit->IsFreeAttackMoves()) && pUnit->canRangeStrike() && pUnit->canMoveAfterAttacking())
 				TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit, false, iMovesRemaining);
 
 			// Move to the lowest danger value found
@@ -5929,9 +5942,13 @@ void CvTacticalAI::ExecuteMovesToSafestPlot(CvUnit* pUnit)
 			if (pUnit->shouldPillage(pUnitPlot, false, true) && (pUnit->getMoves() > GD_INT_GET(MOVE_DENOMINATOR) || pUnit->IsFreeAttackMoves() || !pUnit->canRangeStrike()))
 				pUnit->PushMission(CvTypes::getMISSION_PILLAGE());
 
-			//see if we can do damage after retreating
-			if (!bImminentAttack && pUnit->canMove() && pUnit->canRangeStrike())
-				TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit);
+			//see if we can do damage after retreating (safe: we already moved)
+			if (pUnit->canMove() && pUnit->canRangeStrike())
+				TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit, true);
+
+			//pillage after retreat, if we have movement points to spare
+			if (pUnit->shouldPillage(pUnit->plot(), false, true))
+				pUnit->PushMission(CvTypes::getMISSION_PILLAGE());
 		}
 
 		UnitProcessed(pUnit->GetID());
@@ -8643,7 +8660,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 	//compute once outside the loop - used for retreat direction check
 	CvPlayer& kPlayer = GET_PLAYER(pUnit->getOwner());
-	bool bImminentAttack = IsMemoryAttackImminentForPlayer(&kPlayer);
+	bool bImminentAttack = kPlayer.GetTacticalAI() ? kPlayer.GetTacticalAI()->IsImminentAttackCached() : false;
 	int iCurrentCityDistance = kPlayer.GetCityDistancePathLength(pCurrentPlot);
 
 	//Use SAFE_EMBARK_ONLY to filter dangerous embark plots during pathfinding where possible.
