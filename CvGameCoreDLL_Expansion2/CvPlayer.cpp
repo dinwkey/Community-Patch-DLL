@@ -46600,6 +46600,7 @@ ostream& operator<<(ostream& os, const CvPlot* pPlot)
 CvPlot* CvPlayer::GetBestSettlePlot(CvUnit* pUnit, CvAIOperation* pOpToIgnore, bool bForceLogging) const
 {
 	std::vector<SPlotWithScore> vSettlePlots;
+	vSettlePlots.reserve(64);
 
 	//--------
 	bool bLogging = (GC.getLogging() && GC.getAILogging()) || bForceLogging;
@@ -46612,9 +46613,11 @@ CvPlot* CvPlayer::GetBestSettlePlot(CvUnit* pUnit, CvAIOperation* pOpToIgnore, b
 	TeamTypes eTeam = pUnit ? pUnit->getTeam() : getTeam();
 
 	//in case we're not getting the cached data, we need to prepare some things
-	vector<int> ignorePlots(GC.getMap().numPlots(), 0); //these are the plots whose yield we ignore
+	//only allocate when logging - this vector is ~67KB on Giant maps and was being allocated unconditionally
+	vector<int> ignorePlots;
 	if (bLogging)
 	{
+		ignorePlots.assign(GC.getMap().numPlots(), 0);
 		GC.getGame().GetSettlerSiteEvaluator()->ComputeFlavorMultipliers(this);
 		for (int iI = 0; iI < GC.getMap().numPlots(); iI++)
 		{
@@ -46788,6 +46791,8 @@ CvPlot* CvPlayer::GetBestSettlePlot(CvUnit* pUnit, CvAIOperation* pOpToIgnore, b
 		pLog->Msg( "#x,y,terrain,plotype,feature,owner,area,revealed,danger,fertility,distancescale,value,comments\n" );
 		pLog->Msg( dump.str().c_str() );
 		pLog->Close();
+		//filename includes the turn number so every call creates a new FILogFile in the manager cache - delete it to prevent accumulating leaked log objects
+		LOGFILEMGR.DeleteLog(pLog);
 	}
 
 	if (vSettlePlots.empty())
@@ -49996,7 +50001,8 @@ void CvPlayer::updatePlotFoundValues()
 		return;
 
 	//OutputDebugString(CvString::format("updating plot found values for player %d in turn %d\n",GetID(),GC.getGame().getGameTurn()).c_str());
-	m_viPlotFoundValues = std::vector<int>(GC.getMap().numPlots(), -1);
+	//reuse existing allocation if possible instead of creating a new vector each turn
+	m_viPlotFoundValues.assign(GC.getMap().numPlots(), -1);
 
 	//don't need to update if not going to settle
 	if (isBarbarian())
