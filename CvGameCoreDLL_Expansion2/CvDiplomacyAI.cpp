@@ -67,6 +67,9 @@ void CvDiplomacyAI::Init(CvPlayer* pPlayer)
 	m_eID = pPlayer->GetID();
 	m_eTeam = pPlayer->getTeam();
 
+	// Extended Memory System — zero-fill (turn==0 marks invalid slots)
+	memset(&m_Memory, 0, sizeof(m_Memory));
+
 	// Personality Values
 	m_iVictoryCompetitiveness = 5;
 	m_iWonderCompetitiveness = 5;
@@ -714,6 +717,7 @@ void CvDiplomacyAI::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
 	CvDiplomacyAI::Serialize(*this, serialVisitor);
+	ReadMemorySystem(kStream);
 }
 
 /// Serialization write
@@ -721,6 +725,7 @@ void CvDiplomacyAI::Write(FDataStream& kStream) const
 {
 	CvStreamSaveVisitor serialVisitor(kStream);
 	CvDiplomacyAI::Serialize(*this, serialVisitor);
+	WriteMemorySystem(kStream);
 }
 
 FDataStream& operator>>(FDataStream& stream, CvDiplomacyAI& diplomacyAI)
@@ -732,6 +737,298 @@ FDataStream& operator<<(FDataStream& stream, const CvDiplomacyAI& diplomacyAI)
 {
 	diplomacyAI.Write(stream);
 	return stream;
+}
+
+//	-----------------------------------------------------------------------------------------------
+//	EXTENDED MEMORY SYSTEM — Implementation
+//	-----------------------------------------------------------------------------------------------
+
+/// Write memory buffer to save stream.
+void CvDiplomacyAI::WriteMemorySystem(FDataStream& kStream) const
+{
+	// CivMemory header
+	kStream << m_Memory.currentIndex;
+	kStream << m_Memory.validCount;
+
+	// Each snapshot
+	for (int i = 0; i < AI_MEMORY_DEPTH; i++)
+	{
+		const TurnSnapshot& snap = m_Memory.history[i];
+		kStream << snap.turn;
+		kStream << snap.warState;
+		kStream << snap.approach;
+		kStream << snap.theirMilitaryNearUs;
+		kStream << snap.theirMilitaryStrength;
+		kStream << snap.proximity;
+		kStream << snap.siegeUnitsNearUs;
+		kStream << snap.navalUnitsNearUs;
+		kStream << snap.militaryRank;
+		kStream << snap.numCities;
+		kStream << snap.goldPerTurn;
+		kStream << snap.numUnitsNearBorders;
+		kStream << snap.numWars;
+		kStream << snap.flags;
+		kStream << snap.padding;
+	}
+}
+
+/// Read memory buffer from save stream.
+void CvDiplomacyAI::ReadMemorySystem(FDataStream& kStream)
+{
+	kStream >> m_Memory.currentIndex;
+	kStream >> m_Memory.validCount;
+
+	for (int i = 0; i < AI_MEMORY_DEPTH; i++)
+	{
+		TurnSnapshot& snap = m_Memory.history[i];
+		kStream >> snap.turn;
+		kStream >> snap.warState;
+		kStream >> snap.approach;
+		kStream >> snap.theirMilitaryNearUs;
+		kStream >> snap.theirMilitaryStrength;
+		kStream >> snap.proximity;
+		kStream >> snap.siegeUnitsNearUs;
+		kStream >> snap.navalUnitsNearUs;
+		kStream >> snap.militaryRank;
+		kStream >> snap.numCities;
+		kStream >> snap.goldPerTurn;
+		kStream >> snap.numUnitsNearBorders;
+		kStream >> snap.numWars;
+		kStream >> snap.flags;
+		kStream >> snap.padding;
+	}
+}
+
+/// Capture a snapshot of the current turn's diplomatic & military state into
+/// the ring buffer. Called at the START of DoTurn() before state updates.
+void CvDiplomacyAI::CaptureMemorySnapshot()
+{
+	PlayerTypes eMyPlayer = GetID();
+	CvPlayer* pMyPlayer = GetPlayer();
+	int iCurrentTurn = GC.getGame().getGameTurn();
+
+	// Advance circular buffer and get a zeroed slot
+	TurnSnapshot* pSnap = m_Memory.AdvanceAndGetNew();
+	pSnap->turn = (short)iCurrentTurn;
+
+	// === Per-civ data ===
+	int iNumWars = 0;
+	int iTotalAggressionNearUs = 0;
+
+	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
+	{
+		PlayerTypes eOther = (PlayerTypes)iPlayer;
+		if (!GET_PLAYER(eOther).isAlive() || eOther == eMyPlayer)
+			continue;
+
+		// War state
+		pSnap->warState[iPlayer] = (char)GetWarState(eOther);
+		if (IsAtWar(eOther))
+			iNumWars++;
+
+		// Approach
+		pSnap->approach[iPlayer] = (char)GetCivApproach(eOther);
+
+		// Aggressive military score near our borders (uses existing function)
+		int iAggrScore = CountAggressiveMilitaryScore(eOther, false);
+		int iClamped = (iAggrScore > 255) ? 255 : iAggrScore;
+		pSnap->theirMilitaryNearUs[iPlayer] = (unsigned char)iClamped;
+		iTotalAggressionNearUs += iClamped;
+
+		// Their military strength scaled to 0-255
+		int iTheirMight = GET_PLAYER(eOther).GetMilitaryMight();
+		int iMaxMight = 10000; // Reasonable cap
+		int iScaled = (iTheirMight * 255) / max(1, iMaxMight);
+		pSnap->theirMilitaryStrength[iPlayer] = (unsigned char)min(255, iScaled);
+
+		// Proximity
+		pSnap->proximity[iPlayer] = (unsigned char)pMyPlayer->GetProximityToPlayer(eOther);
+
+		// Siege and naval units near us — for Phase 1 we approximate from the
+		// aggressive posture system; detailed per-unit-type counting comes in Phase 3.
+		// For now, store 0 (will be populated when unit-type helpers are added).
+		pSnap->siegeUnitsNearUs[iPlayer] = 0;
+		pSnap->navalUnitsNearUs[iPlayer] = 0;
+	}
+
+	// === Our state ===
+	pSnap->numCities = (unsigned char)min(255, pMyPlayer->getNumCities());
+	pSnap->goldPerTurn = (short)pMyPlayer->calculateGoldRate();
+	pSnap->numUnitsNearBorders = (unsigned char)min(255, iTotalAggressionNearUs);
+	pSnap->numWars = (unsigned char)iNumWars;
+
+	// Military rank: count how many alive major civs have higher military might
+	int iOurMight = pMyPlayer->GetMilitaryMight();
+	int iRank = 1;
+	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
+	{
+		PlayerTypes eOther = (PlayerTypes)iPlayer;
+		if (eOther == eMyPlayer || !GET_PLAYER(eOther).isAlive())
+			continue;
+		if (GET_PLAYER(eOther).GetMilitaryMight() > iOurMight)
+			iRank++;
+	}
+	pSnap->militaryRank = (unsigned char)iRank;
+
+	// Flags
+	pSnap->flags = SNAPSHOT_FLAG_NONE;
+	if (iNumWars > 0)
+		pSnap->flags |= SNAPSHOT_FLAG_AT_WAR;
+
+	// Check for winning/losing wars
+	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
+	{
+		PlayerTypes eOther = (PlayerTypes)iPlayer;
+		if (!IsAtWar(eOther))
+			continue;
+
+		WarStateTypes eWarState = GetWarState(eOther);
+		if (eWarState == WAR_STATE_NEARLY_WON || eWarState == WAR_STATE_OFFENSIVE)
+			pSnap->flags |= SNAPSHOT_FLAG_WINNING_WAR;
+		if (eWarState == WAR_STATE_NEARLY_DEFEATED || eWarState == WAR_STATE_DEFENSIVE)
+			pSnap->flags |= SNAPSHOT_FLAG_LOSING_WAR;
+	}
+}
+
+//	-----------------------------------------------------------------------------------------------
+//	PATTERN DETECTION (Phase 2 stubs — minimal implementations)
+//	-----------------------------------------------------------------------------------------------
+
+/// Detect if a player is massing troops near our borders (3+ turn rising trend).
+bool CvDiplomacyAI::IsPlayerBuildingUpNearUs(PlayerTypes ePlayer) const
+{
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	const TurnSnapshot* p3Ago = m_Memory.GetTurnsAgo(3);
+	const TurnSnapshot* p6Ago = m_Memory.GetTurnsAgo(6);
+
+	if (!pNow || !p3Ago) return false;
+
+	int iNow  = pNow->theirMilitaryNearUs[ePlayer];
+	int i3Ago = p3Ago->theirMilitaryNearUs[ePlayer];
+	int i6Ago = p6Ago ? p6Ago->theirMilitaryNearUs[ePlayer] : 0;
+
+	bool bRising3 = (iNow > i3Ago);
+	bool bRising6 = p6Ago ? (i3Ago > i6Ago) : true;
+	bool bSignificant = (iNow - i6Ago >= 5);
+
+	return bRising3 && bRising6 && bSignificant;
+}
+
+/// Siege units near borders = very high-confidence attack signal.
+bool CvDiplomacyAI::IsSiegeWarningActive(PlayerTypes ePlayer) const
+{
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	if (!pNow) return false;
+	return pNow->siegeUnitsNearUs[ePlayer] >= 2;
+}
+
+/// Detect if player is creeping closer via city placement.
+bool CvDiplomacyAI::IsPlayerCreepingCloser(PlayerTypes ePlayer) const
+{
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	const TurnSnapshot* pOldest = m_Memory.GetTurnsAgo(AI_MEMORY_DEPTH - 1);
+	if (!pNow || !pOldest) return false;
+	return (pNow->proximity[ePlayer] > pOldest->proximity[ePlayer]);
+}
+
+/// Check if approach changed within the last N turns.
+bool CvDiplomacyAI::HasApproachChangedRecently(PlayerTypes ePlayer, int iWithinTurns) const
+{
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	if (!pNow) return false;
+
+	int iCurrentApproach = pNow->approach[ePlayer];
+
+	for (int i = 1; i <= iWithinTurns && i < AI_MEMORY_DEPTH; i++)
+	{
+		const TurnSnapshot* pPast = m_Memory.GetTurnsAgo(i);
+		if (pPast && pPast->approach[ePlayer] != iCurrentApproach)
+			return true;
+	}
+	return false;
+}
+
+/// Detect shift specifically toward hostility / war from friendlier stance.
+bool CvDiplomacyAI::HasTurnedHostileRecently(PlayerTypes ePlayer, int iWithinTurns) const
+{
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	if (!pNow) return false;
+
+	CivApproachTypes eNowApproach = (CivApproachTypes)pNow->approach[ePlayer];
+	if (eNowApproach != CIV_APPROACH_HOSTILE && eNowApproach != CIV_APPROACH_WAR)
+		return false;
+
+	for (int i = 1; i <= iWithinTurns && i < AI_MEMORY_DEPTH; i++)
+	{
+		const TurnSnapshot* pPast = m_Memory.GetTurnsAgo(i);
+		if (pPast)
+		{
+			CivApproachTypes ePastApproach = (CivApproachTypes)pPast->approach[ePlayer];
+			if (ePastApproach == CIV_APPROACH_FRIENDLY || ePastApproach == CIV_APPROACH_NEUTRAL)
+				return true;
+		}
+	}
+	return false;
+}
+
+/// Am I fighting too many wars relative to my strength?
+bool CvDiplomacyAI::AmIOverextended() const
+{
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	if (!pNow) return false;
+	return (pNow->numWars >= 2 && pNow->militaryRank > 20);
+}
+
+/// Calculate threat level for a past turn from stored components.
+int CvDiplomacyAI::GetHistoricalThreat(PlayerTypes ePlayer, int iTurnsAgo) const
+{
+	const TurnSnapshot* pSnap = m_Memory.GetTurnsAgo(iTurnsAgo);
+	if (!pSnap) return 0;
+
+	int iThreat = 0;
+	iThreat += pSnap->theirMilitaryStrength[ePlayer] * 2;
+	iThreat += pSnap->theirMilitaryNearUs[ePlayer] * 15;
+	iThreat += pSnap->siegeUnitsNearUs[ePlayer] * 30;
+	iThreat += pSnap->proximity[ePlayer] * 10;
+
+	CivApproachTypes eApproach = (CivApproachTypes)pSnap->approach[ePlayer];
+	if (eApproach == CIV_APPROACH_HOSTILE)
+		iThreat += 50;
+	if (eApproach == CIV_APPROACH_WAR)
+		iThreat += 100;
+
+	return iThreat;
+}
+
+/// Detect 30%+ threat increase over last 5 turns.
+bool CvDiplomacyAI::IsThreatRising(PlayerTypes ePlayer) const
+{
+	int iNow  = GetHistoricalThreat(ePlayer, 0);
+	int i5Ago = GetHistoricalThreat(ePlayer, 5);
+	return (iNow > i5Ago * 130 / 100);
+}
+
+/// Composite attack prediction: 4+ warning signals = high confidence.
+bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer) const
+{
+	int iWarningSignals = 0;
+
+	if (IsPlayerBuildingUpNearUs(ePlayer))
+		iWarningSignals += 2;
+
+	if (IsSiegeWarningActive(ePlayer))
+		iWarningSignals += 3;
+
+	if (HasTurnedHostileRecently(ePlayer, 5))
+		iWarningSignals += 2;
+
+	if (IsPlayerCreepingCloser(ePlayer))
+		iWarningSignals += 1;
+
+	if (IsThreatRising(ePlayer))
+		iWarningSignals += 1;
+
+	return iWarningSignals >= 4;
 }
 
 //	-----------------------------------------------------------------------------------------------
@@ -9405,6 +9702,9 @@ void CvDiplomacyAI::DoTurn(DiplomacyMode eDiploMode, PlayerTypes ePlayer)
 	//set this for one iteration, reset below
 	m_eDiploMode = eDiploMode;
 	m_eTargetPlayer = ePlayer;
+
+	// Extended Memory System — capture state BEFORE any updates this turn
+	CaptureMemorySnapshot();
 
 	// Test if the backstabber flag should be enabled or disabled
 	TestBackstabberFlag();

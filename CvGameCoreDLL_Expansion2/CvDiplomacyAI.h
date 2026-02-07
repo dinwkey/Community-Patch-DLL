@@ -20,6 +20,100 @@ struct Opinion
 #define WARSCORE_THRESHOLD_NEGATIVE (-25)
 
 //=====================================
+// Extended Memory System — Constants, Enums, & Structs
+//=====================================
+
+static const int AI_MEMORY_DEPTH = 10;              // Turns of history to retain
+static const int AI_MAX_UNIT_SIGHTINGS = 300;       // Max individually tracked enemy units
+static const int AI_FOG_GHOST_EXPIRY_TURNS = 10;    // Forget fog-of-war units after this many turns
+static const int AI_FOG_GHOST_USEFUL_TURNS = 5;     // Direction prediction becomes unreliable after this
+
+// Snapshot flags (bitfield stored in TurnSnapshot::flags)
+enum SnapshotFlags
+{
+	SNAPSHOT_FLAG_NONE                 = 0x00,
+	SNAPSHOT_FLAG_AT_WAR               = 0x01,  // Currently in any war
+	SNAPSHOT_FLAG_WINNING_WAR          = 0x02,  // Winning at least one war
+	SNAPSHOT_FLAG_LOSING_WAR           = 0x04,  // Losing at least one war
+	SNAPSHOT_FLAG_BUILDING_WONDER      = 0x08,
+	SNAPSHOT_FLAG_RECENTLY_DENOUNCED   = 0x10,
+	SNAPSHOT_FLAG_RECENTLY_BACKSTABBED = 0x20,
+};
+
+/// Per-civ state snapshot captured each turn.
+/// Size: ~312 bytes with 43 major civs (VP default), ~445 bytes with 62.
+struct TurnSnapshot
+{
+	// === Validity & Timestamp ===
+	short turn;                                       // 0 = invalid/empty slot
+
+	// === Per-Civ Arrays (sized by MAX_MAJOR_CIVS) ===
+	char          warState[MAX_MAJOR_CIVS];           // WarStateTypes enum
+	char          approach[MAX_MAJOR_CIVS];           // CivApproachTypes enum
+	unsigned char theirMilitaryNearUs[MAX_MAJOR_CIVS]; // Aggressive-score near our borders
+	unsigned char theirMilitaryStrength[MAX_MAJOR_CIVS]; // Military might scaled 0-255
+	unsigned char proximity[MAX_MAJOR_CIVS];          // PlayerProximityTypes enum
+	unsigned char siegeUnitsNearUs[MAX_MAJOR_CIVS];   // Siege units = attack signal
+	unsigned char navalUnitsNearUs[MAX_MAJOR_CIVS];   // Coastal threat
+
+	// === Our State (Scalars) ===
+	unsigned char militaryRank;                       // Our rank 1..N (1 = strongest)
+	unsigned char numCities;                          // Our city count (capped 255)
+	short         goldPerTurn;                        // Our GPT (can be negative)
+	unsigned char numUnitsNearBorders;                // Total enemy aggression near us
+	unsigned char numWars;                            // How many wars we're fighting
+	unsigned char flags;                              // SnapshotFlags bitfield
+	unsigned char padding;                            // Alignment / reserved
+
+	bool IsValid() const { return turn > 0; }
+};
+
+/// Circular buffer storing AI_MEMORY_DEPTH snapshots for one player.
+struct CivMemory
+{
+	TurnSnapshot history[AI_MEMORY_DEPTH];            // Ring buffer
+	unsigned char currentIndex;                       // Newest slot (0 .. AI_MEMORY_DEPTH-1)
+	unsigned char validCount;                         // How many slots are populated (0 .. AI_MEMORY_DEPTH)
+
+	/// Get snapshot from N turns ago (0 = current, 9 = oldest).
+	/// Returns NULL if insufficient history.
+	TurnSnapshot* GetTurnsAgo(int iTurnsAgo)
+	{
+		if (iTurnsAgo < 0 || iTurnsAgo >= (int)validCount || iTurnsAgo >= AI_MEMORY_DEPTH)
+			return NULL;
+
+		int index = ((int)currentIndex - iTurnsAgo + AI_MEMORY_DEPTH) % AI_MEMORY_DEPTH;
+		TurnSnapshot* pSnapshot = &history[index];
+		return pSnapshot->IsValid() ? pSnapshot : NULL;
+	}
+
+	const TurnSnapshot* GetTurnsAgo(int iTurnsAgo) const
+	{
+		if (iTurnsAgo < 0 || iTurnsAgo >= (int)validCount || iTurnsAgo >= AI_MEMORY_DEPTH)
+			return NULL;
+
+		int index = ((int)currentIndex - iTurnsAgo + AI_MEMORY_DEPTH) % AI_MEMORY_DEPTH;
+		const TurnSnapshot* pSnapshot = &history[index];
+		return pSnapshot->IsValid() ? pSnapshot : NULL;
+	}
+
+	/// Shortcut for GetTurnsAgo(0).
+	TurnSnapshot* GetCurrent() { return GetTurnsAgo(0); }
+	const TurnSnapshot* GetCurrent() const { return GetTurnsAgo(0); }
+
+	/// Advance ring buffer and return a zeroed slot for the new turn.
+	TurnSnapshot* AdvanceAndGetNew()
+	{
+		currentIndex = (unsigned char)((currentIndex + 1) % AI_MEMORY_DEPTH);
+		if (validCount < AI_MEMORY_DEPTH)
+			validCount++;
+
+		memset(&history[currentIndex], 0, sizeof(TurnSnapshot));
+		return &history[currentIndex];
+	}
+};
+
+//=====================================
 // CvDiplomacyAI
 //=====================================
 
@@ -50,6 +144,33 @@ public:
 	void Write(FDataStream& kStream) const;
 	void update();
 	void SlotStateChange();
+
+	// ************************************
+	// Extended Memory System
+	// ************************************
+
+	/// Capture a snapshot of current diplomatic/military state into the ring buffer.
+	/// Called at the START of DoTurn(), before any state updates.
+	void CaptureMemorySnapshot();
+
+	/// Read/write memory system data separately (sentinel-guarded for save compat).
+	void ReadMemorySystem(FDataStream& kStream);
+	void WriteMemorySystem(FDataStream& kStream) const;
+
+	/// Access the memory buffer (const and non-const).
+	CivMemory& GetMemory() { return m_Memory; }
+	const CivMemory& GetMemory() const { return m_Memory; }
+
+	// --- Pattern Detection (Phase 2 stubs — declarations only for now) ---
+	bool IsPlayerBuildingUpNearUs(PlayerTypes ePlayer) const;
+	bool IsSiegeWarningActive(PlayerTypes ePlayer) const;
+	bool IsPlayerCreepingCloser(PlayerTypes ePlayer) const;
+	bool HasApproachChangedRecently(PlayerTypes ePlayer, int iWithinTurns) const;
+	bool HasTurnedHostileRecently(PlayerTypes ePlayer, int iWithinTurns) const;
+	bool AmIOverextended() const;
+	int  GetHistoricalThreat(PlayerTypes ePlayer, int iTurnsAgo) const;
+	bool IsThreatRising(PlayerTypes ePlayer) const;
+	bool IsAttackLikelyImminent(PlayerTypes ePlayer) const;
 
 	// ************************************
 	// Pointers
@@ -2185,6 +2306,9 @@ private:
 	bool m_abVassalTaxLowered[MAX_MAJOR_CIVS];
 	int m_aiVassalGoldPerTurnTaxedSinceVassalStarted[MAX_MAJOR_CIVS];
 	int m_aiVassalGoldPerTurnCollectedSinceVassalStarted[MAX_MAJOR_CIVS];
+
+	// Extended Memory System (Phase 1) — circular buffer of per-turn snapshots
+	CivMemory m_Memory;
 
 	float m_aTradePriority[MAX_MAJOR_CIVS]; // current ai to human trade priority
 

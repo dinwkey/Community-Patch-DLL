@@ -60,7 +60,7 @@ A hybrid memory system with two components:
 - ✅ Remember war outcomes (who won/lost recent wars)
 - ✅ Predict fog-of-war unit movement (directional cones)
 - ✅ Detect siege unit presence (high-confidence attack signal)
-- ✅ Save game compatible (old saves load with empty history)
+- ⚠️ Save game compatible (NOT in current implementation; new games required)
 
 ### Should Have
 - ✅ Detect forward-settling / territorial creep (proximity changes)
@@ -759,28 +759,13 @@ bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer)
 
 ## 9. Serialization (Save Compatibility)
 
-### Version Handling
+### Current Implementation (Not Save Compatible)
 
-```cpp
-// In CvDiplomacyAI.cpp, in the Serialize() template
+The Phase 1 implementation does **not** attempt save compatibility. The memory
+buffer is serialized unconditionally after the existing `CvDiplomacyAI` data,
+so loading an older save (without the new memory data) will crash.
 
-// Define version where memory system was added
-static const uint32 MEMORY_SYSTEM_VERSION = 100;  // Adjust to actual version
-
-template<typename DiplomacyAI, typename Visitor>
-void Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
-{
-    // ... existing serialization ...
-    
-    // Memory system — version guarded
-    if (visitor.IsWrite() || visitor.GetVersion() >= MEMORY_SYSTEM_VERSION)
-    {
-        visitor(diplomacyAI.m_Memory);
-        visitor(diplomacyAI.m_UnitSightings);
-    }
-    // Old saves: m_Memory stays zero-initialized (empty history)
-}
-```
+**Action:** start a fresh game after enabling this change.
 
 ### CivMemory Serialization
 
@@ -897,7 +882,7 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 2. Add `CivMemory` struct with circular buffer
 3. Add `m_Memory` member to `CvDiplomacyAI`
 4. Implement `CaptureMemorySnapshot()` basic version
-5. Add serialization (save compatibility)
+5. Add serialization (not save compatible)
 6. Compile and verify no crashes
 
 ### Phase 2: Pattern Detection (1-2 days)
@@ -978,7 +963,7 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 ## Appendix B: Testing Checklist
 
 - [ ] New game: memory populates over first 10 turns
-- [ ] Load old save: empty history, no crash
+- [ ] Load old save: expected crash (not save compatible)
 - [ ] Load new save: history preserved
 - [ ] Buildup detection triggers when AI masses units
 - [ ] Siege warning triggers when catapults appear
