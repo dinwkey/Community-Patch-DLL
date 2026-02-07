@@ -158,6 +158,8 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 		return SR_IMPOSSIBLE;
 
 	CvPlayerAI& kPlayer = GET_PLAYER(m_pCity->getOwner());
+	int iMemoryThreatWeight = kPlayer.GetMilitaryAI()->GetMemoryThreatWeight();
+	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 
 	//do not build any buildings at all when about to be captured
 	if (m_pCity->isInDangerOfFalling())
@@ -786,6 +788,13 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 	}
 	else if (kPlayer.IsAtWarAnyMajor())
 		iDefenseMod += 150;
+	if (bMemoryThreat)
+	{
+		if (m_pCity->isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(m_pCity, NO_PLAYER))
+			iDefenseMod += iMemoryThreatWeight * 5;
+		else
+			iDefenseMod += iMemoryThreatWeight * 2;
+	}
 
 	bool bDanger = !bIgnoreSituational && m_pCity->isUnderSiege();
 	if (bDanger)
@@ -1335,9 +1344,15 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 		{
 			WarPenalty += 75;
 		}
-		if (iNumWar > 0 && pkBuildingInfo->GetDefenseModifier() <= 0 && !CityStrategyAIHelpers::IsTestCityStrategy_IsPuppetAndAnnexable(m_pCity) && !bFreeBuilding && !kPlayer.IsEmpireVeryUnhappy())
+		if ((iNumWar > 0 || bMemoryThreat) && pkBuildingInfo->GetDefenseModifier() <= 0 && !CityStrategyAIHelpers::IsTestCityStrategy_IsPuppetAndAnnexable(m_pCity) && !bFreeBuilding && !kPlayer.IsEmpireVeryUnhappy())
 		{
 			WarPenalty += 50 + m_pCity->getThreatValue();
+			if (bMemoryThreat)
+			{
+				WarPenalty += 25 + (iMemoryThreatWeight / 2);
+				if (m_pCity->isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(m_pCity, NO_PLAYER))
+					WarPenalty += 25;
+			}
 
 			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 			{
