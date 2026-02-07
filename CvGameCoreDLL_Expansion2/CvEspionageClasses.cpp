@@ -8255,6 +8255,14 @@ int CvEspionageAI::GetPlayerModifier(PlayerTypes eTargetPlayer, bool bOnlyDiplo)
 	// Add memory-based modifier after personality scaling (objective threat data)
 	iDiploModifier += iMemoryMod;
 
+	if (iMemoryMod > 0 && GC.getLogging() && GC.getAILogging())
+	{
+		CvString strMsg;
+		strMsg.Format("MEMORY ESPIONAGE PLAYER MOD: vs %s, iMemoryMod=%d, totalDiploMod=%d",
+			GET_PLAYER(eTargetPlayer).getCivilizationShortDescription(), iMemoryMod, iDiploModifier);
+		m_pPlayer->GetEspionage()->LogEspionageMsg(strMsg);
+	}
+
 	if (bOnlyDiplo)
 		return iDiploModifier;
 
@@ -8370,6 +8378,16 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 				iScore += iMemoryThreat / 2;
 			if (pCity->isUnderSiege())
 				iScore += iMemoryThreat;
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strMsg;
+				strMsg.Format("MEMORY COUNTERSPY: %s, threat=%d, scoreBoost=%d (cap=%d, siege=%d)",
+					pCity->getNameNoSpace().c_str(), iMemoryThreat,
+					iMemoryThreat + (pCity->isCapital() ? iMemoryThreat / 2 : 0) + (pCity->isUnderSiege() ? iMemoryThreat : 0),
+					pCity->isCapital() ? 1 : 0, pCity->isUnderSiege() ? 1 : 0);
+				m_pPlayer->GetEspionage()->LogEspionageScoringMsg(strMsg);
+			}
 		}
 
 		if (pkMissionInfo->isCounterspyBlockSapCity())
@@ -8740,6 +8758,11 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 					strModifiers.Format(", Percentage Modifier for NP: %d", 100 * iExpectedNP / iBaseNP);
 					strMsg = strMsg + strModifiers;
 				}
+			}
+			if (iThreatWeight > 0 && (pkMissionInfo->getBlockBuildingTurns() > 0 || pkMissionInfo->getSapCityTurns() > 0))
+			{
+				strModifiers.Format(", MemoryThreat: %d", iThreatWeight);
+				strMsg = strMsg + strModifiers;
 			}
 			m_pPlayer->GetEspionage()->LogEspionageScoringMsg(strMsg);
 		}

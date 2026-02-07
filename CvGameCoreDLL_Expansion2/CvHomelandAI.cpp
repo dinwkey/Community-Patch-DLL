@@ -501,6 +501,13 @@ void CvHomelandAI::FindHomelandTargets()
 	int iMemoryThreatWeight = m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
 	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 
+	if (bMemoryThreat && GC.getLogging() && GC.getAILogging())
+	{
+		CvString strLogString;
+		strLogString.Format("MEMORY HOMELAND: threat=%d, boosting garrison/sentry/fort priorities", iMemoryThreatWeight);
+		LogHomelandMessage(strLogString);
+	}
+
 	for(int iI = 0; iI < iNumPlots; iI++)
 	{
 		CvPlot* pLoopPlot = theMap.plotByIndexUnchecked(iI);
@@ -968,7 +975,16 @@ void CvHomelandAI::PlotMovesToSafety()
 		if (pUnit->IsCivilianUnit() && iMemoryThreatWeight >= 40)
 			iBaseDangerThreshold = pUnit->GetCurrHitPoints() / 3;
 		if (iDangerLevel < iBaseDangerThreshold)
+		{
+			if (pUnit->IsCivilianUnit() && iMemoryThreatWeight >= 40 && GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLogString;
+				strLogString.Format("MEMORY SAFETY: %s at (%d,%d) - lowered flee threshold (threat=%d), danger=%d, threshold=%d",
+					pUnit->getName().GetCString(), pUnit->getX(), pUnit->getY(), iMemoryThreatWeight, iDangerLevel, iBaseDangerThreshold);
+				LogHomelandMessage(strLogString);
+			}
 			continue;
+		}
 
 		// civilian always ready to flee
 		if (pUnit->IsCivilianUnit())
@@ -6398,6 +6414,15 @@ bool CvHomelandAI::MoveCivilianToGarrison(CvUnit* pUnit)
 				iValue -= 50 + iMemoryThreatWeight / 2;
 			else
 				iValue += iMemoryThreatWeight / 4;
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLogString;
+				strLogString.Format("MEMORY GARRISON: %s -> %s, border=%d, value=%d (threat=%d)",
+					pUnit->getName().GetCString(), pLoopCity->getNameNoSpace().c_str(),
+					pLoopCity->isBorderCity() ? 1 : 0, iValue, iMemoryThreatWeight);
+				LogHomelandMessage(strLogString);
+			}
 		}
 
 		aBestPlotList.push_back(pLoopPlot, max(iValue, 0));

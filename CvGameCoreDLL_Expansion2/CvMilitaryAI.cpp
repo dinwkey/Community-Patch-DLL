@@ -1043,7 +1043,19 @@ map<int, SPath> CvMilitaryAI::GetArmyPathsFromCity(CvCity* pMusterCity, bool bWa
 bool CvMilitaryAI::RequestCityAttack(PlayerTypes eIntendedTarget, int iNumUnitsWillingToBuild, bool bCareful)
 {
 	if (bCareful && m_iMemoryThreatWeight >= 60 && (m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED))
+	{
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, MEMORY DEFER ATTACK: threat=%d vs %s, landDef=%d, navalDef=%d",
+				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), m_iMemoryThreatWeight,
+				GET_PLAYER(eIntendedTarget).getCivilizationShortDescription(), (int)m_eLandDefenseState, (int)m_eNavalDefenseState);
+			pLog->Msg(msg.c_str());
+		}
 		return false;
+	}
 
 	//note that a given target might be repeated with different muster points / army types
 	for (size_t i = 0; i < m_potentialAttackTargets.size(); i++)
@@ -1853,6 +1865,16 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 		// Memory-driven defense bias when imminent threats are detected
 		iDefenseModifier += m_iMemoryThreatWeight / 2;
 		iOffenseModifier = max(50, iOffenseModifier - m_iMemoryThreatWeight / 2);
+
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, MEMORY ARMY SIZING: threat=%d, defMod=%d, offMod=%d",
+				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), m_iMemoryThreatWeight, iDefenseModifier, iOffenseModifier);
+			pLog->Msg(msg.c_str());
+		}
 	}
 
 	iLandDefenseWeight = iLandDefenseWeight * iDefenseModifier;
@@ -2548,10 +2570,26 @@ void CvMilitaryAI::UpdateDefenseState()
 	// Memory-based early warning (imminent/siege/buildup)
 	if (iMemoryThreatWeight >= 80)
 	{
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, MEMORY DEFENSE: threat=%d -> land CRITICAL", GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), iMemoryThreatWeight);
+			pLog->Msg(msg.c_str());
+		}
 		m_eLandDefenseState = DEFENSE_STATE_CRITICAL;
 	}
 	else if (iMemoryThreatWeight >= 40 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
 	{
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, MEMORY DEFENSE: threat=%d -> land NEEDED", GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), iMemoryThreatWeight);
+			pLog->Msg(msg.c_str());
+		}
 		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 	}
 	
@@ -2644,6 +2682,14 @@ void CvMilitaryAI::UpdateDefenseState()
 		// Actual naval siege already triggers CRITICAL via the per-city check above.
 		if (iMemoryThreatWeight >= 40 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
 		{
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString playerName = GetPlayer()->getCivilizationShortDescription();
+				FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+				CvString msg;
+				msg.Format("%03d, %s, MEMORY DEFENSE: threat=%d -> naval NEEDED", GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), iMemoryThreatWeight);
+				pLog->Msg(msg.c_str());
+			}
 			m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
 		}
 	}
@@ -3130,7 +3176,18 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 void CvMilitaryAI::DoCityAttacks(PlayerTypes ePlayer)
 {
 	if (m_iMemoryThreatWeight >= 60 && (m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED))
+	{
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, MEMORY DEFER CITY ATTACKS: threat=%d vs %s",
+				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), m_iMemoryThreatWeight, GET_PLAYER(ePlayer).getCivilizationShortDescription());
+			pLog->Msg(msg.c_str());
+		}
 		return;
+	}
 
 	//Not perfect, as some operations are mixed, but it will keep us from sending everyone to slaughter all at once.
 	int iReservesTotal = ((m_iNumLandUnits + m_iNumNavalUnits) - (m_iNumNavalUnitsInArmies + m_iNumLandUnitsInArmies));
@@ -3206,7 +3263,19 @@ void CvMilitaryAI::UpdateOperations()
 				//finally offense
 				DoNuke(eLoopPlayer);
 				if (!bMemoryThreatHigh || !bDefensivePressure)
+				{
 					DoCityAttacks(eLoopPlayer);
+				}
+				else if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = GetPlayer()->getCivilizationShortDescription();
+					FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+					CvString msg;
+					msg.Format("%03d, %s, MEMORY GATE OPS: threat=%d, skipping offense vs %s (defensivePressure=%d)",
+						GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), iMemoryThreatWeight,
+						GET_PLAYER(eLoopPlayer).getCivilizationShortDescription(), bDefensivePressure ? 1 : 0);
+					pLog->Msg(msg.c_str());
+				}
 			}
 		}
 	}
@@ -3755,7 +3824,7 @@ void CvMilitaryAI::LogMilitaryStatus()
 		// Very first update (to write header row?)
 		if(GC.getGame().getElapsedGameTurns() == 0 && m_pPlayer->GetID() == 0)
 		{
-			strTemp.Format("Turn, Player, Era, Cities, Settlers, LandUnits, LandArmySize, RecLandOffensive, RecLandDefensive, NavalUnits, NavalArmySize, RecNavyOffensive, MeleeUnits, MobileUnits, ReconUnits, ArcherUnits, SiegeUnits, SkirmisherUnits, AllLandRanged, AntiAirUnits, MeleeNavalUnits, RangedNavalUnits, Submarines, Carriers, TotalAirUnits, BomberUnits, FighterUnits, Nukes, Missiles, RecTotal, TotalMilitaryUnits, SupplyLimit, OutOfSupply, WarWearinessSupplyReduction, NoSupplyUnits, WarCount, MostEndangeredCity, Danger");
+			strTemp.Format("Turn, Player, Era, Cities, Settlers, LandUnits, LandArmySize, RecLandOffensive, RecLandDefensive, NavalUnits, NavalArmySize, RecNavyOffensive, MeleeUnits, MobileUnits, ReconUnits, ArcherUnits, SiegeUnits, SkirmisherUnits, AllLandRanged, AntiAirUnits, MeleeNavalUnits, RangedNavalUnits, Submarines, Carriers, TotalAirUnits, BomberUnits, FighterUnits, Nukes, Missiles, RecTotal, TotalMilitaryUnits, SupplyLimit, OutOfSupply, WarWearinessSupplyReduction, NoSupplyUnits, WarCount, MemoryThreatWeight, LandDefState, NavalDefState, MostEndangeredCity, Danger");
 			pLog->Msg(strTemp);
 		}
 
@@ -3775,6 +3844,10 @@ void CvMilitaryAI::LogMilitaryStatus()
 		strTemp.Format("%d, %d, %d, %d, %d, %d, %d, ", 
 			GetRecommendedMilitarySize(), m_pPlayer->getNumMilitaryUnits(), m_pPlayer->GetNumUnitsSupplied(), m_pPlayer->GetNumUnitsOutOfSupply(), m_pPlayer->GetNumUnitsOutOfSupply(false) - m_pPlayer->GetNumUnitsOutOfSupply(),
 			m_pPlayer->getNumUnitsSupplyFree(), GetNumberCivsAtWarWith(false)); //adjusted for better readability
+		strOutBuf += strTemp;
+
+		// Memory threat and defense states
+		strTemp.Format("%d, %d, %d, ", m_iMemoryThreatWeight, (int)m_eLandDefenseState, (int)m_eNavalDefenseState);
 		strOutBuf += strTemp;
 
 		// Most threatened city

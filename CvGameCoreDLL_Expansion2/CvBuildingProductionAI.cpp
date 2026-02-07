@@ -794,6 +794,19 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 			iDefenseMod += iMemoryThreatWeight * 5;
 		else
 			iDefenseMod += iMemoryThreatWeight * 2;
+
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GET_PLAYER(m_pCity->getOwner()).getCivilizationShortDescription();
+			CvString cityName = m_pCity->getName();
+			FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, %s, MEMORY BLDG DEFENSE: %s, defMod=%d (threat=%d, border=%d)",
+				GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+				pkBuildingInfo->GetDescription(), iDefenseMod, iMemoryThreatWeight,
+				m_pCity->isBorderCity() ? 1 : 0);
+			pLog->Msg(msg.c_str());
+		}
 	}
 
 	bool bDanger = !bIgnoreSituational && m_pCity->isUnderSiege();
@@ -1352,6 +1365,18 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 				WarPenalty += 25 + (iMemoryThreatWeight / 2);
 				if (m_pCity->isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(m_pCity, NO_PLAYER))
 					WarPenalty += 25;
+
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = kPlayer.getCivilizationShortDescription();
+					CvString cityName = m_pCity->getName();
+					FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+					CvString msg;
+					msg.Format("%03d, %s, %s, MEMORY WAR PENALTY: %s, penalty=%d (threat=%d)",
+						GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+						pkBuildingInfo->GetDescription(), WarPenalty, iMemoryThreatWeight);
+					pLog->Msg(msg.c_str());
+				}
 			}
 
 			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)

@@ -316,6 +316,22 @@ void CvGrandStrategyAI::DoTurn()
 
 			SetGrandStrategyPriority(eGrandStrategy, max(1, iPriority));
 		}
+
+		if (iMemoryThreatWeight > 0 && GC.getLogging() && GC.getAILogging())
+		{
+			CvString strLogName;
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			if (GC.getPlayerAndCityAILogSplit())
+				strLogName = "GrandStrategyAI_Log_" + playerName + ".csv";
+			else
+				strLogName = "GrandStrategyAI_Log.csv";
+			FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, MEMORY GS BIAS: threat=%d, conquest +%d, others -%d",
+				GC.getGame().getElapsedGameTurns(), playerName.c_str(), iMemoryThreatWeight, iMemoryThreatWeight / 2, iMemoryThreatWeight / 3);
+			pLog->Msg(msg.c_str());
+		}
+
 		// Now look at what we think the other players in the game are up to - we might have an opportunity to capitalize somewhere
 		vector<int> viNumGrandStrategiesAdopted;
 		int iNumPlayers = 0;

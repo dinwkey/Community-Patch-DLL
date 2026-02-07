@@ -774,7 +774,20 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					}
 				}
 				if (bMemoryThreat && iValue > 0)
+				{
 					iBonus += iValue * 10 + iMemoryThreatWeight;
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString playerName = kPlayer.getCivilizationShortDescription();
+						CvString cityName = m_pCity->getName();
+						FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+						CvString msg;
+						msg.Format("%03d, %s, %s, MEMORY NAVAL UNIT: bonus=%d (val=%d, threat=%d)",
+							GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+							iValue * 10 + iMemoryThreatWeight, iValue, iMemoryThreatWeight);
+						pLog->Msg(msg.c_str());
+					}
+				}
 				else
 					iBonus += iValue * 30;
 			}
@@ -851,7 +864,20 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					}
 				}
 				if (bMemoryThreat && iValue > 0)
+				{
 					iBonus += iValue * 10 + iMemoryThreatWeight;
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString playerName = kPlayer.getCivilizationShortDescription();
+						CvString cityName = m_pCity->getName();
+						FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+						CvString msg;
+						msg.Format("%03d, %s, %s, MEMORY LAND UNIT: bonus=%d (val=%d, threat=%d)",
+							GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+							iValue * 10 + iMemoryThreatWeight, iValue, iMemoryThreatWeight);
+						pLog->Msg(msg.c_str());
+					}
+				}
 				else
 					iBonus += iValue * 30;
 			}
