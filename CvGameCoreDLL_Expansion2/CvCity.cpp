@@ -16569,6 +16569,18 @@ bool CvCity::NeedsGarrison() const
 
 	CvPlayer& kPlayer = GET_PLAYER(getOwner());
 
+	// Extended Memory: if siege units have been spotted near this city (including fog ghosts), garrison it
+	if (kPlayer.isMajorCiv())
+	{
+		CvDiplomacyAI* pDiploAI = kPlayer.GetDiplomacyAI();
+		if (pDiploAI)
+		{
+			const CvUnitSightingManager& sightMgr = pDiploAI->GetSightingManager();
+			if (sightMgr.CountSiegeUnitsNearCity(this, 6) >= 2)
+				return true;
+		}
+	}
+
 	//this allows the player to use the garrison for settler escorts
 	if (kPlayer.IsEarlyExpansionPhase())
 	{

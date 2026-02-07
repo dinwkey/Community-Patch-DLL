@@ -210,7 +210,7 @@ public:
 	const UnitSighting* GetSighting(PlayerTypes eOwner, int iUnitId) const;
 	int  GetHostileSightingsNearPlot(CvPlot* pPlot, int iRadius, std::vector<UnitSighting*>& results);
 	int  GetGhostsInSearchCone(int centerX, int centerY, int dirX, int dirY, int maxDist, std::vector<UnitSighting*>& results);
-	int  CountSiegeUnitsNearCity(CvCity* pCity, int iRadius) const;
+	int  CountSiegeUnitsNearCity(const CvCity* pCity, int iRadius) const;
 	bool IsPlotInSearchCone(const UnitSighting* pGhost, int plotX, int plotY, int currentTurn) const;
 	bool CouldGhostThreatenCity(const UnitSighting* pGhost, CvCity* pCity, int currentTurn) const;
 
@@ -219,6 +219,7 @@ public:
 	void Write(FDataStream& kStream) const;
 
 	int GetNumSightings() const { return (int)m_Sightings.size(); }
+	const std::vector<UnitSighting>& GetSightings() const { return m_Sightings; }
 
 private:
 	UnitSighting* GetOrCreateSighting(CvUnit* pUnit);

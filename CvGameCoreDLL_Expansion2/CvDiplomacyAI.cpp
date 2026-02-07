@@ -1130,7 +1130,7 @@ int CvUnitSightingManager::GetGhostsInSearchCone(int centerX, int centerY,
 }
 
 /// Count siege sightings (confirmed or ghost) near a city.
-int CvUnitSightingManager::CountSiegeUnitsNearCity(CvCity* pCity, int iRadius) const
+int CvUnitSightingManager::CountSiegeUnitsNearCity(const CvCity* pCity, int iRadius) const
 {
 	if (!pCity)
 		return 0;
@@ -18538,6 +18538,13 @@ void CvDiplomacyAI::SelectBestApproachTowardsMajorCiv(PlayerTypes ePlayer, bool 
 			vApproachScores[CIV_APPROACH_GUARDED] += vApproachBias[CIV_APPROACH_GUARDED] * 3;
 			vApproachScores[CIV_APPROACH_HOSTILE] += vApproachBias[CIV_APPROACH_HOSTILE] * 2;
 			vApproachScores[CIV_APPROACH_FRIENDLY] -= vApproachBias[CIV_APPROACH_FRIENDLY] * 2;
+
+			// Preemptive war consideration: if they're building up AND threat is rising,
+			// boost WAR approach to enable preemptive strikes via DoUpdateWarTargets
+			if (IsPlayerBuildingUpNearUs(ePlayer) && IsThreatRising(ePlayer))
+			{
+				vApproachScores[CIV_APPROACH_WAR] += vApproachBias[CIV_APPROACH_WAR] * 2;
+			}
 		}
 	}
 
@@ -24578,6 +24585,18 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 	int iConflictLimit = 10 + (iConqueredCivs * 5);
 	int iPotentialWarLimit = iConflictLimit + 5;
 
+	// Extended Memory: if someone is building up against us, reduce willingness to start NEW wars
+	// (we may need reserves for defense), but don't reduce below the base limit
+	for (std::vector<PlayerTypes>::iterator it = vNotAtWarPlayers.begin(); it != vNotAtWarPlayers.end(); ++it)
+	{
+		if (IsAttackLikelyImminent(*it))
+		{
+			iConflictLimit = max(10, iConflictLimit - 5);
+			iPotentialWarLimit = iConflictLimit + 5;
+			break;  // One threat is enough to trigger caution
+		}
+	}
+
 	// Limit our willingness for conflict in the very early game.
 	if (GetPlayer()->GetCurrentEra() <= 1)
 	{
@@ -24752,6 +24771,12 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 					}
 				}
 			}
+			// Extended Memory: preemptive strike — if HOSTILE and memory system detects imminent attack, 
+			// treat as valid war approach regardless of proximity (they're coming for us)
+			if (!bValidApproach && eApproach == CIV_APPROACH_HOSTILE && IsAttackLikelyImminent(*it))
+			{
+				bValidApproach = true;
+			}
 			else if (eApproach == CIV_APPROACH_DECEPTIVE)
 			{
 				if (bCloseToWorldConquest || IsEndgameAggressiveTo(*it))
@@ -24823,6 +24848,10 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 					int iSneakAttackValue = GetPlayerApproachValue(*it, CIV_APPROACH_WAR);
 					if (IsArmyInPlaceForAttack(*it))
 						iSneakAttackValue += 100000000;
+
+					// Extended Memory: prioritize sneak attacks against players who are themselves building up — strike before they're ready
+					if (IsPlayerBuildingUpNearUs(*it) || IsThreatRising(*it))
+						iSneakAttackValue += 1000;
 
 					viExistingSneakAttacks.push_back(*it, iSneakAttackValue);
 				}

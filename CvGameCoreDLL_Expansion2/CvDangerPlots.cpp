@@ -297,6 +297,53 @@ void CvDangerPlots::UpdateDangerInternal(const PlotIndexContainer& plotsToIgnore
 		}
 	}
 
+	// Extended Memory: add fog danger for ghost units tracked by the sighting manager.
+	// These are units that moved into fog-of-war in previous turns and may still be nearby.
+	if (bTurnChange && thisPlayer.isMajorCiv())
+	{
+		CvDiplomacyAI* pDiploAI = thisPlayer.GetDiplomacyAI();
+		if (pDiploAI)
+		{
+			const CvUnitSightingManager& sightMgr = pDiploAI->GetSightingManager();
+			const std::vector<UnitSighting>& sightings = sightMgr.GetSightings();
+			int currentTurn = GC.getGame().getGameTurn();
+
+			for (int i = 0; i < (int)sightings.size(); i++)
+			{
+				const UnitSighting& s = sightings[i];
+
+				// Only process fog ghosts (not currently visible, not expired)
+				if (s.IsConfirmed(currentTurn) || s.IsExpired(currentTurn))
+					continue;
+
+				// Must be from a player we're tracking for danger
+				if (ShouldIgnorePlayer((PlayerTypes)s.owner))
+					continue;
+
+				// Project ghost position along last heading
+				int turnsMissing = currentTurn - (int)s.lastSeenTurn;
+				int projectedX = (int)s.x + (int)s.lastDeltaX * turnsMissing;
+				int projectedY = (int)s.y + (int)s.lastDeltaY * turnsMissing;
+
+				CvPlot* pGhostPlot = GC.getMap().plot(projectedX, projectedY);
+				if (!pGhostPlot)
+					continue;
+
+				// Don't add fog danger for plots we can currently see
+				if (pGhostPlot->isVisible(thisTeam))
+					continue;
+
+				// Add fog danger around the projected ghost position (range 2)
+				for (int j = 0; j < RING_PLOTS[2]; j++)
+				{
+					CvPlot* pTargetPlot = iterateRingPlots(pGhostPlot, j);
+					if (pTargetPlot && !pTargetPlot->isImpassable(GET_PLAYER((PlayerTypes)s.owner).getTeam()))
+						m_DangerPlots[pTargetPlot->GetPlotIndex()].m_iFogCount++;
+				}
+			}
+		}
+	}
+
 	for(int iPlotLoop = 0; iPlotLoop < GC.getMap().numPlots(); iPlotLoop++)
 	{
 		CvPlot* pPlot = GC.getMap().plotByIndexUnchecked(iPlotLoop);

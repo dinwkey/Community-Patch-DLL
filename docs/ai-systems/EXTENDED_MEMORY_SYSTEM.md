@@ -865,14 +865,13 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 
 ### Decision Functions to Enhance
 
-| Function | Enhancement |
-|----------|-------------|
-| `DoAggressiveMilitaryStatement()` | Check `AmIOverextended()` before provoking |
-| `SelectBestApproachTowardsMajorCiv()` | Factor `HasTurnedHostileRecently()` |
-| `GetWarProjection()` | Use `IsPlayerBuildingUpNearUs()` |
-| `IsWantsSneakAttack()` | Check if target `IsThreatRising()` toward us |
-| `GetDangerPlots()` | Include `CouldGhostThreatenCity()` for fog units |
-| `DoUpdateWarTargets()` | Prioritize targets based on threat trends |
+| Function | Enhancement | Status |
+|----------|-------------|--------|
+| `DoAggressiveMilitaryStatement()` | Check `AmIOverextended()` before provoking | ✅ Phase 2 |
+| `SelectBestApproachTowardsMajorCiv()` | Factor `HasTurnedHostileRecently()`, `IsAttackLikelyImminent()`, preemptive WAR boost | ✅ Phase 2 + 4 |
+| `DoUpdateWarTargets()` | Prioritize sneak attacks by buildup/threat, preemptive strike for HOSTILE+imminent, defensive caution | ✅ Phase 4 |
+| `CvDangerPlots::UpdateDangerInternal()` | Add fog danger for predicted ghost positions from sighting manager | ✅ Phase 4 |
+| `CvCity::NeedsGarrison()` | Garrison cities with ≥2 siege sightings via `CountSiegeUnitsNearCity()` | ✅ Phase 4 |
 
 ---
 
@@ -912,12 +911,13 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 8. ~~Add serialization~~ — field-by-field Read/Write in `CvUnitSightingManager`, wired into `ReadMemorySystem()`/`WriteMemorySystem()`
 9. ~~Capacity management~~ — max `AI_MAX_UNIT_SIGHTINGS` (300), LRU eviction of oldest sighting when full
 
-### Phase 4: Deep Integration (2-3 days)
+### Phase 4: Deep Integration (DONE)
 
-1. Add buildup warnings to war target prioritization
-2. Add fog ghosts to danger plot calculation
-3. Add siege warning to defensive positioning
-4. Test in gameplay
+1. ~~Add buildup warnings to war target prioritization~~ — `DoUpdateWarTargets()`: preemptive strike path for HOSTILE+imminent, sneak attack priority boost for buildup/threat-rising targets, defensive caution (reduced conflict limit) when facing imminent threat
+2. ~~Add fog ghosts to danger plot calculation~~ — `CvDangerPlots::UpdateDangerInternal()`: projects ghost positions along last heading, adds fog danger around predicted positions for at-war enemies
+3. ~~Add siege warning to defensive positioning~~ — `CvCity::NeedsGarrison()`: checks `CountSiegeUnitsNearCity()` for siege unit proximity, garrisons cities with ≥2 siege sightings within range 6
+4. ~~Preemptive WAR approach boost~~ — `SelectBestApproachTowardsMajorCiv()`: when attack is imminent AND player is building up with rising threat, boosts WAR approach score for preemptive strike consideration
+5. ~~Const-correctness fix~~ — `CountSiegeUnitsNearCity()` now takes `const CvCity*`; `GetSightings()` const accessor added to `CvUnitSightingManager`
 
 ### Phase 5: Tuning & Validation (1-2 days)
 
