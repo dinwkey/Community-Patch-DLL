@@ -32551,15 +32551,36 @@ void CvPlayer::setCombatExperienceTimes100(int iExperienceTimes100, CvUnit* pFro
 											{
 												if (pFromUnit && !MOD_LOCAL_GENERALS_NEAREST_CITY)
 												{
-													CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pFromUnit->plot()->getX(), pFromUnit->plot()->getY(), pFromUnit->getName().GetCString());
-													createGreatGeneral(eUnit, pFromUnit->plot()->getX(), pFromUnit->plot()->getY(), false);
+													CvPlot* pFromPlot = pFromUnit->plot();
+													if (pFromPlot)
+													{
+														CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pFromPlot->getX(), pFromPlot->getY(), pFromUnit->getName().GetCString());
+														createGreatGeneral(eUnit, pFromPlot->getX(), pFromPlot->getY(), false);
+													}
+													else if (pBestCity)
+													{
+														pBestCity->createGreatGeneral(eUnit, false);
+													}
 												}
 												else if (pFromUnit && MOD_LOCAL_GENERALS_NEAREST_CITY)
 												{
-													CvCity* pNearestCity = GetClosestCityByPathLength(pFromUnit->plot());
+													CvPlot* pFromPlot = pFromUnit->plot();
+													CvCity* pNearestCity = pFromPlot ? GetClosestCityByPathLength(pFromPlot) : NULL;
 
-													CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), pFromUnit->getName().GetCString());
-													createGreatGeneral(eUnit, pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), false);
+													if (pNearestCity != NULL)
+													{
+														CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), pFromUnit->getName().GetCString());
+														createGreatGeneral(eUnit, pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), false);
+													}
+													else if (pFromPlot)
+													{
+														CUSTOMLOG("Create Great General at plot (%d, %d) from unit %s", pFromPlot->getX(), pFromPlot->getY(), pFromUnit->getName().GetCString());
+														createGreatGeneral(eUnit, pFromPlot->getX(), pFromPlot->getY(), false);
+													}
+													else if (pBestCity)
+													{
+														pBestCity->createGreatGeneral(eUnit, false);
+													}
 												}
 												else
 												{
