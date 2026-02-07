@@ -320,8 +320,12 @@ void CvDangerPlots::UpdateDangerInternal(const PlotIndexContainer& plotsToIgnore
 				if (ShouldIgnorePlayer((PlayerTypes)s.owner))
 					continue;
 
-				// Project ghost position along last heading
+				// Project ghost position along last heading (cap to usefulness window)
 				int turnsMissing = currentTurn - (int)s.lastSeenTurn;
+				if (turnsMissing <= 0)
+					continue;
+				if (turnsMissing > AI_FOG_GHOST_USEFUL_TURNS)
+					turnsMissing = AI_FOG_GHOST_USEFUL_TURNS;
 				int projectedX = (int)s.x + (int)s.lastDeltaX * turnsMissing;
 				int projectedY = (int)s.y + (int)s.lastDeltaY * turnsMissing;
 

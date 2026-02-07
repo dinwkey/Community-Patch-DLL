@@ -1139,6 +1139,8 @@ int CvUnitSightingManager::CountSiegeUnitsNearCity(const CvCity* pCity, int iRad
 	int iCX = pCity->getX();
 	int iCY = pCity->getY();
 	int currentTurn = GC.getGame().getGameTurn();
+	CvDiplomacyAI* pDiploAI = (m_pPlayer != NULL) ? m_pPlayer->GetDiplomacyAI() : NULL;
+	TeamTypes eOurTeam = (m_pPlayer != NULL) ? m_pPlayer->getTeam() : NO_TEAM;
 
 	for (int i = 0; i < (int)m_Sightings.size(); i++)
 	{
@@ -1148,6 +1150,25 @@ int CvUnitSightingManager::CountSiegeUnitsNearCity(const CvCity* pCity, int iRad
 			continue;
 
 		if (!(s.flags & SIGHTING_FLAG_SIEGE))
+			continue;
+
+		PlayerTypes eOwner = (PlayerTypes)s.owner;
+		if (eOwner == NO_PLAYER)
+			continue;
+
+		bool bHostileOrAtWar = false;
+		if (pDiploAI && eOurTeam != NO_TEAM)
+		{
+			TeamTypes eOwnerTeam = GET_PLAYER(eOwner).getTeam();
+			if (GET_TEAM(eOurTeam).isAtWar(eOwnerTeam))
+				bHostileOrAtWar = true;
+			else if (!GET_PLAYER(eOwner).isMinorCiv() && pDiploAI->GetCivApproach(eOwner) == CIV_APPROACH_HOSTILE)
+				bHostileOrAtWar = true;
+			else if (!GET_PLAYER(eOwner).isMinorCiv() && pDiploAI->IsAttackLikelyImminent(eOwner))
+				bHostileOrAtWar = true;
+		}
+
+		if (!bHostileOrAtWar)
 			continue;
 
 		int iDist = plotDistance(iCX, iCY, (int)s.x, (int)s.y);
