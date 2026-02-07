@@ -3,7 +3,7 @@
 **Purpose:** Detailed specification for implementing a multi-turn memory system that enables the AI to detect patterns, track unit movements, and make decisions based on historical context rather than just current turn state.
 
 **Last Updated:** February 2026  
-**Status:** Ready for Implementation
+**Status:** Phase 3 Complete (Unit Tracking)
 
 **Related:**
 - [AI_DEEP_REASONING.md](AI_DEEP_REASONING.md) — Parent architecture document
@@ -878,14 +878,14 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 
 ## 11. Implementation Steps
 
-### Phase 1: Core Structures (1-2 days)
+### Phase 1: Core Structures (DONE — commit b4cff89c4)
 
-1. Add `TurnSnapshot` struct to `CvDiplomacyAI.h`
-2. Add `CivMemory` struct with circular buffer
-3. Add `m_Memory` member to `CvDiplomacyAI`
-4. Implement `CaptureMemorySnapshot()` basic version
-5. Add serialization (not save compatible)
-6. Compile and verify no crashes
+1. ~~Add `TurnSnapshot` struct to `CvDiplomacyAI.h`~~
+2. ~~Add `CivMemory` struct with circular buffer~~
+3. ~~Add `m_Memory` member to `CvDiplomacyAI`~~
+4. ~~Implement `CaptureMemorySnapshot()` basic version~~
+5. ~~Add serialization (not save compatible)~~
+6. ~~Compile and verify no crashes~~
 
 ### Phase 2: Pattern Detection & Integration (DONE)
 
@@ -900,14 +900,17 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
    - `DoAggressiveMilitaryStatement()`: skip if `AmIOverextended()`
    - `SelectBestApproachTowardsMajorCiv()`: boost guarded/hostile on `HasTurnedHostileRecently()`, large boost on `IsAttackLikelyImminent()`
 
-### Phase 3: Unit Tracking (2-3 days)
+### Phase 3: Unit Tracking (DONE)
 
-1. Add `UnitSighting` struct
-2. Add `CvUnitSightingManager` class
-3. Hook into unit movement notifications
-4. Implement fog ghost system
-5. Implement directional cone search
-6. Add serialization
+1. ~~Add `UnitSighting` struct~~ — 16-byte per-unit record with fog prediction fields
+2. ~~Add `CvUnitSightingManager` class~~ — embedded in CvDiplomacyAI, accessed via `GetSightingManager()`
+3. ~~Hook into unit movement notifications~~ — `CvUnit::setXY()` calls `OnUnitMoved()` for all observing major civs
+4. ~~Hook unit destruction~~ — `CvUnit::kill()` calls `OnUnitDestroyed()` for all major civs
+5. ~~Implement fog ghost system~~ — ghosts auto-expire after `AI_FOG_GHOST_EXPIRY_TURNS` (10), cleaned up in `DoTurn()`
+6. ~~Implement directional cone search~~ — `IsPlotInSearchCone()`, `CouldGhostThreatenCity()`, ~90° cones for naval/fast, ~120° for slow land
+7. ~~Implement intent inference~~ — `InferUnitIntent()` classifies units based on health, siege type, war state
+8. ~~Add serialization~~ — field-by-field Read/Write in `CvUnitSightingManager`, wired into `ReadMemorySystem()`/`WriteMemorySystem()`
+9. ~~Capacity management~~ — max `AI_MAX_UNIT_SIGHTINGS` (300), LRU eviction of oldest sighting when full
 
 ### Phase 4: Deep Integration (2-3 days)
 

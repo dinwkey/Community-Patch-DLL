@@ -2170,6 +2170,25 @@ void CvUnit::kill(bool bDelay, PlayerTypes ePlayer /*= NO_PLAYER*/)
 			GC.getMap().IncrementUnitKillCount(m_eOwner, plot()->GetPlotIndex());
 	}
 
+	// Extended Memory System Phase 3: Notify all major civs to remove destroyed unit from sighting tracking
+	if (!bDelay && IsCombatUnit() && !isBarbarian())
+	{
+		for (int iI = 0; iI < MAX_MAJOR_CIVS; iI++)
+		{
+			PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+			if (eLoopPlayer == eUnitOwner)
+				continue;
+
+			CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+			if (!kLoopPlayer.isAlive() || !kLoopPlayer.isMajorCiv())
+				continue;
+
+			CvDiplomacyAI* pDiploAI = kLoopPlayer.GetDiplomacyAI();
+			if (pDiploAI)
+				pDiploAI->GetSightingManager().OnUnitDestroyed(eUnitOwner, GetID());
+		}
+	}
+
 	CvInterfacePtr<ICvUnit1> pDllThisUnit = GC.WrapUnitPointer(this);
 
 	if(IsSelected() && !bDelay)
@@ -21117,6 +21136,32 @@ void CvUnit::setXY(int iX, int iY, bool bGroup, bool bUpdate, bool bShow, bool b
 					eMeetingPlayer = kLoopTeam.getLeaderID();
 
 				kPlayer.GetMinorCivAI()->DoFirstContactWithMajor(eMeetingPlayer, GET_TEAM(eOurTeam).isAtWar(kLoopTeam.GetID()));
+			}
+		}
+
+		// Extended Memory System Phase 3: Notify major civs about enemy unit sightings
+		if (IsCombatUnit() && !isBarbarian())
+		{
+			for (int iI = 0; iI < MAX_MAJOR_CIVS; iI++)
+			{
+				PlayerTypes eLoopPlayer = (PlayerTypes)iI;
+				if (eLoopPlayer == getOwner())
+					continue;
+
+				CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+				if (!kLoopPlayer.isAlive() || !kLoopPlayer.isMajorCiv())
+					continue;
+
+				TeamTypes eLoopTeam = kLoopPlayer.getTeam();
+				if (eLoopTeam == eOurTeam || isInvisible(eLoopTeam, false))
+					continue;
+
+				CvDiplomacyAI* pDiploAI = kLoopPlayer.GetDiplomacyAI();
+				if (!pDiploAI)
+					continue;
+
+				// OnUnitMoved will check visibility of pOldPlot/pNewPlot from the observer's perspective
+				pDiploAI->GetSightingManager().OnUnitMoved(this, pOldPlot, pNewPlot);
 			}
 		}
 

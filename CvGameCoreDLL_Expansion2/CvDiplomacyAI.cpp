@@ -70,6 +70,9 @@ void CvDiplomacyAI::Init(CvPlayer* pPlayer)
 	// Extended Memory System — zero-fill (turn==0 marks invalid slots)
 	memset(&m_Memory, 0, sizeof(m_Memory));
 
+	// Extended Memory System Phase 3 — unit sighting tracker
+	m_UnitSightings.Init(pPlayer);
+
 	// Personality Values
 	m_iVictoryCompetitiveness = 5;
 	m_iWonderCompetitiveness = 5;
@@ -770,6 +773,9 @@ void CvDiplomacyAI::WriteMemorySystem(FDataStream& kStream) const
 		kStream << snap.flags;
 		kStream << snap.padding;
 	}
+
+	// Phase 3: Unit sightings
+	m_UnitSightings.Write(kStream);
 }
 
 /// Read memory buffer from save stream.
@@ -796,6 +802,501 @@ void CvDiplomacyAI::ReadMemorySystem(FDataStream& kStream)
 		kStream >> snap.numWars;
 		kStream >> snap.flags;
 		kStream >> snap.padding;
+	}
+
+	// Phase 3: Unit sightings
+	m_UnitSightings.Read(kStream);
+}
+
+//	-----------------------------------------------------------------------------------------------
+//	UNIT SIGHTING MANAGER — Implementation (Phase 3)
+//	-----------------------------------------------------------------------------------------------
+
+CvUnitSightingManager::CvUnitSightingManager()
+	: m_pPlayer(NULL)
+{
+}
+
+void CvUnitSightingManager::Init(CvPlayer* pPlayer)
+{
+	m_pPlayer = pPlayer;
+	m_Sightings.clear();
+	m_SightingIndex.clear();
+}
+
+/// Compute classification flags for a unit.
+unsigned char CvUnitSightingManager::ComputeFlags(CvUnit* pUnit) const
+{
+	unsigned char uFlags = 0;
+
+	if (pUnit->isEmbarked())
+		uFlags |= SIGHTING_FLAG_EMBARKED;
+	if (pUnit->IsFortified() || pUnit->IsGarrisoned())
+		uFlags |= SIGHTING_FLAG_FORTIFIED;
+	if (pUnit->GetCurrHitPoints() < (pUnit->GetMaxHitPoints() / 2))
+		uFlags |= SIGHTING_FLAG_DAMAGED;
+	if (pUnit->IsCanAttackRanged())
+		uFlags |= SIGHTING_FLAG_RANGED;
+
+	// Siege classification: city bombard AI or city special
+	UnitAITypes eAIType = pUnit->AI_getUnitAIType();
+	if (eAIType == UNITAI_CITY_BOMBARD || eAIType == UNITAI_CITY_SPECIAL)
+		uFlags |= SIGHTING_FLAG_SIEGE;
+
+	if (pUnit->getDomainType() == DOMAIN_SEA)
+		uFlags |= SIGHTING_FLAG_NAVAL;
+	if (pUnit->getDomainType() == DOMAIN_AIR)
+		uFlags |= SIGHTING_FLAG_AIR;
+
+	return uFlags;
+}
+
+/// Get or create a sighting record for the given unit.
+UnitSighting* CvUnitSightingManager::GetOrCreateSighting(CvUnit* pUnit)
+{
+	unsigned int uKey = MakeKey(pUnit->getOwner(), pUnit->GetID());
+	std::map<unsigned int, int>::iterator it = m_SightingIndex.find(uKey);
+
+	if (it != m_SightingIndex.end())
+	{
+		return &m_Sightings[it->second];
+	}
+
+	// Need to create a new sighting — check capacity
+	if ((int)m_Sightings.size() >= AI_MAX_UNIT_SIGHTINGS)
+	{
+		// Evict the oldest (most expired) sighting
+		int iOldestIdx = 0;
+		short iOldestTurn = 32767;
+		for (int i = 0; i < (int)m_Sightings.size(); i++)
+		{
+			if (m_Sightings[i].lastSeenTurn < iOldestTurn)
+			{
+				iOldestTurn = m_Sightings[i].lastSeenTurn;
+				iOldestIdx = i;
+			}
+		}
+
+		// Remove the evicted entry from the index
+		unsigned int uOldKey = MakeKey((PlayerTypes)m_Sightings[iOldestIdx].owner,
+		                               (int)m_Sightings[iOldestIdx].unitId);
+		m_SightingIndex.erase(uOldKey);
+
+		// Replace in-place
+		UnitSighting& sighting = m_Sightings[iOldestIdx];
+		memset(&sighting, 0, sizeof(UnitSighting));
+		sighting.unitId = (unsigned short)(pUnit->GetID() & 0xFFFF);
+		sighting.unitType = (unsigned char)pUnit->getUnitType();
+		sighting.owner = (unsigned char)pUnit->getOwner();
+		m_SightingIndex[uKey] = iOldestIdx;
+		return &sighting;
+	}
+
+	// Append new sighting
+	UnitSighting sighting;
+	memset(&sighting, 0, sizeof(UnitSighting));
+	sighting.unitId = (unsigned short)(pUnit->GetID() & 0xFFFF);
+	sighting.unitType = (unsigned char)pUnit->getUnitType();
+	sighting.owner = (unsigned char)pUnit->getOwner();
+
+	int iNewIdx = (int)m_Sightings.size();
+	m_Sightings.push_back(sighting);
+	m_SightingIndex[uKey] = iNewIdx;
+	return &m_Sightings[iNewIdx];
+}
+
+/// Called when an enemy unit is observed at a plot (no movement context).
+void CvUnitSightingManager::OnUnitSeen(CvUnit* pUnit)
+{
+	if (!m_pPlayer || !pUnit || !pUnit->IsCombatUnit())
+		return;
+
+	// Don't track our own units or allies
+	if (pUnit->getOwner() == m_pPlayer->GetID())
+		return;
+	if (GET_PLAYER(pUnit->getOwner()).getTeam() == m_pPlayer->getTeam())
+		return;
+
+	UnitSighting* pSighting = GetOrCreateSighting(pUnit);
+	if (!pSighting)
+		return;
+
+	pSighting->x = (short)pUnit->getX();
+	pSighting->y = (short)pUnit->getY();
+	pSighting->lastSeenTurn = (short)GC.getGame().getGameTurn();
+	pSighting->health = (unsigned char)((pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints()));
+	pSighting->flags = ComputeFlags(pUnit);
+	pSighting->movementPoints = (unsigned char)min(255, pUnit->maxMoves() / max(1, GD_INT_GET(MOVE_DENOMINATOR)));
+}
+
+/// Called when an enemy unit moves. Captures direction and updates position
+/// depending on visibility from the observer's perspective.
+void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pTo)
+{
+	if (!m_pPlayer || !pUnit || !pUnit->IsCombatUnit())
+		return;
+
+	// Don't track our own units or allies
+	if (pUnit->getOwner() == m_pPlayer->GetID())
+		return;
+	if (GET_PLAYER(pUnit->getOwner()).getTeam() == m_pPlayer->getTeam())
+		return;
+
+	TeamTypes eObserverTeam = m_pPlayer->getTeam();
+
+	bool bCanSeeFrom = (pFrom != NULL) && pFrom->isVisible(eObserverTeam);
+	bool bCanSeeTo   = (pTo != NULL) && pTo->isVisible(eObserverTeam);
+
+	// Must see at least one endpoint
+	if (!bCanSeeFrom && !bCanSeeTo)
+		return;
+
+	UnitSighting* pSighting = GetOrCreateSighting(pUnit);
+	if (!pSighting)
+		return;
+
+	// Capture movement direction if we saw the origin
+	if (bCanSeeFrom && pFrom && pTo)
+	{
+		pSighting->lastDeltaX = (char)(pTo->getX() - pFrom->getX());
+		pSighting->lastDeltaY = (char)(pTo->getY() - pFrom->getY());
+	}
+
+	// Update position and state if we can see the destination
+	if (bCanSeeTo)
+	{
+		pSighting->x = (short)pTo->getX();
+		pSighting->y = (short)pTo->getY();
+		pSighting->lastSeenTurn = (short)GC.getGame().getGameTurn();
+		pSighting->health = (unsigned char)((pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints()));
+		pSighting->flags = ComputeFlags(pUnit);
+		pSighting->movementPoints = (unsigned char)min(255, pUnit->maxMoves() / max(1, GD_INT_GET(MOVE_DENOMINATOR)));
+	}
+	// else: unit entered fog — keep last confirmed position, but we captured the direction above
+
+	// Infer intent from context (only meaningful when we had a direction)
+	if (bCanSeeFrom)
+	{
+		pSighting->predictedIntent = (unsigned char)InferUnitIntent(pSighting, pUnit);
+	}
+}
+
+/// Called when a unit is destroyed — remove from tracking.
+void CvUnitSightingManager::OnUnitDestroyed(PlayerTypes eOwner, int iUnitId)
+{
+	unsigned int uKey = MakeKey(eOwner, iUnitId);
+	std::map<unsigned int, int>::iterator it = m_SightingIndex.find(uKey);
+
+	if (it == m_SightingIndex.end())
+		return;
+
+	int iIdx = it->second;
+	int iLast = (int)m_Sightings.size() - 1;
+
+	if (iIdx != iLast && iLast >= 0)
+	{
+		// Swap with last element to avoid gaps
+		m_Sightings[iIdx] = m_Sightings[iLast];
+
+		// Update the swapped element's index
+		unsigned int uSwappedKey = MakeKey((PlayerTypes)m_Sightings[iIdx].owner,
+		                                   (int)m_Sightings[iIdx].unitId);
+		m_SightingIndex[uSwappedKey] = iIdx;
+	}
+
+	m_Sightings.pop_back();
+	m_SightingIndex.erase(it);
+}
+
+/// Remove all sightings that have expired (not seen for too long).
+void CvUnitSightingManager::CleanupExpired(int currentTurn)
+{
+	for (int i = (int)m_Sightings.size() - 1; i >= 0; i--)
+	{
+		if (m_Sightings[i].IsExpired(currentTurn))
+		{
+			OnUnitDestroyed((PlayerTypes)m_Sightings[i].owner, (int)m_Sightings[i].unitId);
+		}
+	}
+}
+
+/// Update ghost predictions (called each turn).
+void CvUnitSightingManager::UpdateGhosts(int currentTurn)
+{
+	// For now, ghosts are passively managed — their uncertainty radius grows
+	// automatically via GetUncertaintyRadius(). Future: add active prediction
+	// refinement here if needed.
+	(void)currentTurn;
+}
+
+// === Queries ===
+
+/// Find a specific sighting by owner and unitId.
+UnitSighting* CvUnitSightingManager::GetSighting(PlayerTypes eOwner, int iUnitId)
+{
+	unsigned int uKey = MakeKey(eOwner, iUnitId);
+	std::map<unsigned int, int>::iterator it = m_SightingIndex.find(uKey);
+	if (it != m_SightingIndex.end())
+		return &m_Sightings[it->second];
+	return NULL;
+}
+
+const UnitSighting* CvUnitSightingManager::GetSighting(PlayerTypes eOwner, int iUnitId) const
+{
+	unsigned int uKey = MakeKey(eOwner, iUnitId);
+	std::map<unsigned int, int>::const_iterator it = m_SightingIndex.find(uKey);
+	if (it != m_SightingIndex.end())
+		return &m_Sightings[it->second];
+	return NULL;
+}
+
+/// Get all hostile sightings (ghosts and confirmed) near a plot within iRadius.
+int CvUnitSightingManager::GetHostileSightingsNearPlot(CvPlot* pPlot, int iRadius, std::vector<UnitSighting*>& results)
+{
+	results.clear();
+	if (!pPlot || !m_pPlayer)
+		return 0;
+
+	int iCenterX = pPlot->getX();
+	int iCenterY = pPlot->getY();
+	PlayerTypes eUs = m_pPlayer->GetID();
+
+	for (int i = 0; i < (int)m_Sightings.size(); i++)
+	{
+		UnitSighting& s = m_Sightings[i];
+
+		// Skip our own units (shouldn't be here, but defensive)
+		if ((PlayerTypes)s.owner == eUs)
+			continue;
+
+		// Must be hostile
+		if (!GET_TEAM(m_pPlayer->getTeam()).isAtWar(GET_PLAYER((PlayerTypes)s.owner).getTeam()))
+			continue;
+
+		int iDist = plotDistance(iCenterX, iCenterY, (int)s.x, (int)s.y);
+		if (iDist <= iRadius)
+		{
+			results.push_back(&s);
+		}
+	}
+
+	return (int)results.size();
+}
+
+/// Get ghosts in the predicted search cone — units that entered fog moving
+/// in direction (dirX, dirY) from (centerX, centerY).
+int CvUnitSightingManager::GetGhostsInSearchCone(int centerX, int centerY,
+	int dirX, int dirY, int maxDist,
+	std::vector<UnitSighting*>& results)
+{
+	results.clear();
+	int currentTurn = GC.getGame().getGameTurn();
+
+	for (int i = 0; i < (int)m_Sightings.size(); i++)
+	{
+		UnitSighting& s = m_Sightings[i];
+
+		// Only ghosts (not confirmed, not expired)
+		if (s.IsConfirmed(currentTurn) || s.IsExpired(currentTurn))
+			continue;
+
+		int iDist = plotDistance(centerX, centerY, (int)s.x, (int)s.y);
+		if (iDist > maxDist)
+			continue;
+
+		if (IsPlotInSearchCone(&s, centerX, centerY, currentTurn))
+		{
+			results.push_back(&s);
+		}
+	}
+
+	return (int)results.size();
+}
+
+/// Count siege sightings (confirmed or ghost) near a city.
+int CvUnitSightingManager::CountSiegeUnitsNearCity(CvCity* pCity, int iRadius) const
+{
+	if (!pCity)
+		return 0;
+
+	int iCount = 0;
+	int iCX = pCity->getX();
+	int iCY = pCity->getY();
+	int currentTurn = GC.getGame().getGameTurn();
+
+	for (int i = 0; i < (int)m_Sightings.size(); i++)
+	{
+		const UnitSighting& s = m_Sightings[i];
+
+		if (s.IsExpired(currentTurn))
+			continue;
+
+		if (!(s.flags & SIGHTING_FLAG_SIEGE))
+			continue;
+
+		int iDist = plotDistance(iCX, iCY, (int)s.x, (int)s.y);
+		if (iDist <= iRadius)
+			iCount++;
+	}
+
+	return iCount;
+}
+
+/// Check if a plot is within the predicted search cone for a fog ghost.
+bool CvUnitSightingManager::IsPlotInSearchCone(const UnitSighting* pGhost, int plotX, int plotY, int currentTurn) const
+{
+	if (!pGhost)
+		return false;
+
+	// Distance check
+	int iDist = plotDistance((int)pGhost->x, (int)pGhost->y, plotX, plotY);
+	int iUncertainty = pGhost->GetUncertaintyRadius(currentTurn);
+	if (iDist > iUncertainty)
+		return false;
+
+	// If unit was stationary, search all directions
+	if (pGhost->lastDeltaX == 0 && pGhost->lastDeltaY == 0)
+		return true;
+
+	// Direction check — dot product
+	int dx = plotX - (int)pGhost->x;
+	int dy = plotY - (int)pGhost->y;
+	int dot = dx * (int)pGhost->lastDeltaX + dy * (int)pGhost->lastDeltaY;
+
+	// Determine cone width based on unit type
+	bool bIsNaval = (pGhost->flags & SIGHTING_FLAG_NAVAL) != 0;
+	bool bIsFast  = (pGhost->movementPoints >= 4);
+
+	if (bIsNaval || bIsFast)
+	{
+		// ~90-degree cone — only forward direction
+		return dot > 0;
+	}
+	else
+	{
+		// ~120-degree cone — forward plus some side movement
+		int iMagnitude = abs((int)pGhost->lastDeltaX) + abs((int)pGhost->lastDeltaY);
+		return dot > -(iMagnitude * iDist / 3);
+	}
+}
+
+/// Could this ghost potentially threaten a specific city?
+bool CvUnitSightingManager::CouldGhostThreatenCity(const UnitSighting* pGhost, CvCity* pCity, int currentTurn) const
+{
+	if (!pGhost || !pCity)
+		return false;
+
+	int turnsMissing = currentTurn - (int)pGhost->lastSeenTurn;
+
+	// Project ghost position along heading
+	int projectedX = (int)pGhost->x + (int)pGhost->lastDeltaX * turnsMissing;
+	int projectedY = (int)pGhost->y + (int)pGhost->lastDeltaY * turnsMissing;
+
+	// Distance from projected position to city
+	int distToCity = plotDistance(projectedX, projectedY, pCity->getX(), pCity->getY());
+
+	// Within strike range?  +2 for attack range
+	int strikeRange = (int)pGhost->movementPoints + 2;
+	return distToCity <= strikeRange;
+}
+
+/// Infer intent from unit context and war state.
+UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(const UnitSighting* pSighting, CvUnit* pUnit) const
+{
+	if (!pSighting || !pUnit || !m_pPlayer)
+		return UNIT_INTENT_UNKNOWN;
+
+	PlayerTypes eOwner = (PlayerTypes)pSighting->owner;
+	CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return UNIT_INTENT_UNKNOWN;
+
+	// Damaged units likely retreating
+	if (pSighting->health < 50)
+		return UNIT_INTENT_RETREAT;
+
+	// Siege units are for city attacks
+	if (pSighting->flags & SIGHTING_FLAG_SIEGE)
+		return UNIT_INTENT_ATTACK_CITY;
+
+	// Check if at war
+	if (!pDiploAI->IsAtWar(eOwner))
+		return UNIT_INTENT_PATROL;  // Not at war — probably patrolling
+
+	// War state: our perspective against the unit's owner
+	WarStateTypes eWarState = pDiploAI->GetWarState(eOwner);
+
+	// If we're winning, the enemy is likely retreating
+	if (eWarState == WAR_STATE_OFFENSIVE || eWarState == WAR_STATE_NEARLY_WON)
+		return UNIT_INTENT_RETREAT;
+
+	// If we're losing, the enemy is likely attacking
+	if (eWarState == WAR_STATE_DEFENSIVE || eWarState == WAR_STATE_NEARLY_DEFEATED)
+		return UNIT_INTENT_ATTACK_CITY;
+
+	return UNIT_INTENT_UNKNOWN;
+}
+
+// === Serialization ===
+
+void CvUnitSightingManager::Write(FDataStream& kStream) const
+{
+	int iCount = (int)m_Sightings.size();
+	kStream << iCount;
+
+	for (int i = 0; i < iCount; i++)
+	{
+		const UnitSighting& s = m_Sightings[i];
+		kStream << s.unitId;
+		kStream << s.unitType;
+		kStream << s.owner;
+		kStream << s.x;
+		kStream << s.y;
+		kStream << s.lastSeenTurn;
+		kStream << s.health;
+		kStream << s.flags;
+		kStream << s.lastDeltaX;
+		kStream << s.lastDeltaY;
+		kStream << s.movementPoints;
+		kStream << s.predictedIntent;
+	}
+}
+
+void CvUnitSightingManager::Read(FDataStream& kStream)
+{
+	m_Sightings.clear();
+	m_SightingIndex.clear();
+
+	int iCount = 0;
+	kStream >> iCount;
+
+	// Safety clamp
+	if (iCount < 0)
+		iCount = 0;
+	if (iCount > AI_MAX_UNIT_SIGHTINGS)
+		iCount = AI_MAX_UNIT_SIGHTINGS;
+
+	m_Sightings.resize(iCount);
+
+	for (int i = 0; i < iCount; i++)
+	{
+		UnitSighting& s = m_Sightings[i];
+		kStream >> s.unitId;
+		kStream >> s.unitType;
+		kStream >> s.owner;
+		kStream >> s.x;
+		kStream >> s.y;
+		kStream >> s.lastSeenTurn;
+		kStream >> s.health;
+		kStream >> s.flags;
+		kStream >> s.lastDeltaX;
+		kStream >> s.lastDeltaY;
+		kStream >> s.movementPoints;
+		kStream >> s.predictedIntent;
+
+		// Rebuild index
+		unsigned int uKey = MakeKey((PlayerTypes)s.owner, (int)s.unitId);
+		m_SightingIndex[uKey] = i;
 	}
 }
 
@@ -9715,6 +10216,9 @@ void CvDiplomacyAI::DoTurn(DiplomacyMode eDiploMode, PlayerTypes ePlayer)
 	// Extended Memory System — capture state BEFORE any updates this turn
 	CaptureMemorySnapshot();
 	LogMemorySnapshot();
+
+	// Extended Memory System Phase 3 — clean up expired fog-of-war ghosts
+	m_UnitSightings.CleanupExpired(GC.getGame().getGameTurn());
 
 	// Test if the backstabber flag should be enabled or disabled
 	TestBackstabberFlag();
