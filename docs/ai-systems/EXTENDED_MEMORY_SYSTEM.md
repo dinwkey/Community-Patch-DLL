@@ -885,14 +885,18 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 5. Add serialization (not save compatible)
 6. Compile and verify no crashes
 
-### Phase 2: Pattern Detection (1-2 days)
+### Phase 2: Pattern Detection & Integration (DONE)
 
-1. Implement `IsPlayerBuildingUpNearUs()`
-2. Implement `IsSiegeWarningActive()`
-3. Implement `IsPlayerCreepingCloser()`
-4. Implement `HasTurnedHostileRecently()`
-5. Implement `AmIOverextended()`
-6. Add logging to verify detection works
+1. ~~Implement `IsPlayerBuildingUpNearUs()`~~ (done in Phase 1)
+2. ~~Implement `IsSiegeWarningActive()`~~ (done in Phase 1)
+3. ~~Implement `IsPlayerCreepingCloser()`~~ (done in Phase 1)
+4. ~~Implement `HasTurnedHostileRecently()`~~ (done in Phase 1)
+5. ~~Implement `AmIOverextended()`~~ (done in Phase 1)
+6. ~~Add logging to verify detection works~~ — `LogMemorySnapshot()` writes to `DiplomacyAI_Memory_Log`
+7. ~~Add `CountSiegeUnitsNearUs()` and `CountNavalUnitsNearUs()` helpers~~ — populate snapshot fields
+8. ~~Wire patterns into AI decisions:~~
+   - `DoAggressiveMilitaryStatement()`: skip if `AmIOverextended()`
+   - `SelectBestApproachTowardsMajorCiv()`: boost guarded/hostile on `HasTurnedHostileRecently()`, large boost on `IsAttackLikelyImminent()`
 
 ### Phase 3: Unit Tracking (2-3 days)
 
@@ -903,13 +907,12 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 5. Implement directional cone search
 6. Add serialization
 
-### Phase 4: Integration (2-3 days)
+### Phase 4: Deep Integration (2-3 days)
 
-1. Enhance `DoAggressiveMilitaryStatement()` with overextension check
-2. Add buildup warnings to approach calculation
-3. Add fog ghosts to danger plot calculation
-4. Add siege warning to defensive positioning
-5. Test in gameplay
+1. Add buildup warnings to war target prioritization
+2. Add fog ghosts to danger plot calculation
+3. Add siege warning to defensive positioning
+4. Test in gameplay
 
 ### Phase 5: Tuning & Validation (1-2 days)
 

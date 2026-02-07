@@ -844,11 +844,11 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 		// Proximity
 		pSnap->proximity[iPlayer] = (unsigned char)pMyPlayer->GetProximityToPlayer(eOther);
 
-		// Siege and naval units near us — for Phase 1 we approximate from the
-		// aggressive posture system; detailed per-unit-type counting comes in Phase 3.
-		// For now, store 0 (will be populated when unit-type helpers are added).
-		pSnap->siegeUnitsNearUs[iPlayer] = 0;
-		pSnap->navalUnitsNearUs[iPlayer] = 0;
+		// Siege and naval units near us — counted via dedicated helpers
+		int iSiege = CountSiegeUnitsNearUs(eOther);
+		pSnap->siegeUnitsNearUs[iPlayer] = (unsigned char)min(255, iSiege);
+		int iNaval = CountNavalUnitsNearUs(eOther);
+		pSnap->navalUnitsNearUs[iPlayer] = (unsigned char)min(255, iNaval);
 	}
 
 	// === Our state ===
@@ -891,7 +891,7 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 }
 
 //	-----------------------------------------------------------------------------------------------
-//	PATTERN DETECTION (Phase 2 stubs — minimal implementations)
+//	PATTERN DETECTION
 //	-----------------------------------------------------------------------------------------------
 
 /// Detect if a player is massing troops near our borders (3+ turn rising trend).
@@ -9705,6 +9705,7 @@ void CvDiplomacyAI::DoTurn(DiplomacyMode eDiploMode, PlayerTypes ePlayer)
 
 	// Extended Memory System — capture state BEFORE any updates this turn
 	CaptureMemorySnapshot();
+	LogMemorySnapshot();
 
 	// Test if the backstabber flag should be enabled or disabled
 	TestBackstabberFlag();
@@ -12874,6 +12875,76 @@ int CvDiplomacyAI::CountAggressiveMilitaryScore(PlayerTypes ePlayer, bool bHalve
 	}
 
 	return iScore;
+}
+
+/// Count the number of siege-class units a player has visible near our borders.
+/// Uses the same visibility / proximity filters as CountAggressiveMilitaryScore.
+int CvDiplomacyAI::CountSiegeUnitsNearUs(PlayerTypes ePlayer) const
+{
+	CvPlayerAI& kPlayer = GET_PLAYER(ePlayer);
+	TeamTypes eOurTeam = GetTeam();
+
+	int iCount = 0;
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iLoop))
+	{
+		// Only interested in siege units (city bombard / city special)
+		UnitAITypes eUnitAI = pLoopUnit->AI_getUnitAIType();
+		if (eUnitAI != UNITAI_CITY_BOMBARD && eUnitAI != UNITAI_CITY_SPECIAL)
+			continue;
+
+		CvPlot* pUnitPlot = pLoopUnit->plot();
+		// Visibility check — no cheating
+		if (!pUnitPlot->isVisible(eOurTeam) || pLoopUnit->isInvisible(eOurTeam, false))
+			continue;
+		if (pLoopUnit->isCargo() && pLoopUnit->getTransportUnit()->isInvisible(eOurTeam, false))
+			continue;
+
+		// Must be near our cities
+		if (!pUnitPlot->IsCloseToCity(GetID()))
+			continue;
+
+		iCount++;
+	}
+
+	return iCount;
+}
+
+/// Count the number of naval combat units a player has visible near our borders.
+/// Uses the same visibility / proximity filters as CountAggressiveMilitaryScore.
+int CvDiplomacyAI::CountNavalUnitsNearUs(PlayerTypes ePlayer) const
+{
+	CvPlayerAI& kPlayer = GET_PLAYER(ePlayer);
+	TeamTypes eOurTeam = GetTeam();
+
+	int iCount = 0;
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iLoop))
+	{
+		// Only interested in sea-domain combat units
+		if (pLoopUnit->getDomainType() != DOMAIN_SEA)
+			continue;
+		if (pLoopUnit->IsCivilianUnit())
+			continue;
+		UnitAITypes eUnitAI = pLoopUnit->AI_getUnitAIType();
+		if (eUnitAI == UNITAI_EXPLORE_SEA)
+			continue;
+
+		CvPlot* pUnitPlot = pLoopUnit->plot();
+		// Visibility check — no cheating
+		if (!pUnitPlot->isVisible(eOurTeam) || pLoopUnit->isInvisible(eOurTeam, false))
+			continue;
+		if (pLoopUnit->isCargo() && pLoopUnit->getTransportUnit()->isInvisible(eOurTeam, false))
+			continue;
+
+		// Must be near our cities
+		if (!pUnitPlot->IsCloseToCity(GetID()))
+			continue;
+
+		iCount++;
+	}
+
+	return iCount;
 }
 
 /// Updates how aggressively all players' military Units are positioned in relation to us
@@ -17862,6 +17933,21 @@ void CvDiplomacyAI::SelectBestApproachTowardsMajorCiv(PlayerTypes ePlayer, bool 
 			vApproachScores[CIV_APPROACH_HOSTILE] += vApproachBias[CIV_APPROACH_HOSTILE] * 3;
 			vApproachScores[CIV_APPROACH_WAR] += vApproachBias[CIV_APPROACH_WAR] * 3;
 			break;
+		}
+
+		// Extended Memory: boost guarded/hostile if they recently shifted to hostility
+		if (HasTurnedHostileRecently(ePlayer, 5))
+		{
+			vApproachScores[CIV_APPROACH_GUARDED] += vApproachBias[CIV_APPROACH_GUARDED] * 2;
+			vApproachScores[CIV_APPROACH_HOSTILE] += vApproachBias[CIV_APPROACH_HOSTILE];
+		}
+
+		// Extended Memory: if attack looks imminent, strongly boost guarded and defensive approaches
+		if (IsAttackLikelyImminent(ePlayer))
+		{
+			vApproachScores[CIV_APPROACH_GUARDED] += vApproachBias[CIV_APPROACH_GUARDED] * 3;
+			vApproachScores[CIV_APPROACH_HOSTILE] += vApproachBias[CIV_APPROACH_HOSTILE] * 2;
+			vApproachScores[CIV_APPROACH_FRIENDLY] -= vApproachBias[CIV_APPROACH_FRIENDLY] * 2;
 		}
 	}
 
@@ -28798,6 +28884,10 @@ void CvDiplomacyAI::DoAggressiveMilitaryStatement(PlayerTypes ePlayer, DiploStat
 
 	// Don't provoke a potential enemy if we can't afford another war - this could trigger them to attack us!
 	if (GetPlayer()->IsNoNewWars())
+		return;
+
+	// Extended Memory: don't provoke if we're already overextended (fighting too many wars)
+	if (AmIOverextended())
 		return;
 
 	// Don't provoke them if we have cities exposed to their attack - we'd be inviting them to strike
@@ -53382,6 +53472,95 @@ void CvDiplomacyAI::LogWarStatus()
 				}
 			}
 		}
+	}
+}
+
+/// Log Extended Memory pattern detection results for each known major civ.
+/// Writes to a dedicated DiplomacyAI_Memory_Log file.
+void CvDiplomacyAI::LogMemorySnapshot()
+{
+	if (!GC.getLogging() || !GC.getAILogging())
+		return;
+
+	// Only log if we have at least a couple of turns of data
+	if (m_Memory.validCount < 2)
+		return;
+
+	CvString strOutBuf;
+	CvString strBaseString;
+	CvString playerName;
+	CvString otherPlayerName;
+	CvString strLogName;
+	CvString strTemp;
+
+	playerName = GetPlayer()->getCivilizationShortDescription();
+
+	if (GC.getPlayerAndCityAILogSplit())
+		strLogName = "DiplomacyAI_Memory_Log_" + playerName + ".csv";
+	else
+		strLogName = "DiplomacyAI_Memory_Log.csv";
+
+	FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
+
+	strBaseString.Format("%03d, ", GC.getGame().getElapsedGameTurns());
+	strBaseString += playerName;
+
+	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
+	if (!pNow)
+		return;
+
+	// Log per-scalar state once
+	strTemp.Format("SELF: cities=%d gpt=%d wars=%d rank=%d flags=0x%02X",
+		(int)pNow->numCities, (int)pNow->goldPerTurn, (int)pNow->numWars,
+		(int)pNow->militaryRank, (int)pNow->flags);
+	strOutBuf = strBaseString + ", " + strTemp;
+
+	if (AmIOverextended())
+		strOutBuf += ", OVEREXTENDED";
+
+	pLog->Msg(strOutBuf);
+
+	// Log per-civ pattern detection
+	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
+	{
+		PlayerTypes eOther = (PlayerTypes)iPlayer;
+		if (!IsPlayerValid(eOther) || eOther == GetID())
+			continue;
+		if (GET_PLAYER(eOther).isMinorCiv())
+			continue;
+
+		// Only log if something interesting is happening with this civ
+		bool bBuildUp     = IsPlayerBuildingUpNearUs(eOther);
+		bool bSiege       = IsSiegeWarningActive(eOther);
+		bool bCreeping    = IsPlayerCreepingCloser(eOther);
+		bool bHostile     = HasTurnedHostileRecently(eOther, 5);
+		bool bThreatRise  = IsThreatRising(eOther);
+		bool bAttackImm   = IsAttackLikelyImminent(eOther);
+		int  iThreat      = GetHistoricalThreat(eOther, 0);
+
+		// Skip civs with no interesting signals
+		if (!bBuildUp && !bSiege && !bCreeping && !bHostile && !bThreatRise && !bAttackImm && iThreat == 0)
+			continue;
+
+		otherPlayerName = GET_PLAYER(eOther).getCivilizationShortDescription();
+		strOutBuf = strBaseString + ", vs " + otherPlayerName;
+
+		strTemp.Format(", mil=%d siege=%d naval=%d prox=%d threat=%d",
+			(int)pNow->theirMilitaryNearUs[iPlayer],
+			(int)pNow->siegeUnitsNearUs[iPlayer],
+			(int)pNow->navalUnitsNearUs[iPlayer],
+			(int)pNow->proximity[iPlayer],
+			iThreat);
+		strOutBuf += strTemp;
+
+		if (bBuildUp)    strOutBuf += ", BUILDUP";
+		if (bSiege)      strOutBuf += ", SIEGE_WARN";
+		if (bCreeping)   strOutBuf += ", CREEPING";
+		if (bHostile)    strOutBuf += ", HOSTILE_SHIFT";
+		if (bThreatRise) strOutBuf += ", THREAT_RISING";
+		if (bAttackImm)  strOutBuf += ", *** ATTACK_LIKELY ***";
+
+		pLog->Msg(strOutBuf);
 	}
 }
 

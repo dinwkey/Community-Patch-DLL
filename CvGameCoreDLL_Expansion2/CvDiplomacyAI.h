@@ -161,7 +161,7 @@ public:
 	CivMemory& GetMemory() { return m_Memory; }
 	const CivMemory& GetMemory() const { return m_Memory; }
 
-	// --- Pattern Detection (Phase 2 stubs — declarations only for now) ---
+	// --- Pattern Detection ---
 	bool IsPlayerBuildingUpNearUs(PlayerTypes ePlayer) const;
 	bool IsSiegeWarningActive(PlayerTypes ePlayer) const;
 	bool IsPlayerCreepingCloser(PlayerTypes ePlayer) const;
@@ -1247,6 +1247,8 @@ public:
 	// ------------------------------------
 
 	int CountAggressiveMilitaryScore(PlayerTypes ePlayer, bool bHalveDefenders);
+	int CountSiegeUnitsNearUs(PlayerTypes ePlayer) const;
+	int CountNavalUnitsNearUs(PlayerTypes ePlayer) const;
 	void DoUpdateMilitaryAggressivePostures();
 
 	void DoExpansionBickering();
@@ -1998,6 +2000,7 @@ private:
 	void LogPersonality();
 	void LogStatus();
 	void LogWarStatus();
+	void LogMemorySnapshot();
 
 	void LogGrandStrategy(CvString& strString);
 
