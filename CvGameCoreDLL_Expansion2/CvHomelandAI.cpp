@@ -498,6 +498,8 @@ void CvHomelandAI::FindHomelandTargets()
 
 	bool bBonusFromGarrisons = m_pPlayer->GetHappinessPerGarrisonedUnit() > 0 || m_pPlayer->IsGarrisonFreeMaintenance();
 	bool bBonusFromCityStrength = m_pPlayer->GetHappinessPerCityOverStrengthThreshold() > 0;
+	int iMemoryThreatWeight = m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
+	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 
 	for(int iI = 0; iI < iNumPlots; iI++)
 	{
@@ -531,10 +533,18 @@ void CvHomelandAI::FindHomelandTargets()
 
 				if (iNearbyUnowned > 5)
 				{
+					int iCityPriority = pCity->getThreatValue();
+					if (bMemoryThreat)
+					{
+						if (pCity->isBorderCity() || m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, NO_PLAYER))
+							iCityPriority += iMemoryThreatWeight;
+						else
+							iCityPriority += iMemoryThreatWeight / 3;
+					}
 					newTarget.SetTargetType(AI_HOMELAND_TARGET_CITY);
 					newTarget.SetTargetX(pLoopPlot->getX());
 					newTarget.SetTargetY(pLoopPlot->getY());
-					newTarget.SetAuxIntData(70);
+					newTarget.SetAuxIntData(max(70, iCityPriority));
 					m_TargetedCities.push_back(newTarget);
 				}
 				else
@@ -583,6 +593,8 @@ void CvHomelandAI::FindHomelandTargets()
 				if (!vUnfriendlyMajors.empty() && pLoopPlot->IsBorderLand(m_pPlayer->GetID(), vUnfriendlyMajors))
 				{
 					int iWeight = 100000 + pLoopPlot->defenseModifier(eTeam, false, false);
+					if (bMemoryThreat)
+						iWeight += iMemoryThreatWeight * 5;
 
 					newTarget.SetTargetType(AI_HOMELAND_TARGET_FORT);
 					newTarget.SetTargetX(pLoopPlot->getX());
@@ -601,6 +613,8 @@ void CvHomelandAI::FindHomelandTargets()
 					int iScore = TacticalAIHelpers::SentryScore(pLoopPlot, m_pPlayer->GetID());
 					if (iScore > 30)
 					{
+						if (bMemoryThreat)
+							iScore += iMemoryThreatWeight / 4;
 						newTarget.SetTargetType(AI_HOMELAND_TARGET_SENTRY_POINT);
 						newTarget.SetTargetX(pLoopPlot->getX());
 						newTarget.SetTargetY(pLoopPlot->getY());
@@ -926,6 +940,7 @@ void CvHomelandAI::PlotHealMoves(bool bConservative)
 void CvHomelandAI::PlotMovesToSafety()
 {
 	ClearCurrentMoveUnits(AI_HOMELAND_MOVE_TO_SAFETY);
+	int iMemoryThreatWeight = m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
 
 	// Loop through all recruited units
 	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
@@ -949,7 +964,10 @@ void CvHomelandAI::PlotMovesToSafety()
 
 		//allow some danger from fog etc
 		int iDangerLevel = pUnit->GetDanger();
-		if (iDangerLevel < pUnit->GetCurrHitPoints() / 5)
+		int iBaseDangerThreshold = pUnit->GetCurrHitPoints() / 5;
+		if (pUnit->IsCivilianUnit() && iMemoryThreatWeight >= 40)
+			iBaseDangerThreshold = pUnit->GetCurrHitPoints() / 3;
+		if (iDangerLevel < iBaseDangerThreshold)
 			continue;
 
 		// civilian always ready to flee
@@ -6349,6 +6367,8 @@ void CvHomelandAI::ExecuteAircraftMoves()
 bool CvHomelandAI::MoveCivilianToGarrison(CvUnit* pUnit)
 {
 	WeightedPlotVector aBestPlotList;
+	int iMemoryThreatWeight = m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
+	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 	int iLoopCity = 0;
 	for(CvCity *pLoopCity = m_pPlayer->firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iLoopCity))
 	{
@@ -6371,6 +6391,14 @@ bool CvHomelandAI::MoveCivilianToGarrison(CvUnit* pUnit)
 		iValue -= plotDistance(pUnit->getX(), pUnit->getY(), pLoopCity->getX(), pLoopCity->getY());
 		if (m_pPlayer->getCapitalCity())
 			iValue -= plotDistance(m_pPlayer->getCapitalCity()->getX(), m_pPlayer->getCapitalCity()->getY(), pLoopCity->getX(), pLoopCity->getY());
+
+		if (bMemoryThreat)
+		{
+			if (pLoopCity->isBorderCity() || m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pLoopCity, NO_PLAYER))
+				iValue -= 50 + iMemoryThreatWeight / 2;
+			else
+				iValue += iMemoryThreatWeight / 4;
+		}
 
 		aBestPlotList.push_back(pLoopPlot, max(iValue, 0));
 	}
