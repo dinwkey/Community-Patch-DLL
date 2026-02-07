@@ -276,8 +276,8 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
         // Approach
         pSnap->approach[iPlayer] = (int8)GetCivApproach(eOther);
         
-        // Military near us
-        pSnap->theirMilitaryNearUs[iPlayer] = (uint8)min(255, GetEnemyMilitaryNearUs(eOther));
+        // Military near us (raw combat unit count; intent filtering happens in detection)
+        pSnap->theirMilitaryNearUs[iPlayer] = (uint8)min(255, CountCombatUnitsNearUs(eOther));
         
         // Their military strength (scaled to 0-255)
         int iTheirStrength = GET_PLAYER(eOther).GetMilitaryMight();
@@ -563,8 +563,10 @@ bool CvUnitSightingManager::CouldGhostThreatenCity(UnitSighting* pGhost, CvCity*
 
 ```cpp
 // Detect if a player is massing troops near our borders (3+ turn trend)
+// Hybrid: return false if intent filter says they're not likely targeting us
 bool CvDiplomacyAI::IsPlayerBuildingUpNearUs(PlayerTypes ePlayer)
 {
+    if (!IsLikelyIntentAgainstUs(ePlayer)) return false;
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     TurnSnapshot* p3Ago = m_Memory.GetTurnsAgo(3);
     TurnSnapshot* p6Ago = m_Memory.GetTurnsAgo(6);
@@ -933,7 +935,7 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 | `turn` | `int16` | 2B | `GC.getGame().getGameTurn()` |
 | `warState[]` | `int8[43-62]` | 43-62B | `GetWarState(ePlayer)` |
 | `approach[]` | `int8[43-62]` | 43-62B | `GetCivApproach(ePlayer)` |
-| `theirMilitaryNearUs[]` | `uint8[43-62]` | 43-62B | `GetEnemyMilitaryNearUs(ePlayer)` — may need new |
+| `theirMilitaryNearUs[]` | `uint8[43-62]` | 43-62B | `CountCombatUnitsNearUs(ePlayer)` (raw count) |
 | `theirMilitaryStrength[]` | `uint8[43-62]` | 43-62B | `GET_PLAYER(ePlayer).GetMilitaryMight()` scaled |
 | `proximity[]` | `uint8[43-62]` | 43-62B | `GetPlayer()->GetProximityToPlayer(ePlayer)` |
 | `siegeUnitsNearUs[]` | `uint8[43-62]` | 43-62B | New function needed |

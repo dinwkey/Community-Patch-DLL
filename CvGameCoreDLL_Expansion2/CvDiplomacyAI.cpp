@@ -813,7 +813,7 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 
 	// === Per-civ data ===
 	int iNumWars = 0;
-	int iTotalAggressionNearUs = 0;
+	int iTotalUnitsNearUs = 0;
 
 	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
 	{
@@ -829,11 +829,11 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 		// Approach
 		pSnap->approach[iPlayer] = (char)GetCivApproach(eOther);
 
-		// Aggressive military score near our borders (uses existing function)
-		int iAggrScore = CountAggressiveMilitaryScore(eOther, false);
-		int iClamped = (iAggrScore > 255) ? 255 : iAggrScore;
+		// Raw combat unit count near our borders (hybrid: intent filtering happens in detection)
+		int iUnitCount = CountCombatUnitsNearUs(eOther);
+		int iClamped = (iUnitCount > 255) ? 255 : iUnitCount;
 		pSnap->theirMilitaryNearUs[iPlayer] = (unsigned char)iClamped;
-		iTotalAggressionNearUs += iClamped;
+		iTotalUnitsNearUs += iClamped;
 
 		// Their military strength scaled to 0-255
 		int iTheirMight = GET_PLAYER(eOther).GetMilitaryMight();
@@ -854,7 +854,7 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 	// === Our state ===
 	pSnap->numCities = (unsigned char)min(255, pMyPlayer->getNumCities());
 	pSnap->goldPerTurn = (short)pMyPlayer->calculateGoldRate();
-	pSnap->numUnitsNearBorders = (unsigned char)min(255, iTotalAggressionNearUs);
+	pSnap->numUnitsNearBorders = (unsigned char)min(255, iTotalUnitsNearUs);
 	pSnap->numWars = (unsigned char)iNumWars;
 
 	// Military rank: count how many alive major civs have higher military might
@@ -897,6 +897,9 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 /// Detect if a player is massing troops near our borders (3+ turn rising trend).
 bool CvDiplomacyAI::IsPlayerBuildingUpNearUs(PlayerTypes ePlayer) const
 {
+	if (!IsLikelyIntentAgainstUs(ePlayer))
+		return false;
+
 	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
 	const TurnSnapshot* p3Ago = m_Memory.GetTurnsAgo(3);
 	const TurnSnapshot* p6Ago = m_Memory.GetTurnsAgo(6);
@@ -917,6 +920,9 @@ bool CvDiplomacyAI::IsPlayerBuildingUpNearUs(PlayerTypes ePlayer) const
 /// Siege units near borders = very high-confidence attack signal.
 bool CvDiplomacyAI::IsSiegeWarningActive(PlayerTypes ePlayer) const
 {
+	if (!IsLikelyIntentAgainstUs(ePlayer))
+		return false;
+
 	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
 	if (!pNow) return false;
 	return pNow->siegeUnitsNearUs[ePlayer] >= 2;
@@ -1011,6 +1017,9 @@ bool CvDiplomacyAI::IsThreatRising(PlayerTypes ePlayer) const
 /// Composite attack prediction: 4+ warning signals = high confidence.
 bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer) const
 {
+	if (!IsLikelyIntentAgainstUs(ePlayer))
+		return false;
+
 	int iWarningSignals = 0;
 
 	if (IsPlayerBuildingUpNearUs(ePlayer))
@@ -12877,6 +12886,36 @@ int CvDiplomacyAI::CountAggressiveMilitaryScore(PlayerTypes ePlayer, bool bHalve
 	return iScore;
 }
 
+/// Count the number of combat units a player has visible near our borders.
+/// Hybrid model: raw counts are stored; intent filtering happens in detection.
+int CvDiplomacyAI::CountCombatUnitsNearUs(PlayerTypes ePlayer) const
+{
+	CvPlayerAI& kPlayer = GET_PLAYER(ePlayer);
+	TeamTypes eOurTeam = GetTeam();
+
+	int iCount = 0;
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iLoop))
+	{
+		// Ignore civilians and pure explorers
+		if (pLoopUnit->IsCivilianUnit() || pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE || pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE_SEA)
+			continue;
+
+		CvPlot* pUnitPlot = pLoopUnit->plot();
+		// Can we actually see this Unit? No cheating!
+		if (!pUnitPlot->isVisible(eOurTeam) || pLoopUnit->isInvisible(eOurTeam, false) || (pLoopUnit->isCargo() && pLoopUnit->getTransportUnit()->isInvisible(eOurTeam, false)))
+			continue;
+
+		// Must be close to us
+		if (!pUnitPlot->IsCloseToCity(GetID()))
+			continue;
+
+		iCount++;
+	}
+
+	return iCount;
+}
+
 /// Count the number of siege-class units a player has visible near our borders.
 /// Uses the same visibility / proximity filters as CountAggressiveMilitaryScore.
 int CvDiplomacyAI::CountSiegeUnitsNearUs(PlayerTypes ePlayer) const
@@ -12945,6 +12984,37 @@ int CvDiplomacyAI::CountNavalUnitsNearUs(PlayerTypes ePlayer) const
 	}
 
 	return iCount;
+}
+
+/// Quick intent filter to reduce false positives in pattern detection.
+bool CvDiplomacyAI::IsLikelyIntentAgainstUs(PlayerTypes ePlayer) const
+{
+	CvPlayerAI& kPlayer = GET_PLAYER(ePlayer);
+
+	if (!IsAtWar(ePlayer))
+	{
+		// City-States and vassals can't declare on their own
+		if (kPlayer.isMinorCiv() || kPlayer.IsVassalOfSomeone())
+			return false;
+	}
+
+	// Vassals count units for independence deterrence, but don't assume hostile intent otherwise
+	if (kPlayer.isMajorCiv() && !IsVassal(ePlayer))
+	{
+		// We're allowing them Open Borders? We shouldn't assume hostile intent.
+		if (GET_TEAM(GetTeam()).IsAllowsOpenBordersToTeam(kPlayer.getTeam()))
+			return false;
+
+		// We're working together, so don't assume hostile intent.
+		if (IsDoFAccepted(ePlayer) || IsHasDefensivePact(ePlayer))
+			return false;
+
+		// They resurrected us, so don't assume hostile intent.
+		if ((WasResurrectedBy(ePlayer) || IsMasterLiberatedMeFromVassalage(ePlayer)) && !IsAtWar(ePlayer))
+			return false;
+	}
+
+	return true;
 }
 
 /// Updates how aggressively all players' military Units are positioned in relation to us

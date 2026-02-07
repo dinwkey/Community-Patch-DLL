@@ -1247,8 +1247,10 @@ public:
 	// ------------------------------------
 
 	int CountAggressiveMilitaryScore(PlayerTypes ePlayer, bool bHalveDefenders);
+	int CountCombatUnitsNearUs(PlayerTypes ePlayer) const;
 	int CountSiegeUnitsNearUs(PlayerTypes ePlayer) const;
 	int CountNavalUnitsNearUs(PlayerTypes ePlayer) const;
+	bool IsLikelyIntentAgainstUs(PlayerTypes ePlayer) const;
 	void DoUpdateMilitaryAggressivePostures();
 
 	void DoExpansionBickering();
