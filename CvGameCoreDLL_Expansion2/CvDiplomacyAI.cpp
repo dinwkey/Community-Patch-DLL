@@ -1271,6 +1271,15 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(const UnitSighting* p
 	if (eWarState == WAR_STATE_DEFENSIVE || eWarState == WAR_STATE_NEARLY_DEFEATED)
 		return UNIT_INTENT_ATTACK_CITY;
 
+	// Early war: WarScore is near zero because no combat has happened yet.
+	// Healthy enemy units should be assumed attacking — they just went to war.
+	if (eWarState == WAR_STATE_STALEMATE || eWarState == WAR_STATE_CALM)
+	{
+		int iNumTurnsAtWar = GET_TEAM(m_pPlayer->getTeam()).GetNumTurnsAtWar(GET_PLAYER(eOwner).getTeam());
+		if (iNumTurnsAtWar <= 5)
+			return UNIT_INTENT_ATTACK_CITY;
+	}
+
 	return UNIT_INTENT_UNKNOWN;
 }
 
@@ -1320,6 +1329,17 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntentNearCity(const UnitSig
 
 	bool bWeAreWinning = (eWarState == WAR_STATE_OFFENSIVE || eWarState == WAR_STATE_NEARLY_WON);
 	bool bWeAreLosing  = (eWarState == WAR_STATE_DEFENSIVE || eWarState == WAR_STATE_NEARLY_DEFEATED);
+
+	// Early war override: WarScore is near zero because no combat has happened yet.
+	// Treat healthy enemy units near our cities as attacking during the opening turns.
+	bool bEarlyWar = false;
+	if (!bWeAreWinning && !bWeAreLosing)
+	{
+		int iNumTurnsAtWar = GET_TEAM(m_pPlayer->getTeam()).GetNumTurnsAtWar(GET_PLAYER(eOwner).getTeam());
+		bEarlyWar = (iNumTurnsAtWar <= 5);
+		if (bEarlyWar)
+			bWeAreLosing = true;  // Assume defensive posture — treat enemies as attacking
+	}
 
 	// --- Decision matrix: combine direction + health + war state ---
 
