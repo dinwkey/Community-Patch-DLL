@@ -11688,6 +11688,28 @@ PlotVisibilityChangeResult CvPlot::changeVisibilityCount(TeamTypes eTeam, int iC
 			if (!loopUnit || loopUnit->isInvisible(eTeam, false, false))
 				continue;
 
+			// Extended Memory System: notify sighting manager when a unit is revealed by fog lift.
+			// This covers stationary enemies (fortified, healing, parked) that OnUnitMoved() misses.
+			if (loopUnit->IsCombatUnit() && !loopUnit->isBarbarian())
+			{
+				const std::vector<PlayerTypes>& aeSightPlayers = GET_TEAM(eTeam).getPlayers();
+				for (size_t iS = 0; iS < aeSightPlayers.size(); iS++)
+				{
+					PlayerTypes eSightPlayer = aeSightPlayers[iS];
+					if (eSightPlayer != NO_PLAYER)
+					{
+						CvPlayer& kObserver = GET_PLAYER(eSightPlayer);
+						if (kObserver.isAlive() && kObserver.isMajorCiv()
+							&& kObserver.getTeam() != loopUnit->getTeam())
+						{
+							CvDiplomacyAI* pDiploAI = kObserver.GetDiplomacyAI();
+							if (pDiploAI)
+								pDiploAI->GetSightingManager().OnUnitSeen(loopUnit);
+						}
+					}
+				}
+			}
+
 			// If it is an enemy unit, update the danger plots! 
 			if (GET_TEAM(eTeam).isAtWar(loopUnit->getTeam()))
 			{

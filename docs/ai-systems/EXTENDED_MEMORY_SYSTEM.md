@@ -1058,7 +1058,7 @@ TacticalAIHelpers::PerformRangedOpportunityAttack()
 
 1. **One direction sample per unit**: Only the most recent movement step is stored (`lastDeltaX/lastDeltaY`). Multi-turn trends (circling, flanking, zigzag) cannot be detected. A unit that approached for 5 turns then retreated 1 turn will be classified based solely on the last step.
 
-2. **`OnUnitSeen()` is not hooked**: The method exists but has no call site. Units that appear in visibility without moving (e.g., revealed by moving your own scout) don't get tracked until they move. This means a fortified unit visible for the first time has no sighting record.
+2. **~~`OnUnitSeen()` is not hooked~~ (FIXED)**: Previously, the method existed but had no call site. Now hooked into `CvPlot::changeVisibilityCount()` — when a plot gains visibility (`iChange > 0`), all combat units on it are reported to the sighting manager via `OnUnitSeen()`. This covers stationary enemies revealed by fog lift (e.g., a fortified catapult spotted by your scout). Together with `OnUnitMoved()` in `CvUnit::setXY()`, all visibility scenarios are now covered.
 
 3. **Intent inference is simple**: `InferUnitIntent()` uses only health threshold (50%) and war state. It doesn't consider:
    - Unit distance to nearest city
@@ -1073,7 +1073,7 @@ TacticalAIHelpers::PerformRangedOpportunityAttack()
    - Coordinated attacks from multiple directions
    - Feints (one army as distraction while another attacks elsewhere)
 
-5. **Human player has sighting data but limited use**: The `OnUnitMoved` hook iterates over ALL major civs including human players, so the human player's sighting manager IS populated. However, it's only used for automated decisions (city bombardment auto-targeting). Human players making manual targeting choices don't benefit from it.
+5. **Human player has sighting data — used only indirectly**: The `OnUnitMoved` hook iterates over ALL major civs including human players, so the human player's sighting manager IS populated. However, city bombardment auto-targeting (`getBestRangedStrikeTarget`, `PerformRangedOpportunityAttack`) and garrison tactical decisions only run inside `CvTacticalAI::Update()`, which is **AI-only** — human players get only `UpdateVisibility()` + `CleanUp()`. The actual consumers of sighting data for human players are: **(a)** `CvDangerPlots` fog ghost projection (runs for all players, affects automated worker/scout pathfinding and internal danger assessment), and **(b)** `NeedsGarrison()` via `HomelandAI` (affects automated garrison decisions for human automated units). The cost of populating human sighting data is trivial (~5 KB memory, ~2% of the `OnUnitMoved` loop), and removing it would break fog-aware danger avoidance for automated workers/scouts.
 
 6. **War state can be wrong early**: `InferUnitIntent()` relies on `GetWarState()` which can lag behind reality. In the first turns of a surprise war, `WAR_STATE_STALEMATE` may be returned even when the enemy is clearly attacking.
 
