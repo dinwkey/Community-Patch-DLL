@@ -931,6 +931,11 @@ void CvUnitSightingManager::OnUnitSeen(CvUnit* pUnit)
 	pSighting->health = (unsigned char)((pUnit->GetCurrHitPoints() * 100) / max(1, pUnit->GetMaxHitPoints()));
 	pSighting->flags = ComputeFlags(pUnit);
 	pSighting->movementPoints = (unsigned char)min(255, pUnit->maxMoves() / max(1, GD_INT_GET(MOVE_DENOMINATOR)));
+	// No movement context when revealed by fog lift, so clear direction data.
+	pSighting->lastDeltaX = 0;
+	pSighting->lastDeltaY = 0;
+	pSighting->avgDX = 0;
+	pSighting->avgDY = 0;
 }
 
 /// Called when an enemy unit moves. Captures direction and updates position
@@ -1001,6 +1006,14 @@ void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pT
 			pSighting->lastDeltaX = (char)(pTo->getX() - pFrom->getX());
 			pSighting->lastDeltaY = (char)(pTo->getY() - pFrom->getY());
 		}
+	}
+	else
+	{
+		// Direction is unknown if we didn't see the origin; clear stale direction.
+		pSighting->lastDeltaX = 0;
+		pSighting->lastDeltaY = 0;
+		pSighting->avgDX = 0;
+		pSighting->avgDY = 0;
 	}
 
 	// Update position and state if we can see the destination
