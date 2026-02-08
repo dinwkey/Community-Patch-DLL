@@ -974,12 +974,42 @@ This means the land classification acts as a **priority filter** before any wate
 | Water body shapes (straits, narrows) | Yes — terrain never changes | Compute once on discovery, cache permanently |
 | Coastal exposure per city | Semi-static — changes only when cities founded/captured nearby | Recompute on city events only |
 | Naval chokepoint control (who owns the canal city) | Dynamic — changes on capture | Update on city capture events only |
+| **Fort/canal construction on strait** | Dynamic — new transit point created | See "Fort/Canal Visibility Model" below |
+| **Fort pillaged on strait** | Dynamic — transit point destroyed | Same as above — pathfinding sees raw data immediately |
 | Enemy naval threat near our coast | Dynamic — changes every turn | This is existing danger system, NOT geography |
+
+#### Fort/Canal Visibility Model (Code-Verified)
+
+Trade route and naval pathfinding both use `isRevealed()` (has the team ever seen this tile?) as the gate — NOT `isVisible()` (can they see it right now). Once a plot passes the `isRevealed()` check, `isCoastalCityOrPassableImprovement()` reads **raw plot data directly** (`IsImprovementPassable()`, `isOwned()`, `IsImprovementPillaged()`) with no additional fog-of-war filter.
+
+**Implications for strategic geography:**
+
+| Scenario | Pathfinding sees it? | AI action needed? |
+|----------|---------------------|------------------|
+| Fort built on a **previously-revealed** tile (even in fog) | **YES** — trade path cache picks it up on next per-turn recomputation | No re-exploration needed. Naval geography should trigger re-scan when trade path cache changes. |
+| Fort built on a **never-revealed** tile | **NO** — `isRevealed()` gate rejects it | Exploration required. AI should explore `IsWaterAreaSeparator()` plots to discover potential canal sites. |
+| Fort **pillaged** while in fog | **YES** — `IsImprovementPillaged()` is read directly | Transit route lost immediately in pathfinding. Naval geography should detect this. |
+| Enemy city founded on a revealed strait | **YES** — city canals are owner-only but pathfinding sees the city exists | Re-scan: new controllable chokepoint appeared. |
+
+**When to re-scan naval geography (event triggers):**
+
+1. **City founded/captured near water** — existing trigger, covers canal cities
+2. **Improvement built on `IsWaterAreaSeparator()` plot** — new canal/fort connecting two water areas. Hook into `CvPlot::SetImprovementType()` or improvement completion event to detect this.
+3. **Improvement pillaged on a strait plot** — transit lost. Same hook.
+4. **Trade path cache invalidated** — the trade route system already recomputes once per turn per player (`UpdateTradePathCache()`). If a new water path appears that didn't exist last turn (new fort opened a canal), that's a signal to re-scan nearby naval geography. This is the cheapest detection method — compare path count or hash before/after.
+5. **New area revealed adjacent to water** — exploration discovered coastline. Trigger local scan of newly-revealed water plots.
+
+**Do we need periodic re-exploration?**
+
+Not for forts on revealed tiles — pathfinding sees them automatically. But for tiles the AI has **never explored**, there's no way to know what's there. The AI already has exploration logic (scout/naval unit pathing). The strategic geography system should flag `IsWaterAreaSeparator()` tiles that are **unrevealed** as high-priority exploration targets — if land separates two known water bodies and the land between them hasn't been explored, there might be a buildable canal site or an enemy city/fort creating transit.
+
+In practice, most strait-adjacent land tiles are revealed early because they're near coastlines that naval units naturally path along. The main risk is inland canal sites (e.g., Panama-like isthmuses) that a naval scout can't reach — those require land exploration.
 
 **Key insight: naval geography is almost entirely static.** Unlike land strategic geography (which shifts with front lines), water terrain and chokepoint locations are fixed at map generation. Only *control* of chokepoints changes (city captures, fort construction). This means:
 
 1. **Compute chokepoints once** (during `calculateAreas()` or first update), cache in plot bitflags.
 2. **Compute coastal exposure once per city**, recompute only on nearby city events.
 3. **Track chokepoint control** as a lightweight ownership check (whose city/fort sits on the chokepoint?), not a full re-scan.
+4. **Detect new transit points** via trade path cache changes or improvement-build events — no polling needed.
 
 This makes the naval geography system essentially **free** on most turns — amortized cost approaches zero.
