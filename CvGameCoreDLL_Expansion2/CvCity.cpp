@@ -33129,7 +33129,29 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					int iTargetHP = pTarget->GetCurrHitPoints();
 					int iCityHP = GetMaxHitPoints() - getDamage();
 					int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
-					bool bRetreating = (bMovedThisTurn && iTargetHP <= pTarget->GetMaxHitPoints() / 2);
+
+					// RETREAT DETECTION via Extended Memory System (Phase 3)
+					bool bRetreating = false;
+					bool bConfirmedAttacking = false;
+					CvDiplomacyAI* pOwnerDiploAI = kOwner.GetDiplomacyAI();
+					if (pOwnerDiploAI)
+					{
+						const UnitSighting* pSighting = pOwnerDiploAI->GetSightingManager().GetSighting(pTarget->getOwner(), pTarget->GetID());
+						if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
+						{
+							UnitPredictedIntent eIntent = pOwnerDiploAI->GetSightingManager().InferUnitIntentNearCity(pSighting, getX(), getY());
+							bRetreating = (eIntent == UNIT_INTENT_RETREAT);
+							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY || eIntent == UNIT_INTENT_ATTACK_UNIT);
+						}
+						else
+						{
+							bRetreating = (bMovedThisTurn && iTargetHP <= pTarget->GetMaxHitPoints() / 2);
+						}
+					}
+					else
+					{
+						bRetreating = (bMovedThisTurn && iTargetHP <= pTarget->GetMaxHitPoints() / 2);
+					}
 
 					if (iDamage >= iTargetHP)
 					{
@@ -33208,6 +33230,10 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						if (!bCanReachCity)
 							iRetreatPenalty += 20;
 						iScore -= iRetreatPenalty;
+					}
+					else if (bConfirmedAttacking && bCanReachCity && iCityHPPercent <= 50)
+					{
+						iScore += 15;
 					}
 
 					// NAVAL MELEE CAPTURE THREAT - for coastal cities at critical HP

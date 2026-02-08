@@ -1274,6 +1274,106 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(const UnitSighting* p
 	return UNIT_INTENT_UNKNOWN;
 }
 
+/// City-aware intent inference: uses dot product of movement direction vs.
+/// unit-to-city vector to classify approach / retreat more accurately.
+/// This gives city defense better targeting: a wounded unit moving TOWARD
+/// the city is still attacking, and a healthy unit moving AWAY after a
+/// failed assault is retreating.
+UnitPredictedIntent CvUnitSightingManager::InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY) const
+{
+	if (!pSighting || !m_pPlayer)
+		return UNIT_INTENT_UNKNOWN;
+
+	PlayerTypes eOwner = (PlayerTypes)pSighting->owner;
+	CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
+
+	// Siege units are ALWAYS attacking cities — never deprioritize them
+	if (pSighting->flags & SIGHTING_FLAG_SIEGE)
+		return UNIT_INTENT_ATTACK_CITY;
+
+	// Not at war — patrol, regardless of direction
+	if (pDiploAI && !pDiploAI->IsAtWar(eOwner))
+		return UNIT_INTENT_PATROL;
+
+	// === Directional analysis ===
+	// Use dot product of (movement vector) and (unit → city vector)
+	// Positive dot = moving toward city, negative = moving away
+	bool bHasDirection = (pSighting->lastDeltaX != 0 || pSighting->lastDeltaY != 0);
+	int iDot = 0;
+	if (bHasDirection)
+	{
+		int dxToCity = iCityX - (int)pSighting->x;
+		int dyToCity = iCityY - (int)pSighting->y;
+		iDot = (int)pSighting->lastDeltaX * dxToCity + (int)pSighting->lastDeltaY * dyToCity;
+	}
+
+	bool bMovingToward = (bHasDirection && iDot > 0);
+	bool bMovingAway   = (bHasDirection && iDot < 0);
+	bool bDamaged      = (pSighting->health < 50);
+	bool bLightDamage  = (pSighting->health < 75);
+
+	// War state context (if available)
+	WarStateTypes eWarState = WAR_STATE_STALEMATE;
+	if (pDiploAI)
+		eWarState = pDiploAI->GetWarState(eOwner);
+
+	bool bWeAreWinning = (eWarState == WAR_STATE_OFFENSIVE || eWarState == WAR_STATE_NEARLY_WON);
+	bool bWeAreLosing  = (eWarState == WAR_STATE_DEFENSIVE || eWarState == WAR_STATE_NEARLY_DEFEATED);
+
+	// --- Decision matrix: combine direction + health + war state ---
+
+	// Case 1: Moving AWAY from city
+	if (bMovingAway)
+	{
+		// Wounded + moving away = almost certainly retreating
+		if (bDamaged)
+			return UNIT_INTENT_RETREAT;
+
+		// Lightly damaged + moving away + we're winning = retreating
+		if (bLightDamage && bWeAreWinning)
+			return UNIT_INTENT_RETREAT;
+
+		// Healthy but moving away while we're winning = probably withdrawing
+		if (bWeAreWinning)
+			return UNIT_INTENT_RETREAT;
+
+		// Healthy, moving away, stalemate or we're losing — could be
+		// repositioning/flanking, don't classify as retreating
+		return UNIT_INTENT_UNKNOWN;
+	}
+
+	// Case 2: Moving TOWARD city
+	if (bMovingToward)
+	{
+		// Moving toward city = attacking, even if wounded!
+		// A wounded catapult pushing toward is still a siege threat
+		if (bWeAreLosing)
+			return UNIT_INTENT_ATTACK_CITY;
+
+		// Any unit approaching during wartime is likely attacking
+		return UNIT_INTENT_ATTACK_CITY;
+	}
+
+	// Case 3: No directional data (unit hasn't moved since we started tracking,
+	// or we only saw the destination, not origin)
+	// Fall back to health + war state heuristic (same as original InferUnitIntent)
+	if (bDamaged)
+	{
+		// Wounded with no movement info — lean toward retreat unless we're losing
+		if (bWeAreLosing)
+			return UNIT_INTENT_UNKNOWN;  // Could go either way
+		return UNIT_INTENT_RETREAT;
+	}
+
+	if (bWeAreWinning)
+		return UNIT_INTENT_RETREAT;
+
+	if (bWeAreLosing)
+		return UNIT_INTENT_ATTACK_CITY;
+
+	return UNIT_INTENT_UNKNOWN;
+}
+
 // === Serialization ===
 
 void CvUnitSightingManager::Write(FDataStream& kStream) const

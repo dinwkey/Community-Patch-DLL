@@ -8606,17 +8606,47 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 							iDamage -= 20;
 					}
 
-					// LIGHTWEIGHT RETREATING HEURISTIC:
-					// Wounded units that moved this turn are likely retreating.
-					// When city HP is low, deprioritize them even if they are still in range.
-					bool bLikelyRetreating = (bMovedThisTurn &&
-						pOtherUnit->GetCurrHitPoints() <= pOtherUnit->GetMaxHitPoints() / 2);
+					// RETREAT DETECTION via Extended Memory System (Phase 3)
+					// City-aware directional intent: dot product of movement vector vs
+					// unit→city vector to distinguish approach from withdrawal.
+					// Falls back to lightweight heuristic if sighting data is unavailable.
+					bool bLikelyRetreating = false;
+					bool bConfirmedAttacking = false;
+					CvDiplomacyAI* pGarrisonOwnerDiplo = GET_PLAYER(pUnit->getOwner()).GetDiplomacyAI();
+					if (pGarrisonOwnerDiplo && pCity)
+					{
+						const UnitSighting* pSighting = pGarrisonOwnerDiplo->GetSightingManager().GetSighting(
+							pOtherUnit->getOwner(), pOtherUnit->GetID());
+						if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
+						{
+							UnitPredictedIntent eIntent = pGarrisonOwnerDiplo->GetSightingManager()
+								.InferUnitIntentNearCity(pSighting, pCity->getX(), pCity->getY());
+							bLikelyRetreating = (eIntent == UNIT_INTENT_RETREAT);
+							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY || eIntent == UNIT_INTENT_ATTACK_UNIT);
+						}
+						else
+						{
+							// Fallback: lightweight heuristic (wounded + moved this turn)
+							bLikelyRetreating = (bMovedThisTurn &&
+								pOtherUnit->GetCurrHitPoints() <= pOtherUnit->GetMaxHitPoints() / 2);
+						}
+					}
+					else
+					{
+						bLikelyRetreating = (bMovedThisTurn &&
+							pOtherUnit->GetCurrHitPoints() <= pOtherUnit->GetMaxHitPoints() / 2);
+					}
 					if (bLikelyRetreating && iCityHPPct <= 50 && eTargetAI != UNITAI_CITY_BOMBARD)
 					{
 						int iRetreatPenalty = 60;
 						if (!bTargetCanReachCity)
 							iRetreatPenalty += 20;
 						iDamage -= iRetreatPenalty;
+					}
+					else if (bConfirmedAttacking && bTargetCanReachCity && iCityHPPct <= 50)
+					{
+						// Sighting manager confirms this unit is attacking — small priority boost
+						iDamage += 15;
 					}
 					
 					// Embarked units are extremely vulnerable targets - prioritize them!

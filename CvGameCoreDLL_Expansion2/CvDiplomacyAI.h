@@ -214,6 +214,11 @@ public:
 	bool IsPlotInSearchCone(const UnitSighting* pGhost, int plotX, int plotY, int currentTurn) const;
 	bool CouldGhostThreatenCity(const UnitSighting* pGhost, CvCity* pCity, int currentTurn) const;
 
+	/// City-aware intent inference: uses movement direction relative to a specific
+	/// city to distinguish approach from retreat. More accurate than the general
+	/// InferUnitIntent() for city defense targeting decisions.
+	UnitPredictedIntent InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY) const;
+
 	// === Serialization ===
 	void Read(FDataStream& kStream);
 	void Write(FDataStream& kStream) const;
