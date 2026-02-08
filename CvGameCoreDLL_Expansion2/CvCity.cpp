@@ -33116,67 +33116,107 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						}
 					}
 
-					// Big bonus for kills - eliminating a unit is very valuable
+					// THREAT ASSESSMENT: Determine if this unit can potentially attack our city
+					UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
+					bool bIsNaval = (pTarget->getDomainType() == DOMAIN_SEA);
+					bool bCanReachCity = false;
+					bool bMovedThisTurn = (pTarget->getLastMoveTurn() == GC.getGame().getGameTurn());
+					if (pTarget->IsCanAttackRanged() || eUnitAI == UNITAI_CITY_BOMBARD)
+						bCanReachCity = (iRing <= pTarget->GetRange() + pTarget->baseMoves(false));
+					else
+						bCanReachCity = (iRing <= 1 + pTarget->baseMoves(false));
+
 					int iTargetHP = pTarget->GetCurrHitPoints();
+					int iCityHP = GetMaxHitPoints() - getDamage();
+					int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
+					bool bRetreating = (bMovedThisTurn && iTargetHP <= pTarget->GetMaxHitPoints() / 2);
+
 					if (iDamage >= iTargetHP)
 					{
-						// Can kill this unit! High priority.
-						iScore += 200;
+						if (bCanReachCity || iCityHPPercent > 50)
+							iScore += 200;
+						else
+							iScore += 80;
 					}
 					else if (iCombinedDamage >= iTargetHP && iDamage >= iTargetHP / 2)
 					{
-						// COORDINATED KILL: City can't kill alone but combined arms can!
-						iScore += 150;
+						if (bCanReachCity || iCityHPPercent > 50)
+							iScore += 150;
+						else
+							iScore += 60;
 					}
 					else if (iDamage >= iTargetHP * 2 / 3)
 					{
-						// Can heavily wound - good target
 						iScore += 50;
 					}
 					else if (iCombinedDamage >= iTargetHP * 2 / 3)
 					{
-						// Combined arms can heavily wound - coordinate fire
 						iScore += 30;
 					}
 
-					// Priority bonus for siege and ranged units - they threaten the city without taking damage
-					UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
+					// THREAT TO CITY TYPE ASSESSMENT
 					if (eUnitAI == UNITAI_CITY_BOMBARD)
 					{
-						// Siege units are the biggest threat to cities - highest priority
 						iScore += 100;
+						if (bCanReachCity)
+							iScore += 40;
 					}
 					else if (eUnitAI == UNITAI_RANGED || pTarget->IsCanAttackRanged())
 					{
-						// Ranged units can attack without taking damage - high priority
-						iScore += 75;
+						if (bIsNaval)
+						{
+							iScore += 50;
+							if (bCanReachCity)
+								iScore += 10;
+						}
+						else
+						{
+							iScore += 75;
+							if (bCanReachCity)
+								iScore += 20;
+						}
 					}
 					else if (eUnitAI == UNITAI_ATTACK_AIR || eUnitAI == UNITAI_MISSILE_AIR)
 					{
-						// Air units are dangerous
 						iScore += 60;
 					}
 					else if (iRing == 1 && iTargetHP < pTarget->GetMaxHitPoints() / 2)
 					{
-						// Adjacent wounded melee unit - immediate capture threat!
-						// This unit could capture the city next turn if not dealt with
-						iScore += 90;
+						if (bIsNaval)
+						{
+							if (iCityHPPercent <= 50)
+								iScore += 90;
+							else
+								iScore += 30;
+						}
+						else
+						{
+							iScore += 90;
+						}
 					}
-					// Regular melee units are lower priority - they take damage when attacking the city
+
+					if (!pTarget->isEmbarked() && !bCanReachCity && iDamage < iTargetHP)
+					{
+						iScore -= 30;
+						if (iTargetHP < pTarget->GetMaxHitPoints() / 2)
+							iScore -= 20;
+					}
+
+					if (bRetreating && iCityHPPercent <= 50 && eUnitAI != UNITAI_CITY_BOMBARD)
+					{
+						int iRetreatPenalty = 60;
+						if (!bCanReachCity)
+							iRetreatPenalty += 20;
+						iScore -= iRetreatPenalty;
+					}
 
 					// NAVAL MELEE CAPTURE THREAT - for coastal cities at critical HP
-					// Naval ranged are generally higher priority (they damage city without taking damage)
-					// BUT if city HP is critical, naval melee becomes the imminent capture threat!
 					if (isCoastal() && pTarget->getDomainType() == DOMAIN_SEA && !pTarget->IsCanAttackRanged())
 					{
-						// This is a naval melee unit that can capture our city
-						int iCityHP = GetMaxHitPoints() - getDamage();
-						int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
 						int iNavalMeleeBonus = 0;
 
 						if (iCityHPPercent <= 25)
 						{
-							// CRITICAL: City could be captured soon - naval melee is now top priority!
 							iNavalMeleeBonus = 100;
 
 							if (iRing == 1)
@@ -33190,7 +33230,7 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						}
 						else
 						{
-							iNavalMeleeBonus = 30;
+							iNavalMeleeBonus = 20;
 						}
 
 						if (iDamage >= iTargetHP)
@@ -33200,22 +33240,18 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					}
 
 					// Blockade breaker bonus - prioritize naval units that are blockading us
-					// Killing them restores city healing which is critical during a siege
 					if (GetCityCitizens()->AnyPlotBlockaded() && pTarget->getDomainType() == DOMAIN_SEA)
 					{
-						// Check if this unit is on a plot that's blockading one of our tiles
 						if (pTargetPlot->isBlockaded(getOwner()))
 						{
-							iScore += 70; // High priority - breaking blockade restores healing
+							iScore += 50;
 
-							// Extra bonus if we can kill the blockader
 							if (iDamage >= iTargetHP)
-								iScore += 30;
+								iScore += 25;
 						}
 					}
 
 					// ESCORT PROTECTION CHECK - bonus for killing naval units protecting embarked units
-					// When a naval unit escorts embarked units, killing the escort exposes them
 					if (pTarget->getDomainType() == DOMAIN_SEA && !pTarget->isEmbarked())
 					{
 						bool bProtectingEmbarked = false;
@@ -33253,8 +33289,6 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						{
 							iEmbarkedBonus += 50;
 
-							int iCityHP = GetMaxHitPoints() - getDamage();
-							int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
 							if (iCityHPPercent <= 25 && !pTarget->IsCanAttackRanged())
 								iEmbarkedBonus += 60;
 						}
@@ -33265,6 +33299,9 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 
 						if (eUnitAI == UNITAI_CITY_BOMBARD)
 							iEmbarkedBonus += 40;
+
+						if (bRetreating && iCityHPPercent <= 50 && eUnitAI != UNITAI_CITY_BOMBARD)
+							iEmbarkedBonus = max(0, iEmbarkedBonus - 80);
 
 						iScore += iEmbarkedBonus;
 					}

@@ -8538,25 +8538,86 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						iDamage += 15;
 					}
 					
+					// THREAT TO CITY ASSESSMENT - same hierarchy as city targeting:
+					// Siege > Land Ranged > Naval Ranged > Adjacent Wounded Melee > Other
+					bool bIsNavalTarget = (pOtherUnit->getDomainType() == DOMAIN_SEA);
+					int iTargetRing = pCity ? plotDistance(*pLoopPlot, *pCity->plot()) : 0;
+					UnitAITypes eTargetAI = pOtherUnit->AI_getUnitAIType();
+					int iCityHPPct = 100;
+					if (pCity)
+						iCityHPPct = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
+
+					// Check if target can attack the city
+					bool bTargetCanReachCity = false;
+					bool bMovedThisTurn = (pOtherUnit->getLastMoveTurn() == GC.getGame().getGameTurn());
+					if (pOtherUnit->IsCanAttackRanged() || eTargetAI == UNITAI_CITY_BOMBARD)
+						bTargetCanReachCity = (iTargetRing <= pOtherUnit->GetRange() + pOtherUnit->baseMoves(false));
+					else
+						bTargetCanReachCity = (iTargetRing <= 1 + pOtherUnit->baseMoves(false));
+
 					// Priority 1: Enemy siege units - biggest threat to city walls
-					if (pOtherUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+					if (eTargetAI == UNITAI_CITY_BOMBARD)
 					{
 						iDamage += 40;
+						if (bTargetCanReachCity)
+							iDamage += 20;
 					}
-					// Priority 2: Enemy ranged units - can damage city without retaliation
+					// Priority 2: Enemy ranged units - differentiate land vs naval
 					else if (pOtherUnit->IsCanAttackRanged())
 					{
-						iDamage += 25;
+						if (bIsNavalTarget)
+						{
+							// Naval ranged: less threat to city than land ranged
+							iDamage += 15;
+							if (bTargetCanReachCity)
+								iDamage += 5;
+						}
+						else
+						{
+							// Land ranged: significant threat to city
+							iDamage += 25;
+							if (bTargetCanReachCity)
+								iDamage += 10;
+						}
 					}
-					// Priority 3: Adjacent wounded melee - immediate capture threat!
-					// If melee is next to city and wounded, they might capture next turn
-					else if (pCity && plotDistance(*pLoopPlot, *pCity->plot()) == 1 && 
+					// Priority 3: Adjacent wounded melee - capture threat!
+					else if (pCity && iTargetRing == 1 && 
 							 pOtherUnit->GetCurrHitPoints() < pOtherUnit->GetMaxHitPoints() / 2)
 					{
-						// Wounded melee adjacent to city is an urgent capture threat
-						iDamage += 35;
+						if (bIsNavalTarget)
+						{
+							// Naval melee: only urgent at low city HP
+							iDamage += (iCityHPPct <= 50) ? 35 : 15;
+						}
+						else
+						{
+							// Land melee adjacent wounded - urgent capture threat
+							iDamage += 35;
+						}
 					}
 					// Regular melee further away - lowest priority (no bonus)
+
+					// Disengage penalty: don't target non-threatening units when city is under siege
+					if (!pOtherUnit->isEmbarked() && !bTargetCanReachCity &&
+						iDamage < pOtherUnit->GetCurrHitPoints())
+					{
+						iDamage -= 30;
+						if (pOtherUnit->GetCurrHitPoints() < pOtherUnit->GetMaxHitPoints() / 2)
+							iDamage -= 20;
+					}
+
+					// LIGHTWEIGHT RETREATING HEURISTIC:
+					// Wounded units that moved this turn are likely retreating.
+					// When city HP is low, deprioritize them even if they are still in range.
+					bool bLikelyRetreating = (bMovedThisTurn &&
+						pOtherUnit->GetCurrHitPoints() <= pOtherUnit->GetMaxHitPoints() / 2);
+					if (bLikelyRetreating && iCityHPPct <= 50 && eTargetAI != UNITAI_CITY_BOMBARD)
+					{
+						int iRetreatPenalty = 60;
+						if (!bTargetCanReachCity)
+							iRetreatPenalty += 20;
+						iDamage -= iRetreatPenalty;
+					}
 					
 					// Embarked units are extremely vulnerable targets - prioritize them!
 					// Similar logic to city ranged strike in getBestRangedStrikeTarget()
@@ -8576,6 +8637,15 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						// Embarked siege/ranged are high value (kill before they land and bombard)
 						if (pOtherUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD || pOtherUnit->IsCanAttackRanged())
 							iDamage += 30;
+						
+						// Suppress embarked bonuses for retreating units when city HP is low
+						// Consistent with city bombardment logic in getBestRangedStrikeTarget()
+						if (bLikelyRetreating && iCityHPPct <= 50 &&
+							pOtherUnit->AI_getUnitAIType() != UNITAI_CITY_BOMBARD)
+						{
+							iDamage -= 80;
+							if (iDamage < 0) iDamage = 0;
+						}
 					}
 					
 					// Escort protection check - if a naval unit is protecting embarked units,
