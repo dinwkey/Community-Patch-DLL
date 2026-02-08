@@ -111,9 +111,9 @@ A hybrid memory system with two components:
 
 | Scenario | Units Tracked | Storage |
 |----------|---------------|---------|
-| Peacetime | ~50 | 800B |
-| Active war | ~150 | 2.4 KB |
-| Worst case | ~300 | 4.8 KB |
+| Peacetime | ~50 | 1.1 KB |
+| Active war | ~150 | 3.3 KB |
+| Worst case | ~300 | 6.6 KB |
 
 ### Combined Total
 
@@ -320,7 +320,7 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
 
 ```cpp
 // Individual unit sighting with fog prediction support
-// Size: 16 bytes per unit
+// Size: 22 bytes per unit
 struct UnitSighting
 {
     // === Identification ===
@@ -954,7 +954,7 @@ Two independent systems track enemy units that leave visibility. They serve diff
 |----------|-----------------------------------|------------------------------------------|
 | **Retention** | 1 turn (cleared & rebuilt each turn) | 10 turns (`AI_FOG_GHOST_EXPIRY_TURNS`) |
 | **Scope** | Per-player danger calculation | Per-player strategic intelligence |
-| **What it stores** | Set of `(PlayerID, UnitID)` pairs | Full `UnitSighting` struct (16 bytes): position, direction, health, flags, intent |
+| **What it stores** | Set of `(PlayerID, UnitID)` pairs | Full `UnitSighting` struct (22 bytes): position, direction, EMA, health, flags, intent |
 | **When populated** | Start of each turn in `UpdateDangerInternal()` | On every observed unit movement via `CvUnit::setXY()` |
 | **When cleared** | Every turn (`bTurnChange` → `m_vanishedUnits.clear()`) | Expired entries removed in `CvDiplomacyAI::DoTurn()` |
 | **Direction tracking** | No | Yes (`lastDeltaX`, `lastDeltaY` captured when observer sees origin) |
@@ -1056,17 +1056,16 @@ TacticalAIHelpers::PerformRangedOpportunityAttack()
 
 ### Known Limitations
 
-1. **One direction sample per unit**: Only the most recent movement step is stored (`lastDeltaX/lastDeltaY`). Multi-turn trends (circling, flanking, zigzag) cannot be detected. A unit that approached for 5 turns then retreated 1 turn will be classified based solely on the last step.
+1. **~~One direction sample per unit~~ (FIXED)**: Previously, only the most recent movement step was stored (`lastDeltaX/lastDeltaY`). Now the sighting manager maintains an exponential moving average (`avgDX/avgDY`) that blends each turn's overall heading (62.5% new + 37.5% old). This means a unit that approached for 5 turns then retreated 1 turn will still have an EMA pointing toward the city. Consumers (`InferUnitIntentNearCity`, `CountUnitsConvergingOnCity`) prefer the EMA when available, falling back to `lastDeltaX/lastDeltaY` for units with only one observation.
 
 2. **~~`OnUnitSeen()` is not hooked~~ (FIXED)**: Previously, the method existed but had no call site. Now hooked into `CvPlot::changeVisibilityCount()` — when a plot gains visibility (`iChange > 0`), all combat units on it are reported to the sighting manager via `OnUnitSeen()`. This covers stationary enemies revealed by fog lift (e.g., a fortified catapult spotted by your scout). Together with `OnUnitMoved()` in `CvUnit::setXY()`, all visibility scenarios are now covered.
 
-3. **Intent inference is simple**: `InferUnitIntent()` uses only health threshold (50%) and war state. It doesn't consider:
-   - Unit distance to nearest city
+3. **~~Intent inference is simple~~ (PARTIALLY FIXED)**: `InferUnitIntent()` now includes a distance-to-nearest-city check: at-war enemy units within 5 tiles of our closest city are classified as `ATTACK_CITY` even when war state and direction are ambiguous. This covers the common case of armies near borders that haven't moved yet. Still not considered:
    - Whether the unit has ranged capability
    - Group composition (lone scout vs. army stack)
    - Promotion/experience level
    
-   The city-aware variant `InferUnitIntentNearCity()` improves on this with directional analysis but still can't detect flanking or multi-unit coordination.
+   The city-aware variant `InferUnitIntentNearCity()` improves further with directional analysis (now EMA-smoothed) but still can't detect flanking or multi-unit coordination.
 
 4. **~~No multi-unit pattern detection~~ (PARTIALLY FIXED)**: The sighting manager now has query-time aggregation functions that scan existing per-unit sightings to detect convergence patterns:
    - `CountUnitsConvergingOnCity()`: counts enemy units heading toward a city (positive dot product of movement vector vs unit→city vector), plus units within 3 tiles that have no direction data (imminently threatening regardless of heading)
@@ -1077,7 +1076,7 @@ TacticalAIHelpers::PerformRangedOpportunityAttack()
 
 6. **~~War state can be wrong early~~ (FIXED)**: Previously, `InferUnitIntent()` relied solely on `GetWarState()` which returns `WAR_STATE_STALEMATE` in the first turns of a war (WarScore = 0 because no combat has happened yet). Now both `InferUnitIntent()` and `InferUnitIntentNearCity()` check `GET_TEAM().GetNumTurnsAtWar()` — when war started ≤ 5 turns ago and war state is STALEMATE/CALM, healthy enemy units are assumed to be attacking. This ensures the confirmed-attacker bonus (+15) and retreat penalty suppression work correctly from turn 0 of a declared war.
 
-7. **Direction unreliable for multi-step moves**: A unit that moves 3 tiles in one turn has `lastDeltaX/lastDeltaY` set to only the final step's delta (the last `setXY()` call). The overall heading could differ from the last step.
+7. **~~Direction unreliable for multi-step moves~~ (FIXED)**: Previously, a unit moving 3 tiles in one turn had `lastDeltaX/lastDeltaY` set to only the final step's delta. Now `OnUnitMoved` tracks `turnStartX/turnStartY` — set from the origin of the first step each turn, then all subsequent steps compute `lastDeltaX/lastDeltaY` as `(currentDestination - turnStart)`, giving the true overall heading regardless of intermediate waypoints. The turn-start position is reset each turn via `CleanupExpired()`.
 
 ---
 
@@ -1137,7 +1136,7 @@ If the consumer list grows further:
 | `numWars` | `uint8` | 1B | Count active wars |
 | `flags` | `uint8` | 1B | Composite bitfield |
 
-### UnitSighting Fields (16 bytes)
+### UnitSighting Fields (22 bytes)
 
 | Field | Type | Size | Source |
 |-------|------|------|--------|
@@ -1148,10 +1147,14 @@ If the consumer list grows further:
 | `lastSeenTurn` | `int16` | 2B | `GC.getGame().getGameTurn()` |
 | `health` | `uint8` | 1B | `pUnit->GetCurrHitPoints() * 100 / pUnit->GetMaxHitPoints()` |
 | `flags` | `uint8` | 1B | Composite from unit state |
-| `lastDeltaX` | `int8` | 1B | Movement delta X |
-| `lastDeltaY` | `int8` | 1B | Movement delta Y |
+| `lastDeltaX` | `int8` | 1B | Overall heading X from turn start to final position |
+| `lastDeltaY` | `int8` | 1B | Overall heading Y from turn start to final position |
 | `movementPoints` | `uint8` | 1B | `pUnit->maxMoves() / GD_INT_GET(MOVE_DENOMINATOR)` |
 | `predictedIntent` | `uint8` | 1B | Inferred from context |
+| `turnStartX` | `int16` | 2B | X at first step of current turn (-1 = not set) |
+| `turnStartY` | `int16` | 2B | Y at first step of current turn (-1 = not set) |
+| `avgDX` | `int8` | 1B | EMA of per-turn X heading (62.5% new + 37.5% old) |
+| `avgDY` | `int8` | 1B | EMA of per-turn Y heading (62.5% new + 37.5% old) |
 
 ---
 

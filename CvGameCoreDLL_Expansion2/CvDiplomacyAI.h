@@ -144,7 +144,7 @@ enum UnitSightingFlags
 };
 
 /// Per-unit sighting record with fog-of-war prediction support.
-/// Size: 16 bytes per unit.
+/// Size: 22 bytes per unit.
 struct UnitSighting
 {
 	// === Identification ===
@@ -161,10 +161,16 @@ struct UnitSighting
 	unsigned char  flags;            // UnitSightingFlags bitfield
 
 	// === Fog Prediction ===
-	char           lastDeltaX;       // Last movement X direction
-	char           lastDeltaY;       // Last movement Y direction
+	char           lastDeltaX;       // Last movement X direction (overall heading this turn)
+	char           lastDeltaY;       // Last movement Y direction (overall heading this turn)
 	unsigned char  movementPoints;   // Unit's movement capability (tiles/turn)
 	unsigned char  predictedIntent;  // UnitPredictedIntent enum
+
+	// === Multi-Turn Direction (EMA smoothed) ===
+	short          turnStartX;       // Position at start of current movement turn (-1 = not set)
+	short          turnStartY;       // Position at start of current movement turn (-1 = not set)
+	char           avgDX;            // Exponential moving average of per-turn X heading
+	char           avgDY;            // Exponential moving average of per-turn Y heading
 
 	// === Helpers ===
 	bool IsConfirmed(int currentTurn) const

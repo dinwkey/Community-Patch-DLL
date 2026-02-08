@@ -888,6 +888,8 @@ UnitSighting* CvUnitSightingManager::GetOrCreateSighting(CvUnit* pUnit)
 		sighting.unitId = (unsigned short)(pUnit->GetID() & 0xFFFF);
 		sighting.unitType = (unsigned char)pUnit->getUnitType();
 		sighting.owner = (unsigned char)pUnit->getOwner();
+		sighting.turnStartX = -1;  // Sentinel: no movement tracked yet
+		sighting.turnStartY = -1;
 		m_SightingIndex[uKey] = iOldestIdx;
 		return &sighting;
 	}
@@ -898,6 +900,8 @@ UnitSighting* CvUnitSightingManager::GetOrCreateSighting(CvUnit* pUnit)
 	sighting.unitId = (unsigned short)(pUnit->GetID() & 0xFFFF);
 	sighting.unitType = (unsigned char)pUnit->getUnitType();
 	sighting.owner = (unsigned char)pUnit->getOwner();
+	sighting.turnStartX = -1;  // Sentinel: no movement tracked yet
+	sighting.turnStartY = -1;
 
 	int iNewIdx = (int)m_Sightings.size();
 	m_Sightings.push_back(sighting);
@@ -955,11 +959,48 @@ void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pT
 	if (!pSighting)
 		return;
 
-	// Capture movement direction if we saw the origin
+	// === Turn-start tracking (fix for multi-step moves) ===
+	// On first step of a turn, record the origin position.
+	// Subsequent steps compute heading from turnStart → current destination,
+	// giving the true overall heading regardless of intermediate waypoints.
+	if (pSighting->turnStartX < 0)
+	{
+		// First movement this turn — record starting position
+		if (bCanSeeFrom && pFrom)
+		{
+			pSighting->turnStartX = (short)pFrom->getX();
+			pSighting->turnStartY = (short)pFrom->getY();
+		}
+		else if (bCanSeeTo && pTo)
+		{
+			// Can't see origin — use destination as fallback start
+			pSighting->turnStartX = (short)pTo->getX();
+			pSighting->turnStartY = (short)pTo->getY();
+		}
+	}
+
+	// Capture movement direction: overall heading from turn-start if available
 	if (bCanSeeFrom && pFrom && pTo)
 	{
-		pSighting->lastDeltaX = (char)(pTo->getX() - pFrom->getX());
-		pSighting->lastDeltaY = (char)(pTo->getY() - pFrom->getY());
+		if (pSighting->turnStartX >= 0)
+		{
+			// Overall heading from turn-start to current step destination
+			int destX = bCanSeeTo ? pTo->getX() : pFrom->getX();
+			int destY = bCanSeeTo ? pTo->getY() : pFrom->getY();
+			int dx = destX - (int)pSighting->turnStartX;
+			int dy = destY - (int)pSighting->turnStartY;
+			if (dx != 0 || dy != 0)
+			{
+				pSighting->lastDeltaX = (char)max(-127, min(127, dx));
+				pSighting->lastDeltaY = (char)max(-127, min(127, dy));
+			}
+		}
+		else
+		{
+			// No turn-start recorded — fall back to single-step delta
+			pSighting->lastDeltaX = (char)(pTo->getX() - pFrom->getX());
+			pSighting->lastDeltaY = (char)(pTo->getY() - pFrom->getY());
+		}
 	}
 
 	// Update position and state if we can see the destination
@@ -1019,6 +1060,8 @@ void CvUnitSightingManager::OnUnitDestroyed(PlayerTypes eOwner, int iUnitId)
 }
 
 /// Remove all sightings that have expired (not seen for too long).
+/// Also resets per-turn tracking state for surviving sightings and
+/// finalizes the previous turn's heading into the EMA.
 void CvUnitSightingManager::CleanupExpired(int currentTurn)
 {
 	for (int i = (int)m_Sightings.size() - 1; i >= 0; i--)
@@ -1026,6 +1069,30 @@ void CvUnitSightingManager::CleanupExpired(int currentTurn)
 		if (m_Sightings[i].IsExpired(currentTurn))
 		{
 			OnUnitDestroyed((PlayerTypes)m_Sightings[i].owner, (int)m_Sightings[i].unitId);
+		}
+		else
+		{
+			// Finalize previous turn's overall heading into EMA before resetting
+			UnitSighting& s = m_Sightings[i];
+			if (s.turnStartX >= 0 && (s.lastDeltaX != 0 || s.lastDeltaY != 0))
+			{
+				if (s.avgDX == 0 && s.avgDY == 0)
+				{
+					// First direction data ever — seed EMA directly
+					s.avgDX = s.lastDeltaX;
+					s.avgDY = s.lastDeltaY;
+				}
+				else
+				{
+					// Blend: 62.5% new + 37.5% old
+					s.avgDX = (char)(((int)s.avgDX * 3 + (int)s.lastDeltaX * 5) / 8);
+					s.avgDY = (char)(((int)s.avgDY * 3 + (int)s.lastDeltaY * 5) / 8);
+				}
+			}
+
+			// Reset turn-start sentinel for the new turn
+			s.turnStartX = -1;
+			s.turnStartY = -1;
 		}
 	}
 }
@@ -1280,6 +1347,22 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(const UnitSighting* p
 			return UNIT_INTENT_ATTACK_CITY;
 	}
 
+	// Distance-based intent: if unit is close to one of our cities, it's likely attacking
+	{
+		CvPlot* pUnitPlot = GC.getMap().plot((int)pSighting->x, (int)pSighting->y);
+		if (pUnitPlot)
+		{
+			CvCity* pNearestCity = m_pPlayer->GetClosestCityByPlots(pUnitPlot);
+			if (pNearestCity)
+			{
+				int iDist = plotDistance(pNearestCity->getX(), pNearestCity->getY(),
+					(int)pSighting->x, (int)pSighting->y);
+				if (iDist <= 5)
+					return UNIT_INTENT_ATTACK_CITY;
+			}
+		}
+	}
+
 	return UNIT_INTENT_UNKNOWN;
 }
 
@@ -1337,9 +1420,12 @@ int CvUnitSightingManager::CountUnitsConvergingOnCity(const CvCity* pCity, int i
 		}
 
 		// Dot product: movement vector vs (unit -> city) vector
+		// Prefer EMA (smoothed multi-turn trend) when available
 		int dxToCity = iCX - (int)s.x;
 		int dyToCity = iCY - (int)s.y;
-		int iDot = (int)s.lastDeltaX * dxToCity + (int)s.lastDeltaY * dyToCity;
+		char dirX = (s.avgDX != 0 || s.avgDY != 0) ? s.avgDX : s.lastDeltaX;
+		char dirY = (s.avgDX != 0 || s.avgDY != 0) ? s.avgDY : s.lastDeltaY;
+		int iDot = (int)dirX * dxToCity + (int)dirY * dyToCity;
 
 		// Positive dot = heading toward city
 		if (iDot > 0)
@@ -1389,14 +1475,17 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntentNearCity(const UnitSig
 	// === Directional analysis ===
 	// Use dot product of (movement vector) and (unit → city vector)
 	// Positive dot = moving toward city, negative = moving away
+	// Prefer EMA (smoothed multi-turn trend) when available; fall back to lastDelta
 	bool bIsFresh = (pSighting->lastSeenTurn == (short)iCurrentTurn);
-	bool bHasDirection = bMovedThisTurn && bIsFresh && (pSighting->lastDeltaX != 0 || pSighting->lastDeltaY != 0);
+	char dirX = (pSighting->avgDX != 0 || pSighting->avgDY != 0) ? pSighting->avgDX : pSighting->lastDeltaX;
+	char dirY = (pSighting->avgDX != 0 || pSighting->avgDY != 0) ? pSighting->avgDY : pSighting->lastDeltaY;
+	bool bHasDirection = bMovedThisTurn && bIsFresh && (dirX != 0 || dirY != 0);
 	int iDot = 0;
 	if (bHasDirection)
 	{
 		int dxToCity = iCityX - (int)pSighting->x;
 		int dyToCity = iCityY - (int)pSighting->y;
-		iDot = (int)pSighting->lastDeltaX * dxToCity + (int)pSighting->lastDeltaY * dyToCity;
+		iDot = (int)dirX * dxToCity + (int)dirY * dyToCity;
 	}
 
 	bool bMovingToward = (bHasDirection && iDot > 0);
@@ -1499,6 +1588,10 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 		kStream << s.lastDeltaY;
 		kStream << s.movementPoints;
 		kStream << s.predictedIntent;
+		kStream << s.turnStartX;
+		kStream << s.turnStartY;
+		kStream << s.avgDX;
+		kStream << s.avgDY;
 	}
 }
 
@@ -1533,6 +1626,10 @@ void CvUnitSightingManager::Read(FDataStream& kStream)
 		kStream >> s.lastDeltaY;
 		kStream >> s.movementPoints;
 		kStream >> s.predictedIntent;
+		kStream >> s.turnStartX;
+		kStream >> s.turnStartY;
+		kStream >> s.avgDX;
+		kStream >> s.avgDY;
 
 		// Rebuild index
 		unsigned int uKey = MakeKey((PlayerTypes)s.owner, (int)s.unitId);
