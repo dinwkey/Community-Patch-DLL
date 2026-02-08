@@ -22,7 +22,7 @@ enum eStrategicLayer
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//  Per-city strategic analysis (Phase 1: layer, Phase 2: salient, Phase 3: chokepoint)
+//  Per-city strategic analysis (Phase 1-4: layer, salient, chokepoint, floodgate)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 struct StrategicCityAnalysis
@@ -46,6 +46,8 @@ struct StrategicCityAnalysis
 		, bIsChokepointCity(false)
 		, iApproachCorridors(6)
 		, iNarrowCorridors(0)
+		, bIsFloodgate(false)
+		, iDependentCityCount(0)
 	{
 	}
 
@@ -72,6 +74,11 @@ struct StrategicCityAnalysis
 	bool bIsChokepointCity;    // City controls a terrain chokepoint (few open approach corridors)
 	int iApproachCorridors;    // Number of wide-open approach directions (0-6; fewer = more choked)
 	int iNarrowCorridors;      // Number of directions with corridor width == 1 (partial choke)
+
+	// Phase 4 fields — Floodgate/Dependency Detection
+	bool bIsFloodgate;         // Losing this city would expose 2+ other cities to hostile territory
+	int iDependentCityCount;   // Number of cities that depend on this city for protection
+	std::vector<int> vDependentCities; // City IDs of cities that would become exposed if this city fell
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -109,6 +116,10 @@ public:
 	bool IsCityChokepoint(int iCityID) const;
 	int GetApproachCorridors(int iCityID) const;
 
+	// Phase 4: Floodgate queries
+	bool IsCityFloodgate(int iCityID) const;
+	int GetDependentCityCount(int iCityID) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -122,6 +133,7 @@ private:
 	void ClassifyAllCities();
 	void DetectSalients();          // Phase 2: salient + defensible salient detection
 	void DetectChokepointCities();  // Phase 3: approach corridor analysis
+	void BuildDependencyGraph();    // Phase 4: floodgate/dependency detection
 	int ScanCorridorWidth(CvPlot* pStart, DirectionTypes eDirection) const;
 	int ComputeMinBorderDistance(CvCity* pCity) const;
 	int CountAdjacentChokepoints(CvCity* pCity) const;

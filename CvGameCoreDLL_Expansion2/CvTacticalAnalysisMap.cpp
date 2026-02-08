@@ -1046,6 +1046,16 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 						iBaseValue = (iBaseValue * 3) / 4; // 0.75x
 					}
 				}
+
+				// Phase 4: Floodgate zone priority — losing these cities is catastrophic
+				if (pCityStrat->bIsFloodgate)
+				{
+					iBaseValue = (iBaseValue * 5) / 2; // 2.5x for floodgate cities
+
+					// Extra boost for high-dependency floodgates (protecting 4+ cities)
+					if (pCityStrat->iDependentCityCount >= 4)
+						iBaseValue = (iBaseValue * 3) / 2; // total ~3.75x
+				}
 			}
 			else
 			{

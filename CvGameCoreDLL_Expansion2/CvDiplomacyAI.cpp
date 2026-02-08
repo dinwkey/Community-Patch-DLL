@@ -28017,6 +28017,38 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 			}
 		}
 
+		// Phase 4: Floodgate urgency — when a floodgate city is in danger, the AI should
+		// be more willing to make peace because losing it would cascade into losing the
+		// dependent cities too. Reduce the threshold to make peace easier.
+		{
+			CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pStratGeo)
+			{
+				bool bFloodgateInDanger = false;
+				int iLoop = 0;
+				for (CvCity* pCity = m_pPlayer->firstCity(&iLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iLoop))
+				{
+					if (pStratGeo->IsCityFloodgate(pCity->GetID()) && pCity->isUnderSiege())
+					{
+						bFloodgateInDanger = true;
+						break;
+					}
+				}
+				if (bFloodgateInDanger)
+				{
+					iThreshold = max(iThreshold - 4, 1);
+					if (bLog)
+					{
+						for (size_t i = 0; i < vEnemyTeamMembers.size(); i++)
+						{
+							if (GET_PLAYER(vEnemyTeamMembers[i]).isAlive())
+								LogPeaceWillingnessReason(vEnemyTeamMembers[i], CvString("Floodgate city under siege: reducing peace threshold (-4)"));
+						}
+					}
+				}
+			}
+		}
+
 		if (iFinalPeaceScore >= iThreshold)
 		{
 			vMakePeaceTeams.push_back(*it);
@@ -28247,6 +28279,18 @@ int CvDiplomacyAI::GetComparativeDanger(PlayerTypes ePlayer, vector<PlayerTypes>
 				iDangerMod *= 2;
 			else if (pLoopCity->GetCityReligions()->IsHolyCityAnyReligion() || pLoopCity->getNumNationalWonders() > 0)
 				iDangerMod++;
+
+			// Phase 4: Floodgate cities — their loss cascades to expose multiple other cities.
+			// Treat them with similar urgency to wonder cities when computing comparative danger.
+			CvStrategicGeographyMap* pStratGeo = GetPlayer()->GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pStratGeo && pStratGeo->IsCityFloodgate(pLoopCity->GetID()))
+			{
+				iDangerMod *= 2;
+
+				// A floodgate city in danger of falling is always serious
+				if (pLoopCity->isInDangerOfFalling(true) || pLoopCity->getDamage() >= (pLoopCity->GetMaxHitPoints() / 2))
+					bSeriousDangerUs = true;
+			}
 
 			iOurDanger += iDangerMod;
 		}

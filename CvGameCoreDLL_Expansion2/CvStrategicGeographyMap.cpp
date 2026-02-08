@@ -4,6 +4,7 @@
 	Phase 1: Defensive Layer Classification + Capital Protection.
 	Phase 2: Salient Detection + Defensible Salient Exception.
 	Phase 3: Chokepoint City Detection + Approach Corridor Analysis.
+	Phase 4: Floodgate/Dependency Detection — cities whose loss exposes multiple others.
 	See docs/military-ai/STRATEGIC_GEOGRAPHY_MAP_PLAN.md for design rationale.
 	------------------------------------------------------------------------------------------------------- */
 
@@ -73,6 +74,17 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 		// Extra bonus for extreme chokepoints (only 1 open approach corridor)
 		if (iApproachCorridors <= 1)
 			iModifier += 40;  // Thermopylae-level chokepoint
+	}
+
+	// Phase 4: Floodgate bonus — cities whose loss exposes multiple other cities.
+	// Priority second only to capital. Scales with the number of dependent cities.
+	if (bIsFloodgate)
+	{
+		iModifier += 100;  // base floodgate bonus — near-capital importance
+
+		// Extra bonus for each additional dependent city beyond the minimum 2
+		if (iDependentCityCount > 2)
+			iModifier += (iDependentCityCount - 2) * 15;
 	}
 
 	// Phase 2: Salient modifiers
@@ -162,6 +174,7 @@ void CvStrategicGeographyMap::Update()
 	ClassifyAllCities();
 	DetectSalients();
 	DetectChokepointCities();
+	BuildDependencyGraph();
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +238,9 @@ bool CvStrategicGeographyMap::IsExpendableSalient(int iCityID) const
 	// Chokepoint salients are not expendable (losing them opens corridors)
 	if (pAnalysis->iChokePointCount >= 3 || pAnalysis->bIsChokepointCity)
 		return false;
+	// Floodgate salients are not expendable (losing them exposes multiple cities)
+	if (pAnalysis->bIsFloodgate)
+		return false;
 	// Defensible salients pre-Indirect Fire are not expendable
 	if (pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire)
 		return false;
@@ -241,6 +257,18 @@ int CvStrategicGeographyMap::GetApproachCorridors(int iCityID) const
 {
 	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
 	return pAnalysis ? pAnalysis->iApproachCorridors : 6;
+}
+
+bool CvStrategicGeographyMap::IsCityFloodgate(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bIsFloodgate : false;
+}
+
+int CvStrategicGeographyMap::GetDependentCityCount(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iDependentCityCount : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -718,5 +746,173 @@ void CvStrategicGeographyMap::DetectChokepointCities()
 		bool bSelfIsChokepoint = pCityPlot->IsChokePoint();
 
 		analysis.bIsChokepointCity = bFewApproaches || bManyChokePlots || bSelfIsChokepoint;
+	}
+}
+
+// ========================================================================
+// Phase 4: Floodgate/Dependency Detection
+// ========================================================================
+
+/// Build dependency graph: for each city, determine if losing it would directly
+/// expose 2+ other friendly cities to hostile territory.
+///
+/// Algorithm: For each city C that is currently front-line or second-line:
+///   1. Collect the set of tiles owned by C.
+///   2. For each other city D that is NOT currently front-line:
+///      Check if any of D's tiles are adjacent to tiles owned by C.
+///      If C's territory is all that separates D from hostile/unowned territory,
+///      then D depends on C for protection.
+///   3. If removing C would expose 2+ cities → C is a floodgate.
+///
+/// The "exposure" check: for each of C's owned tiles that are adjacent to D's
+/// owned tiles, check whether the opposite side of C's tile (away from D) is
+/// hostile or unowned. If so, C's territory is the buffer between D and danger.
+void CvStrategicGeographyMap::BuildDependencyGraph()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	TeamTypes eOurTeam = kPlayer.getTeam();
+
+	// Reset Phase 4 fields for all cities
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		it->second.bIsFloodgate = false;
+		it->second.iDependentCityCount = 0;
+		it->second.vDependentCities.clear();
+	}
+
+	// Build a set of city IDs for quick lookup
+	// Also pre-classify which cities are "interior" (not front-line) — these are potential dependents
+	std::vector<int> vFrontLineCityIDs;    // Candidate floodgates (front-line or second-line)
+	std::vector<int> vInteriorCityIDs;     // Potential dependents (second-line, rear, core)
+
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		eStrategicLayer eLayer = it->second.eLayer;
+		if (eLayer == STRATEGIC_LAYER_FRONT_LINE)
+			vFrontLineCityIDs.push_back(it->first);
+
+		// Interior cities can depend on front-line cities for protection
+		if (eLayer == STRATEGIC_LAYER_SECOND_LINE || eLayer == STRATEGIC_LAYER_REAR_AREA || eLayer == STRATEGIC_LAYER_CORE)
+			vInteriorCityIDs.push_back(it->first);
+	}
+
+	// No front-line cities or no interior cities → no floodgate relationships possible
+	if (vFrontLineCityIDs.empty() || vInteriorCityIDs.empty())
+		return;
+
+	// For each front-line city C, check if its territory buffers any interior city D
+	for (size_t iC = 0; iC < vFrontLineCityIDs.size(); iC++)
+	{
+		int iCandidateID = vFrontLineCityIDs[iC];
+		CvCity* pCandidateCity = kPlayer.getCity(iCandidateID);
+		if (!pCandidateCity)
+			continue;
+
+		CvPlot* pCandidatePlot = pCandidateCity->plot();
+		if (!pCandidatePlot)
+			continue;
+
+		std::map<int, StrategicCityAnalysis>::iterator itCandidate = m_cityAnalysis.find(iCandidateID);
+		if (itCandidate == m_cityAnalysis.end())
+			continue;
+
+		// Collect tiles owned by C within its working radius
+		// For each such tile, check if it borders hostile/unowned territory on one side
+		// AND borders a different friendly city's territory on the other side.
+		// This means C's territory is the buffer.
+
+		// Track which interior cities are shielded by this candidate
+		std::set<int> shieldedCities;
+
+		int iNumPlots = pCandidateCity->GetNumWorkablePlots();
+		for (int iPlot = 0; iPlot < iNumPlots; iPlot++)
+		{
+			CvPlot* pTile = pCandidateCity->GetCityCitizens()->GetCityPlotFromIndex(iPlot);
+			if (!pTile)
+				continue;
+
+			// Must be owned by us
+			if (pTile->getOwner() != m_ePlayer)
+				continue;
+
+			// Must belong to the candidate city (not a neighboring city that happens to be in range)
+			CvCity* pOwningCity = pTile->getOwningCity();
+			if (!pOwningCity || pOwningCity->GetID() != iCandidateID)
+				continue;
+
+			// Check the 6 neighbors of this tile
+			bool bBordersHostile = false;
+			bool bBordersFriendlyCity = false;
+			int iFriendlyCityID = -1;
+
+			for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+			{
+				CvPlot* pNeighbor = plotDirection(pTile->getX(), pTile->getY(), (DirectionTypes)iDir);
+				if (!pNeighbor)
+					continue;
+
+				PlayerTypes eNeighborOwner = pNeighbor->getOwner();
+
+				// Hostile neighbor: at war, or competitor/unforgivable opinion, or unowned
+				if (eNeighborOwner == NO_PLAYER)
+				{
+					bBordersHostile = true;
+				}
+				else if (eNeighborOwner != m_ePlayer)
+				{
+					if (!GET_PLAYER(eNeighborOwner).isMinorCiv())
+					{
+						if (GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eNeighborOwner).getTeam()))
+						{
+							bBordersHostile = true;
+						}
+						else
+						{
+							CivOpinionTypes eOpinion = kPlayer.GetDiplomacyAI()->GetCivOpinion(eNeighborOwner);
+							if (eOpinion <= CIV_OPINION_COMPETITOR)
+								bBordersHostile = true;
+						}
+					}
+				}
+				else
+				{
+					// Neighbor is owned by us — check if it belongs to a DIFFERENT city
+					CvCity* pNeighborCity = pNeighbor->getOwningCity();
+					if (pNeighborCity && pNeighborCity->GetID() != iCandidateID)
+					{
+						// Check if that city is an interior city (potential dependent)
+						for (size_t iD = 0; iD < vInteriorCityIDs.size(); iD++)
+						{
+							if (vInteriorCityIDs[iD] == pNeighborCity->GetID())
+							{
+								bBordersFriendlyCity = true;
+								iFriendlyCityID = pNeighborCity->GetID();
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			// If this tile of C borders hostile territory AND a friendly interior city,
+			// then C is shielding that city
+			if (bBordersHostile && bBordersFriendlyCity && iFriendlyCityID != -1)
+			{
+				shieldedCities.insert(iFriendlyCityID);
+			}
+		}
+
+		// If C shields 2+ interior cities, it's a floodgate
+		if ((int)shieldedCities.size() >= 2)
+		{
+			StrategicCityAnalysis& analysis = itCandidate->second;
+			analysis.bIsFloodgate = true;
+			analysis.iDependentCityCount = (int)shieldedCities.size();
+			analysis.vDependentCities.clear();
+			for (std::set<int>::iterator sit = shieldedCities.begin(); sit != shieldedCities.end(); ++sit)
+			{
+				analysis.vDependentCities.push_back(*sit);
+			}
+		}
 	}
 }

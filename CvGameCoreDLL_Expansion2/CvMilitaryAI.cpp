@@ -5552,6 +5552,10 @@ void CvMilitaryAI::EvaluateTacticalRetreat()
 				if (m_pStrategyMap->IsCityChokepoint(pCity->GetID()))
 					continue;
 
+				// Phase 4: Never abandon floodgate city defense — losing them exposes multiple cities
+				if (m_pStrategyMap->IsCityFloodgate(pCity->GetID()))
+					continue;
+
 				bool bExpendable = m_pStrategyMap->IsExpendableSalient(pCity->GetID());
 				bool bDefensible = m_pStrategyMap->IsDefensibleSalient(pCity->GetID());
 

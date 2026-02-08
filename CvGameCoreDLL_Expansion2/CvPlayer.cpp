@@ -5169,6 +5169,13 @@ void CvPlayer::UpdateCityThreatCriteria()
 					// Defensible salient: partially offset the triage penalty — hedgehog is viable
 					iThreatValue += 20;
 				}
+
+				// Phase 4: Floodgate cities — losing them exposes multiple other cities.
+				// Override triage penalties: floodgate cities are critical even if surrounded.
+				if (pStratGeoMap->IsCityFloodgate(pLoopCity->GetID()))
+				{
+					iThreatValue += 40;
+				}
 			}
 		}
 
