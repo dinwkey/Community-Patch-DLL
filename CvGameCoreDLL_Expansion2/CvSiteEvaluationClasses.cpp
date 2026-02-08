@@ -842,6 +842,55 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 			}
 		}
 
+		// Strategic Geography Phase 6: penalize locations that would create salients.
+		// Scan RING3 around this plot for hostile-vs-friendly tile ratio — same logic as salient detection.
+		// If the ratio is high, the city would be exposed on multiple sides — an expendable salient.
+		{
+			CvStrategicGeographyMap* pStratGeo = pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pStratGeo && pStratGeo->HasAnyCityData())
+			{
+				int iHostileTiles = 0;
+				int iFriendlyTiles = 0;
+				TeamTypes eOurTeam = pPlayer->getTeam();
+				// Check RING1-3 around plot
+				for (int iRing = RING0_PLOTS; iRing < RING3_PLOTS; iRing++)
+				{
+					CvPlot* pLoopPlot = iterateRingPlots(pPlot, iRing);
+					if (!pLoopPlot)
+						continue;
+
+					PlayerTypes eLoopOwner = pLoopPlot->getOwner();
+					if (eLoopOwner == NO_PLAYER)
+						continue;
+
+					if (eLoopOwner == pPlayer->GetID())
+						iFriendlyTiles++;
+					else if (GET_PLAYER(eLoopOwner).isMajorCiv() && GET_TEAM(GET_PLAYER(eLoopOwner).getTeam()).isAtWar(eOurTeam))
+						iHostileTiles++;
+					else if (GET_PLAYER(eLoopOwner).isMajorCiv() && pPlayer->GetDiplomacyAI()->GetCivOpinion(eLoopOwner) <= CIV_OPINION_COMPETITOR)
+						iHostileTiles++;
+				}
+
+				// Penalize salient-like locations: high hostile/friendly ratio
+				if (iFriendlyTiles > 0 && iHostileTiles > iFriendlyTiles * 2)
+				{
+					// Strong salient: heavily surrounded by hostiles
+					int iPenaltyPercent = -25;
+					// Check if terrain is defensible (chokepoint or hills/forests)
+					if (pPlot->IsChokePoint() || pPlot->isHills())
+						iPenaltyPercent = -10; // Defensible salient — smaller penalty
+					iStratModifier += (iTotalPlotValue * iPenaltyPercent) / 100;
+					if (pDebug) vQualifiersNegative.push_back("(S) would create salient");
+				}
+				else if (iHostileTiles > 0 && iFriendlyTiles == 0)
+				{
+					// Completely isolated in hostile territory
+					iStratModifier += (iTotalPlotValue * -30) / 100;
+					if (pDebug) vQualifiersNegative.push_back("(S) isolated in hostile territory");
+				}
+			}
+		}
+
 		// where is our personal sweet spot?
 		// this is handled in plots, not in turns
 		int iMinDistance = /*3*/ GD_INT_GET(MIN_CITY_RANGE);

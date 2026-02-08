@@ -12122,6 +12122,43 @@ void CvDiplomacyAI::DoUpdateWarStates()
 				iOurDanger += iDangerMod;
 			}
 
+			// Strategic Geography Phase 6: adjust our danger perception based on defensive geography.
+			// Strong defensive positions (chokepoints, floodgates) mitigate danger; weak ones (salients) amplify it.
+			{
+				CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+				if (pStratGeo && pStratGeo->HasAnyCityData())
+				{
+					int iDefenseBonus = 0;
+					int iVulnerability = 0;
+					int iCityLoop2 = 0;
+					for (CvCity* pStratCity = m_pPlayer->firstCity(&iCityLoop2); pStratCity != NULL; pStratCity = m_pPlayer->nextCity(&iCityLoop2))
+					{
+						const StrategicCityAnalysis* pAnalysis = pStratGeo->GetCityAnalysis(pStratCity->GetID());
+						if (!pAnalysis || !pAnalysis->bIsFrontLine)
+							continue;
+
+						if (pAnalysis->bIsChokepointCity)
+							iDefenseBonus += 2;
+						if (pAnalysis->bIsFloodgate)
+							iDefenseBonus += 1;
+						if (pAnalysis->bIsSalient && !pAnalysis->bIsDefensibleSalient)
+							iVulnerability += 1;
+					}
+
+					// Net defensive geography: reduce our danger if well-fortified, increase if exposed
+					if (iDefenseBonus > iVulnerability && iOurDanger > 0)
+					{
+						int iReduction = min((iDefenseBonus - iVulnerability) * 10, 40); // Cap at 40% reduction
+						iOurDanger = (iOurDanger * (100 - iReduction)) / 100;
+					}
+					else if (iVulnerability > iDefenseBonus && iOurDanger > 0)
+					{
+						int iIncrease = min((iVulnerability - iDefenseBonus) * 8, 30); // Cap at 30% increase
+						iOurDanger = (iOurDanger * (100 + iIncrease)) / 100;
+					}
+				}
+			}
+
 			for (CvCity* pLoopCity = GET_PLAYER(eLoopPlayer).firstCity(&iLoop); pLoopCity != NULL; pLoopCity = GET_PLAYER(eLoopPlayer).nextCity(&iLoop))
 			{
 				iNumTheirCities++;
@@ -29323,6 +29360,45 @@ void CvDiplomacyAI::MakeWar()
 					// Square the distance enum to make it crucial
 					iWeight *= (1 + (int)GetPlayer()->GetProximityToPlayer(eTarget));
 					iWeight *= (1 + (int)GetPlayer()->GetProximityToPlayer(eTarget));
+
+					// Strategic Geography Phase 6: penalize targets with strong defensive geography.
+					// If the enemy has chokepoints/floodgates facing us, attacking is harder.
+					if (GET_PLAYER(eTarget).isMajorCiv())
+					{
+						CvStrategicGeographyMap* pTargetStratGeo = GET_PLAYER(eTarget).GetMilitaryAI()->GetStrategicGeographyMap();
+						if (pTargetStratGeo && pTargetStratGeo->HasAnyCityData())
+						{
+							// Check enemy's front-line cities facing us for defensive strength
+							int iDefenseCount = 0;
+							int iLoop = 0;
+							for (CvCity* pTargetCity = GET_PLAYER(eTarget).firstCity(&iLoop); pTargetCity != NULL; pTargetCity = GET_PLAYER(eTarget).nextCity(&iLoop))
+							{
+								const StrategicCityAnalysis* pAnalysis = pTargetStratGeo->GetCityAnalysis(pTargetCity->GetID());
+								if (!pAnalysis)
+									continue;
+
+								// Only care about cities that face us (front-line or chokepoint)
+								if (!pAnalysis->bIsFrontLine && !pAnalysis->bIsChokepointCity)
+									continue;
+
+								if (pAnalysis->bIsChokepointCity)
+									iDefenseCount += 2;
+								if (pAnalysis->bIsFloodgate)
+									iDefenseCount += 2;
+								if (pAnalysis->iApproachCorridors <= 2)
+									iDefenseCount += 1;
+							}
+
+							// Strong defensive position reduces war enthusiasm
+							// Each defense point reduces weight by ~10%
+							if (iDefenseCount > 0)
+							{
+								int iReduction = min(iDefenseCount * 10, 60); // Cap at 60% reduction
+								iWeight = (iWeight * (100 - iReduction)) / 100;
+								iWeight = max(iWeight, 1); // Never zero
+							}
+						}
+					}
 
 					playerList.push_back(eTarget, iWeight);
 				}

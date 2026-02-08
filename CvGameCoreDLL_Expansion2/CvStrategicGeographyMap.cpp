@@ -6,6 +6,7 @@
 	Phase 3: Chokepoint City Detection + Approach Corridor Analysis.
 	Phase 4: Floodgate/Dependency Detection — cities whose loss exposes multiple others.
 	Phase 5: Approach Corridor Analysis + Road Priority derivation.
+	Phase 6: Full Integration + Tuning (Polish) — logging, settler/production/diplo integration.
 	See docs/military-ai/STRATEGIC_GEOGRAPHY_MAP_PLAN.md for design rationale.
 	------------------------------------------------------------------------------------------------------- */
 
@@ -179,6 +180,7 @@ void CvStrategicGeographyMap::Update()
 	BuildDependencyGraph();
 	AnalyzeApproachCorridors();
 	DeriveRoadPriorities();
+	LogStrategicGeography();
 }
 
 // ---------------------------------------------------------------------------
@@ -1184,5 +1186,66 @@ void CvStrategicGeographyMap::DeriveRoadPriorities()
 		}
 
 		analysis.iRoadPriority = max(iPriority, 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  Phase 6: Logging
+// ---------------------------------------------------------------------------
+
+/// Output StrategicGeographyLog CSV for debugging.
+/// Format: Turn, CityName, Layer, IsSalient, IsChokepoint, IsFloodgate, DefDepth, ApproachCorridors, RoadPriority, PriorityMod
+void CvStrategicGeographyMap::LogStrategicGeography() const
+{
+	if (!GC.getLogging() || !GC.getAILogging())
+		return;
+
+	if (m_ePlayer == NO_PLAYER)
+		return;
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	CvString strPlayerName(kPlayer.getCivilizationShortDescription());
+	strPlayerName.Replace(' ', '_');
+
+	CvString strLogName;
+	if (GC.getPlayerAndCityAILogSplit())
+		strLogName = "StrategicGeographyLog_" + strPlayerName + ".csv";
+	else
+		strLogName = "StrategicGeographyLog.csv";
+
+	FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
+	if (!pLog)
+		return;
+
+	CvString strBaseString;
+	strBaseString.Format("%03d, %s, ", GC.getGame().getElapsedGameTurns(), strPlayerName.c_str());
+
+	static const char* szLayerNames[] = { "UNKNOWN", "FRONT_LINE", "SECOND_LINE", "REAR_AREA", "CORE" };
+
+	for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		const StrategicCityAnalysis& analysis = it->second;
+		CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+		if (!pCity)
+			continue;
+
+		CvString strCityName(pCity->getName());
+		strCityName.Replace(' ', '_');
+
+		CvString strMsg;
+		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d",
+			strBaseString.c_str(),
+			strCityName.c_str(),
+			(analysis.eLayer >= 0 && analysis.eLayer <= 4) ? szLayerNames[analysis.eLayer] : "???",
+			analysis.bIsSalient ? 1 : 0,
+			analysis.bIsChokepointCity ? 1 : 0,
+			analysis.bIsFloodgate ? 1 : 0,
+			analysis.iDefensiveDepth,
+			analysis.iApproachCorridors,
+			analysis.iRoadPriority,
+			analysis.GetDefensePriorityModifier(),
+			analysis.iDependentCityCount);
+
+		pLog->Msg(strMsg.c_str());
 	}
 }

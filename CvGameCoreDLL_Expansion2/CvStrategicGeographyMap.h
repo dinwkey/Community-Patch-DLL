@@ -157,6 +157,9 @@ public:
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
 
+	// Phase 6: Logging
+	void LogStrategicGeography() const;
+
 private:
 	PlayerTypes m_ePlayer;
 	int m_iLastFullUpdate;

@@ -809,6 +809,39 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 		}
 	}
 
+	// Strategic Geography Phase 6: boost defensive building priority for strategically critical cities.
+	// Chokepoint/floodgate/front-line cities need walls and defensive buildings earlier.
+	{
+		CvStrategicGeographyMap* pStratGeo = kPlayer.GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratGeo && pStratGeo->HasAnyCityData())
+		{
+			const StrategicCityAnalysis* pAnalysis = pStratGeo->GetCityAnalysis(m_pCity->GetID());
+			if (pAnalysis)
+			{
+				// Floodgate cities: losing them exposes the empire. Build walls ASAP.
+				if (pAnalysis->bIsFloodgate)
+					iDefenseMod += 600 + pAnalysis->iDependentCityCount * 100;
+
+				// Chokepoint cities: natural defensive positions. Walls make them fortresses.
+				if (pAnalysis->bIsChokepointCity)
+					iDefenseMod += 400;
+
+				// Front-line cities: first to be attacked. Need defenses.
+				if (pAnalysis->bIsFrontLine)
+					iDefenseMod += 200;
+				else if (pAnalysis->bIsSecondLine)
+					iDefenseMod += 75;
+
+				// Expendable salients: don't invest in walls, they may be abandoned.
+				if (pAnalysis->bIsSalient && !pAnalysis->bIsDefensibleSalient
+					&& !pAnalysis->bIsFloodgate && !pAnalysis->bIsChokepointCity && !pAnalysis->bIsCapital)
+				{
+					iDefenseMod -= 300;
+				}
+			}
+		}
+	}
+
 	bool bDanger = !bIgnoreSituational && m_pCity->isUnderSiege();
 	if (bDanger)
 	{
