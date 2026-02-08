@@ -1068,10 +1068,10 @@ TacticalAIHelpers::PerformRangedOpportunityAttack()
    
    The city-aware variant `InferUnitIntentNearCity()` improves on this with directional analysis but still can't detect flanking or multi-unit coordination.
 
-4. **No multi-unit pattern detection**: The sighting manager tracks units individually. It cannot detect:
-   - Army formation (multiple units converging on the same city)
-   - Coordinated attacks from multiple directions
-   - Feints (one army as distraction while another attacks elsewhere)
+4. **~~No multi-unit pattern detection~~ (PARTIALLY FIXED)**: The sighting manager now has query-time aggregation functions that scan existing per-unit sightings to detect convergence patterns:
+   - `CountUnitsConvergingOnCity()`: counts enemy units heading toward a city (positive dot product of movement vector vs unit→city vector), plus units within 3 tiles that have no direction data (imminently threatening regardless of heading)
+   - `IsCoordinatedAttackOnCity()`: returns true if 4+ units converging, or 2+ converging with siege present — wired into `NeedsGarrison()` and `IsAttackLikelyImminent()` (+2 warning signals)
+   - Still cannot detect: feints (one army as distraction), pincer attacks from opposite sides, or distinguish diversionary forces from main assaults. These would require cluster-based analysis (Option C from the design review).
 
 5. **Human player has sighting data — used only indirectly**: The `OnUnitMoved` hook iterates over ALL major civs including human players, so the human player's sighting manager IS populated. However, city bombardment auto-targeting (`getBestRangedStrikeTarget`, `PerformRangedOpportunityAttack`) and garrison tactical decisions only run inside `CvTacticalAI::Update()`, which is **AI-only** — human players get only `UpdateVisibility()` + `CleanUp()`. The actual consumers of sighting data for human players are: **(a)** `CvDangerPlots` fog ghost projection (runs for all players, affects automated worker/scout pathfinding and internal danger assessment), and **(b)** `NeedsGarrison()` via `HomelandAI` (affects automated garrison decisions for human automated units). The cost of populating human sighting data is trivial (~5 KB memory, ~2% of the `OnUnitMoved` loop), and removing it would break fog-aware danger avoidance for automated workers/scouts.
 

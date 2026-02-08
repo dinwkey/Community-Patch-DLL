@@ -219,6 +219,16 @@ public:
 	/// InferUnitIntent() for city defense targeting decisions.
 	UnitPredictedIntent InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY, int iCurrentTurn, bool bMovedThisTurn) const;
 
+	// === Multi-Unit Pattern Detection (query-time aggregation) ===
+
+	/// Count enemy units heading toward a city (positive dot product of movement vs unit-to-city vector).
+	/// Includes both confirmed and ghost sightings within iRadius.
+	int CountUnitsConvergingOnCity(const CvCity* pCity, int iRadius, PlayerTypes eEnemy = NO_PLAYER) const;
+
+	/// Detect coordinated attack: multiple units converging + optional siege presence.
+	/// Returns true if convergence count meets threshold (4+ units, or 2+ with siege).
+	bool IsCoordinatedAttackOnCity(const CvCity* pCity, PlayerTypes eEnemy = NO_PLAYER) const;
+
 	// === Serialization ===
 	void Read(FDataStream& kStream);
 	void Write(FDataStream& kStream) const;

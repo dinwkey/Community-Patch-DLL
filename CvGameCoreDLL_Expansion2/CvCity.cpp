@@ -16569,7 +16569,7 @@ bool CvCity::NeedsGarrison() const
 
 	CvPlayer& kPlayer = GET_PLAYER(getOwner());
 
-	// Extended Memory: if siege units have been spotted near this city (including fog ghosts), garrison it
+	// Extended Memory: garrison if siege units spotted OR coordinated attack detected
 	if (kPlayer.isMajorCiv())
 	{
 		CvDiplomacyAI* pDiploAI = kPlayer.GetDiplomacyAI();
@@ -16577,6 +16577,9 @@ bool CvCity::NeedsGarrison() const
 		{
 			const CvUnitSightingManager& sightMgr = pDiploAI->GetSightingManager();
 			if (sightMgr.CountSiegeUnitsNearCity(this, 6) >= 2)
+				return true;
+			// Multi-unit convergence: 4+ units heading toward us, or 2+ with siege
+			if (sightMgr.IsCoordinatedAttackOnCity(this))
 				return true;
 		}
 	}

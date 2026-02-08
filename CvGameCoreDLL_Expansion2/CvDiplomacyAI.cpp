@@ -1283,6 +1283,88 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(const UnitSighting* p
 	return UNIT_INTENT_UNKNOWN;
 }
 
+/// Count enemy units with observed movement heading toward a city.
+/// Uses dot product of (lastDeltaX/Y) vs (unit -> city) vector; positive = converging.
+/// If eEnemy is NO_PLAYER, counts ALL hostile players' units.
+int CvUnitSightingManager::CountUnitsConvergingOnCity(const CvCity* pCity, int iRadius, PlayerTypes eEnemy) const
+{
+	if (!pCity || !m_pPlayer)
+		return 0;
+
+	int iCX = pCity->getX();
+	int iCY = pCity->getY();
+	int currentTurn = GC.getGame().getGameTurn();
+	TeamTypes eOurTeam = m_pPlayer->getTeam();
+	int iCount = 0;
+
+	for (int i = 0; i < (int)m_Sightings.size(); i++)
+	{
+		const UnitSighting& s = m_Sightings[i];
+
+		if (s.IsExpired(currentTurn))
+			continue;
+
+		PlayerTypes eOwner = (PlayerTypes)s.owner;
+		if (eOwner == NO_PLAYER)
+			continue;
+
+		// Filter by specific enemy or any hostile player
+		if (eEnemy != NO_PLAYER)
+		{
+			if (eOwner != eEnemy)
+				continue;
+		}
+		else
+		{
+			// Must be at war with us
+			if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eOwner).getTeam()))
+				continue;
+		}
+
+		// Distance check
+		int iDist = plotDistance(iCX, iCY, (int)s.x, (int)s.y);
+		if (iDist > iRadius)
+			continue;
+
+		// Direction check: need a non-zero movement vector
+		if (s.lastDeltaX == 0 && s.lastDeltaY == 0)
+		{
+			// No direction data — count nearby at-war units anyway if close enough
+			// (within 3 tiles = imminently threatening the city regardless of heading)
+			if (iDist <= 3)
+				iCount++;
+			continue;
+		}
+
+		// Dot product: movement vector vs (unit -> city) vector
+		int dxToCity = iCX - (int)s.x;
+		int dyToCity = iCY - (int)s.y;
+		int iDot = (int)s.lastDeltaX * dxToCity + (int)s.lastDeltaY * dyToCity;
+
+		// Positive dot = heading toward city
+		if (iDot > 0)
+			iCount++;
+	}
+
+	return iCount;
+}
+
+/// Detect coordinated attack on a city: 4+ units converging, or 2+ with siege.
+bool CvUnitSightingManager::IsCoordinatedAttackOnCity(const CvCity* pCity, PlayerTypes eEnemy) const
+{
+	if (!pCity)
+		return false;
+
+	int iConverging = CountUnitsConvergingOnCity(pCity, 6, eEnemy);
+	if (iConverging >= 4)
+		return true;
+
+	if (iConverging >= 2 && CountSiegeUnitsNearCity(pCity, 6) >= 1)
+		return true;
+
+	return false;
+}
+
 /// City-aware intent inference: uses dot product of movement direction vs.
 /// unit-to-city vector to classify approach / retreat more accurately.
 /// This gives city defense better targeting: a wounded unit moving TOWARD
@@ -1695,6 +1777,18 @@ bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer) const
 
 	if (IsThreatRising(ePlayer))
 		iWarningSignals += 1;
+
+	// Multi-unit convergence: check if any of our cities have a coordinated attack from this player
+	const CvUnitSightingManager& sightMgr = GetSightingManager();
+	int iLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iLoop))
+	{
+		if (sightMgr.IsCoordinatedAttackOnCity(pCity, ePlayer))
+		{
+			iWarningSignals += 2;
+			break;  // One city is enough evidence
+		}
+	}
 
 	return iWarningSignals >= 4;
 }
