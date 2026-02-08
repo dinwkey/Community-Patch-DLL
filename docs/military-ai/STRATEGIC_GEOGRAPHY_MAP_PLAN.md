@@ -882,11 +882,19 @@ Recommend option 1 (brute force) for simplicity. It's O(water_tiles × 6_directi
    - **Resolution: Safely ignore.** No implementation needed. If a future mod adds ice-clearing, revisit then.
 
 3. **City canal transit — controllable chokepoints.**
-   - City canals (coastal cities connecting two water areas) are owner-controlled: only the city owner's units can transit freely. Passable forts (`isCoastalCityOrPassableImprovement()`) allow friend-accessible transit (open borders). This creates an asymmetry: losing a canal city doesn't just lose territory — it severs sea connectivity for the owner while potentially granting it to the conqueror.
-   - **Resolution: Tag as `CONTROLLABLE_NAVAL_CHOKEPOINT`** with higher strategic value than natural straits. This should feed into:
-     - **Defense AI:** Prioritize garrison and defensive buildings for canal cities (they're naval floodgates).
-     - **Diplomacy AI:** Allied civs that depend on a canal city for sea access have strong incentive to defend it — if an allied canal city falls, the ally loses naval connectivity too. This could increase willingness to join defensive wars or provide military support.
-     - **War targeting:** Capturing an enemy's canal city is disproportionately valuable — it breaks their naval network. Conversely, attacking into a well-defended canal city should be penalized (hard chokepoint with naval + land defenders).
+   - **City canals** (coastal cities connecting two water areas) are strictly **owner-only** for military naval units. Allied naval units CANNOT transit through a friendly city canal — only trade units (cargo ships) can. This makes city canals the most restrictive form of naval transit.
+   - **Passable forts/citadels** (`isCoastalCityOrPassableImprovement()`) on strait-adjacent plots allow **friend-accessible** transit (units with open borders can pass). This is actually *more permissive* than a city canal for allied movement.
+   - **Loss asymmetry:** If a canal city falls, the conqueror gains naval transit (floodgate opens for them) while the original owner loses it. However, the owner may be able to **restore their own connectivity** by building a fort on a nearby plot between the same two water bodies (or using a Great General citadel / buying a plot for fort placement). This restores the owner's passage but does NOT deny the enemy their new transit through the captured city.
+   - **Strategic calculus depends on context:**
+     - If the canal city is the **only** transit point and no fort-able alternative exists → defend at all costs (irreplaceable floodgate).
+     - If an alternative fort plot exists nearby → city loss is partially recoverable for own access, but enemy still gains a floodgate.
+     - If the canal city is **deep in territory** → lower risk of loss, lower priority.
+     - The real threat is often not losing own access (fort fallback) but **the enemy gaining transit** — this is what makes canal cities naval floodgates.
+   - **Resolution: Tag as `CONTROLLABLE_NAVAL_CHOKEPOINT`** with higher strategic value than natural straits. Implementation should:
+     - **Defense AI:** Prioritize garrison and defensive buildings for canal cities (they're naval floodgates). Check if alternative fort plots exist nearby — if none, escalate priority further.
+     - **War targeting:** Capturing an enemy's canal city is disproportionately valuable — it breaks their naval network AND opens a new transit route for the attacker. Conversely, attacking into a well-defended canal city should be penalized (hard chokepoint with naval + land defenders).
+     - **Fallback awareness:** If a canal city is lost, the AI should consider building a fort on a nearby strait-adjacent plot to restore own connectivity (separate from the priority of recapturing the city to deny enemy transit).
+     - **Note:** Allied canal defense incentives are limited by the owner-only transit rule — allies can't use the canal anyway. The incentive is indirect: if the enemy gains naval access through the canal, it may threaten the ally's coastline too.
 
 4. **Submarine/stealth considerations.**
    - Submarines bypass surface zone-of-control but cannot hold territory, capture cities, or operate deep in enemy waters without fleet support. A submarine slipping past a chokepoint is tactically useful but strategically insignificant — it can't project sustained power or deny the chokepoint to the enemy.
