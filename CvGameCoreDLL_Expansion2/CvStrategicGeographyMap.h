@@ -22,7 +22,7 @@ enum eStrategicLayer
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//  Per-city strategic analysis (Phase 1: layer classification only)
+//  Per-city strategic analysis (Phase 1: layer, Phase 2: salient detection)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 struct StrategicCityAnalysis
@@ -37,9 +37,16 @@ struct StrategicCityAnalysis
 		, bIsCore(false)
 		, iChokePointCount(0)
 		, iTerrainDefenseScore(0)
+		, bIsSalient(false)
+		, bIsDefensibleSalient(false)
+		, bEnemyHasIndirectFire(false)
+		, iHostileTilesRing3(0)
+		, iFriendlyTilesRing3(0)
+		, iAdjacentDefensiveTerrain(0)
 	{
 	}
 
+	// Phase 1 fields
 	int iCityID;
 	eStrategicLayer eLayer;
 	int iDefensiveDepth;       // Min distance to nearest hostile/neutral border tile
@@ -49,6 +56,14 @@ struct StrategicCityAnalysis
 	bool bIsCore;
 	int iChokePointCount;      // Number of adjacent IsChokePoint() tiles
 	int iTerrainDefenseScore;  // Aggregate terrain defense bonus of surrounding tiles
+
+	// Phase 2 fields — Salient Detection
+	bool bIsSalient;           // City protrudes into hostile territory (hostile/friendly ratio > 2.0)
+	bool bIsDefensibleSalient; // Salient but surrounded by forest/jungle — hedgehog viable pre-Indirect Fire
+	bool bEnemyHasIndirectFire;// True if any enemy at war has RangeAttackIgnoreLOS units (degrades defensible salient)
+	int iHostileTilesRing3;    // Count of hostile-owned tiles within RING3
+	int iFriendlyTilesRing3;   // Count of friendly-owned tiles within RING3
+	int iAdjacentDefensiveTerrain; // Count of adjacent (RING1) tiles with forest/jungle/hills+forest
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -77,6 +92,11 @@ public:
 	int GetDefensePriorityModifier(int iCityID) const;
 	int GetChokePointCount(int iCityID) const;
 
+	// Phase 2: Salient queries
+	bool IsCitySalient(int iCityID) const;
+	bool IsDefensibleSalient(int iCityID) const;
+	bool IsExpendableSalient(int iCityID) const; // Salient AND not defensible AND not capital
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -88,9 +108,14 @@ private:
 
 	// Internal computation
 	void ClassifyAllCities();
+	void DetectSalients();  // Phase 2: salient + defensible salient detection
 	int ComputeMinBorderDistance(CvCity* pCity) const;
 	int CountAdjacentChokepoints(CvCity* pCity) const;
 	int ComputeTerrainDefenseScore(CvCity* pCity) const;
+	int CountHostileTilesInRing3(CvCity* pCity) const;
+	int CountFriendlyTilesInRing3(CvCity* pCity) const;
+	int CountAdjacentDefensiveTerrain(CvCity* pCity) const;
+	bool DoesAnyEnemyHaveIndirectFire() const;
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H

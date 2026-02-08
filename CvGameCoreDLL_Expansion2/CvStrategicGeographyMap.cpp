@@ -2,6 +2,7 @@
 	Sid Meier's Civilization V — Vox Populi
 	Strategic Geography Map: persistent terrain-aware layer for AI defense allocation.
 	Phase 1: Defensive Layer Classification + Capital Protection.
+	Phase 2: Salient Detection + Defensible Salient Exception.
 	See docs/military-ai/STRATEGIC_GEOGRAPHY_MAP_PLAN.md for design rationale.
 	------------------------------------------------------------------------------------------------------- */
 
@@ -14,6 +15,7 @@
 #include "CvGlobals.h"
 #include "CvTeam.h"
 #include "CvDiplomacyAI.h"
+#include "CvUnit.h"
 #include "LintFree.h"
 
 // ---------------------------------------------------------------------------
@@ -58,6 +60,29 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 		iModifier += 60;   // city is effectively a chokepoint city
 	else if (iChokePointCount >= 1)
 		iModifier += 20;   // some chokepoint influence
+
+	// Phase 2: Salient modifiers
+	if (bIsSalient)
+	{
+		if (bIsDefensibleSalient && !bEnemyHasIndirectFire)
+		{
+			// Defensible salient pre-Indirect Fire: forest/jungle hedgehog is viable.
+			// Treat roughly like a second-line city — worth holding.
+			iModifier += 60;
+		}
+		else if (bIsDefensibleSalient && bEnemyHasIndirectFire)
+		{
+			// Defensible salient but enemy has Indirect Fire — hedgehog is degraded.
+			// Still slightly better than a naked salient but not worth heavy investment.
+			iModifier -= 15;
+		}
+		else
+		{
+			// Expendable salient: protruding into enemy territory with no terrain advantage.
+			// Heavy penalty — don't waste defense resources here, triage toward core.
+			iModifier -= 40;
+		}
+	}
 
 	// Terrain defense bonus (scaled): rough terrain around city makes it more defensible
 	// and therefore more worth holding (hills, forests, rivers)
@@ -121,6 +146,7 @@ void CvStrategicGeographyMap::Update()
 
 	m_iLastFullUpdate = GC.getGame().getGameTurn();
 	ClassifyAllCities();
+	DetectSalients();
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +183,37 @@ int CvStrategicGeographyMap::GetChokePointCount(int iCityID) const
 {
 	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
 	return pAnalysis ? pAnalysis->iChokePointCount : 0;
+}
+
+bool CvStrategicGeographyMap::IsCitySalient(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bIsSalient : false;
+}
+
+bool CvStrategicGeographyMap::IsDefensibleSalient(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	if (!pAnalysis)
+		return false;
+	return pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire;
+}
+
+bool CvStrategicGeographyMap::IsExpendableSalient(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	if (!pAnalysis || !pAnalysis->bIsSalient)
+		return false;
+	// Capital is never expendable, even if it's technically a salient
+	if (pAnalysis->bIsCapital)
+		return false;
+	// Chokepoint salients are not expendable (losing them opens corridors)
+	if (pAnalysis->iChokePointCount >= 3)
+		return false;
+	// Defensible salients pre-Indirect Fire are not expendable
+	if (pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire)
+		return false;
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -340,4 +397,198 @@ int CvStrategicGeographyMap::ComputeTerrainDefenseScore(CvCity* pCity) const
 	}
 
 	return iScore;
+}
+
+// ========================================================================
+// Phase 2: Salient Detection + Defensible Salient Exception
+// ========================================================================
+
+/// Count hostile-owned tiles within RING3 (37 plots) of a city.
+/// "Hostile" means: at war with us, or CIV_OPINION_COMPETITOR or worse.
+int CvStrategicGeographyMap::CountHostileTilesInRing3(CvCity* pCity) const
+{
+	if (!pCity)
+		return 0;
+
+	CvPlot* pCityPlot = pCity->plot();
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	TeamTypes eOurTeam = kPlayer.getTeam();
+	int iCount = 0;
+
+	for (int i = 0; i < RING3_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+		if (!pLoopPlot)
+			continue;
+
+		PlayerTypes ePlotOwner = pLoopPlot->getOwner();
+		if (ePlotOwner == NO_PLAYER || ePlotOwner == m_ePlayer)
+			continue;
+
+		// Skip minor civs
+		if (GET_PLAYER(ePlotOwner).isMinorCiv())
+			continue;
+
+		// At war → hostile
+		if (GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(ePlotOwner).getTeam()))
+		{
+			iCount++;
+			continue;
+		}
+
+		// Competitor or worse → hostile
+		CivOpinionTypes eOpinion = kPlayer.GetDiplomacyAI()->GetCivOpinion(ePlotOwner);
+		if (eOpinion <= CIV_OPINION_COMPETITOR)
+			iCount++;
+	}
+
+	return iCount;
+}
+
+/// Count friendly-owned tiles within RING3 (37 plots) of a city.
+int CvStrategicGeographyMap::CountFriendlyTilesInRing3(CvCity* pCity) const
+{
+	if (!pCity)
+		return 0;
+
+	CvPlot* pCityPlot = pCity->plot();
+	int iCount = 0;
+
+	for (int i = 0; i < RING3_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+		if (!pLoopPlot)
+			continue;
+
+		if (pLoopPlot->getOwner() == m_ePlayer)
+			iCount++;
+	}
+
+	return iCount;
+}
+
+/// Count RING1 (6 adjacent) tiles that have defensive terrain (forest, jungle, hills+forest, hills+jungle).
+int CvStrategicGeographyMap::CountAdjacentDefensiveTerrain(CvCity* pCity) const
+{
+	if (!pCity)
+		return 0;
+
+	CvPlot* pCityPlot = pCity->plot();
+	int iCount = 0;
+
+	// RING1 is plots 0..RING1_PLOTS-1 but plot 0 is the center; adjacent tiles are 1..6
+	// Actually iterateRingPlots index 0 = center, 1-6 = ring1 adjacent tiles
+	for (int i = 1; i < RING1_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+		if (!pLoopPlot)
+			continue;
+
+		bool bDefensive = false;
+
+		// Forest or jungle provide LOS blocking and movement penalty
+		if (pLoopPlot->HasFeature(FEATURE_FOREST) || pLoopPlot->HasFeature(FEATURE_JUNGLE))
+			bDefensive = true;
+
+		// Hills provide elevation defense; hills + forest/jungle is even better
+		if (pLoopPlot->isHills())
+			bDefensive = true;
+
+		// Mountain is impassable — counts as a natural wall
+		if (pLoopPlot->isMountain())
+			bDefensive = true;
+
+		if (bDefensive)
+			iCount++;
+	}
+
+	return iCount;
+}
+
+/// Check if any enemy we are at war with has units with Indirect Fire (RangeAttackIgnoreLOS).
+/// This is the era-aware degradation check: once Indirect Fire exists, forest/jungle hedgehog loses value.
+bool CvStrategicGeographyMap::DoesAnyEnemyHaveIndirectFire() const
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	TeamTypes eOurTeam = kPlayer.getTeam();
+
+	// Iterate all major players
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+	{
+		PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+		if (eEnemy == m_ePlayer)
+			continue;
+
+		CvPlayer& kEnemy = GET_PLAYER(eEnemy);
+		if (!kEnemy.isAlive() || kEnemy.isMinorCiv())
+			continue;
+
+		if (!GET_TEAM(eOurTeam).isAtWar(kEnemy.getTeam()))
+			continue;
+
+		// Check this enemy's units for Indirect Fire capability
+		int iLoop = 0;
+		for (CvUnit* pUnit = kEnemy.firstUnit(&iLoop); pUnit != NULL; pUnit = kEnemy.nextUnit(&iLoop))
+		{
+			if (pUnit->IsRangeAttackIgnoreLOS())
+				return true;
+		}
+	}
+
+	return false;
+}
+
+/// Phase 2 main routine: scan all classified cities and detect salients.
+/// A salient is a FRONT_LINE city that protrudes into hostile territory (hostile tiles >> friendly tiles in RING3).
+/// A defensible salient has enough adjacent defensive terrain to make a hedgehog viable.
+void CvStrategicGeographyMap::DetectSalients()
+{
+	// First, check once if any enemy has Indirect Fire (expensive, do it once per update)
+	bool bEnemyHasIndirectFire = DoesAnyEnemyHaveIndirectFire();
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	int iLoop = 0;
+
+	for (CvCity* pCity = kPlayer.firstCity(&iLoop); pCity != NULL; pCity = kPlayer.nextCity(&iLoop))
+	{
+		int iCityID = pCity->GetID();
+
+		// Find the mutable analysis entry for this city
+		std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.find(iCityID);
+		if (it == m_cityAnalysis.end())
+			continue;
+
+		StrategicCityAnalysis& analysis = it->second;
+
+		// Reset Phase 2 fields
+		analysis.bIsSalient = false;
+		analysis.bIsDefensibleSalient = false;
+		analysis.bEnemyHasIndirectFire = bEnemyHasIndirectFire;
+		analysis.iHostileTilesRing3 = 0;
+		analysis.iFriendlyTilesRing3 = 0;
+		analysis.iAdjacentDefensiveTerrain = 0;
+
+		// Only FRONT_LINE cities can be salients — second-line/rear cities are by definition not protruding
+		if (analysis.eLayer != STRATEGIC_LAYER_FRONT_LINE)
+			continue;
+
+		// Count hostile and friendly tiles in RING3
+		analysis.iHostileTilesRing3 = CountHostileTilesInRing3(pCity);
+		analysis.iFriendlyTilesRing3 = CountFriendlyTilesInRing3(pCity);
+
+		// Salient detection: hostile/friendly ratio > 2.0
+		// Avoid division by zero: if no friendly tiles, any hostile presence makes it a salient
+		int iFriendlyForRatio = max(analysis.iFriendlyTilesRing3, 1);
+		if (analysis.iHostileTilesRing3 > iFriendlyForRatio * 2)
+		{
+			analysis.bIsSalient = true;
+
+			// Check defensibility: >=4 of 6 adjacent tiles have defensive terrain
+			analysis.iAdjacentDefensiveTerrain = CountAdjacentDefensiveTerrain(pCity);
+			if (analysis.iAdjacentDefensiveTerrain >= 4)
+			{
+				analysis.bIsDefensibleSalient = true;
+			}
+		}
+	}
 }

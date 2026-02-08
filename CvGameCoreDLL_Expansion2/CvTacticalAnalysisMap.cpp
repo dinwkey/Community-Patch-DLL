@@ -1025,6 +1025,21 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 				default:
 					break; // front-line and rear get base value
 				}
+
+				// Phase 2: Salient-aware zone priority adjustments
+				if (pCityStrat->bIsSalient)
+				{
+					if (pCityStrat->bIsDefensibleSalient && !pCityStrat->bEnemyHasIndirectFire)
+					{
+						// Defensible salient: hedgehog is viable, moderate boost
+						iBaseValue = (iBaseValue * 3) / 2; // 1.5x
+					}
+					else if (!pCityStrat->bIsCapital && pCityStrat->iChokePointCount < 3)
+					{
+						// Expendable salient: reduce priority so we don't waste tactical resources
+						iBaseValue = (iBaseValue * 3) / 4; // 0.75x
+					}
+				}
 			}
 			else
 			{

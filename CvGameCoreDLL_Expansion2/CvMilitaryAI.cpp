@@ -5512,6 +5512,63 @@ void CvMilitaryAI::EvaluateTacticalRetreat()
 			}
 		}
 
+		// Phase 2: Salient-aware retreat — abandon expendable salients first to free units.
+		// When army balance is low, don't waste defense ops on cities we've identified as expendable.
+		// Defensible salients keep their defense ops unless army balance is truly critical.
+		if (m_pStrategyMap)
+		{
+			int iCityLoop = 0;
+			for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
+			{
+				if (pCity == pCapital)
+					continue;
+
+				bool bExpendable = m_pStrategyMap->IsExpendableSalient(pCity->GetID());
+				bool bDefensible = m_pStrategyMap->IsDefensibleSalient(pCity->GetID());
+
+				// Expendable salients: stop defense ops even at moderate army depletion
+				if (bExpendable && m_iArmyBalanceScore < 30)
+				{
+					CvAIOperation* pDefOp = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_CITY_DEFENSE, NO_PLAYER, pCity->plot());
+					if (pDefOp)
+					{
+						pDefOp->SetToAbort(AI_ABORT_WAR_STATE_CHANGE);
+					}
+
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString playerName = GetPlayer()->getCivilizationShortDescription();
+						FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+						CvString msg;
+						msg.Format("%03d, %s, SALIENT ABANDON: %s (expendable salient, army balance=%d)",
+							GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+							pCity->getName().c_str(), m_iArmyBalanceScore);
+						pLog->Msg(msg.c_str());
+					}
+				}
+				// Defensible salients: only abandon if army balance is truly critical
+				else if (bDefensible && m_iArmyBalanceScore < 10)
+				{
+					CvAIOperation* pDefOp = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_CITY_DEFENSE, NO_PLAYER, pCity->plot());
+					if (pDefOp)
+					{
+						pDefOp->SetToAbort(AI_ABORT_WAR_STATE_CHANGE);
+					}
+
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString playerName = GetPlayer()->getCivilizationShortDescription();
+						FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+						CvString msg;
+						msg.Format("%03d, %s, SALIENT ABANDON (CRITICAL): %s (defensible salient, army balance=%d)",
+							GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+							pCity->getName().c_str(), m_iArmyBalanceScore);
+						pLog->Msg(msg.c_str());
+					}
+				}
+			}
+		}
+
 		// Also stop offensive operations against distant enemies to consolidate forces
 		// Only keep offense against the weakest/closest enemy
 		if (m_iArmyBalanceScore < 15 && iNumWars >= 3)

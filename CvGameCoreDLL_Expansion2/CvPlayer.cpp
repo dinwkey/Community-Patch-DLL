@@ -5154,6 +5154,22 @@ void CvPlayer::UpdateCityThreatCriteria()
 			{
 				iThreatValue -= 50; // moderate penalty for distant isolated city
 			}
+
+			// Phase 2: Salient-aware adjustments from strategic geography map
+			CvStrategicGeographyMap* pStratGeoMap = GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pStratGeoMap)
+			{
+				if (pStratGeoMap->IsExpendableSalient(pLoopCity->GetID()))
+				{
+					// Expendable salient: compound the triage penalty — actively shed this city
+					iThreatValue -= 30;
+				}
+				else if (pStratGeoMap->IsDefensibleSalient(pLoopCity->GetID()))
+				{
+					// Defensible salient: partially offset the triage penalty — hedgehog is viable
+					iThreatValue += 20;
+				}
+			}
 		}
 
 		// Ensure threat value doesn't go negative
