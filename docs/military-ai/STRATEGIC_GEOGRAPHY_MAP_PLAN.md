@@ -833,7 +833,7 @@ Recommend option 1 (brute force) for simplicity. It's O(water_tiles × 6_directi
 1. **No existing naval chokepoint concept** — land has `IsChokePoint()` to aggregate; water has nothing
 2. **Water area topology is complex** — multiple disjoint areas per Landmass, canal transit, deep/shallow split
 3. **Cross-domain interactions** — amphibious threats bridge land and sea; land chokepoints don't
-4. **Performance concerns** — scanning all water tiles for chokepoint detection is O(water_tiles) not O(cities), and Giant Earth has ~8,000+ water tiles
+4. **Performance concerns** — naive full-map water scanning would be O(water_tiles), but this is avoidable with a city-centric approach (see C.10 Performance Architecture)
 5. **Harder to validate** — naval AI behavior is less visible than land (fleets hidden at sea, hard to observe chokepoint control)
 
 ### C.7 Key API Building Blocks
@@ -867,9 +867,11 @@ Recommend option 1 (brute force) for simplicity. It's O(water_tiles × 6_directi
 
 4. **Naval Phase 4 should wait for testing** — sea lane vulnerability and amphibious threat are the most complex and least likely to produce visible AI improvement without extensive tuning.
 
-5. **Performance mitigation:** Compute naval geography on map initialization and re-scan only when cities are founded/captured near water. Water terrain doesn't change — only control of transit points (cities/canals on straits) changes.
+5. **Performance mitigation:** Do NOT scan all water tiles. Use the city-centric approach described in C.10 — scan outward from coastal cities rather than iterating every water plot. Water terrain is static; only control of transit points changes. Cache chokepoints permanently once discovered.
 
 6. **Consider adding `IsNavalChokePoint()` to CvPlot** as a cached bitflag (like existing `IsChokePoint()`) computed once during `calculateAreas()`. This amortizes the cost and gives all systems free access.
+
+7. **Leverage existing land strategic geography** to prioritize which coastal cities need water analysis. FRONT_LINE cities facing naval threats get full analysis; INTERIOR coastal cities on lakes can be skipped.
 
 ### C.9 Open Questions (Naval-Specific) — Refined
 
@@ -903,3 +905,81 @@ Recommend option 1 (brute force) for simplicity. It's O(water_tiles × 6_directi
 5. **Island civ special handling.**
    - Island civs (Japan, Britain, Polynesia, Indonesia, etc.) have fundamentally different strategic needs: ALL threats arrive by sea, coastal defense is paramount, embarked units are maximum-vulnerability targets, naval superiority is the primary strategic objective rather than a supporting arm, ranged naval units (frigates, battleships) become the core military rather than land siege, and coastal food/production tiles matter more than inland expansion.
    - **Resolution: Warrants a separate research document.** The strategic model for island civs is too divergent from the continental model to handle as a sub-feature. A dedicated doc should cover: coastal defense classification (exposed vs sheltered harbors), naval control zones (how many sea tiles a navy can deny), amphibious threat assessment, island economy priorities, and inter-island logistics. Appendix D or a standalone `ISLAND_CIV_STRATEGY.md`.
+
+### C.10 Performance Architecture — Why NOT to Scan All Water Tiles
+
+**The problem with naive water scanning:**
+
+Giant Earth has ~10,000 water tiles. Scanning every one each turn to find chokepoints, exposure, and connectivity would be O(water_tiles × neighbors) ≈ 60,000 operations per player per turn — unnecessary and wasteful.
+
+**How a human player thinks about water:**
+
+A human doesn't count individual ocean tiles. They glance at the map and immediately see:
+- "My coastal city has open water on 3 sides" (exposure — local observation)
+- "There's a narrow strait between those two landmasses" (chokepoint — discovered once, remembered)
+- "The enemy fleet is 4 tiles from my harbor" (threat — only matters for visible area)
+
+The AI should mimic this: **local observation from known positions, cache static features, ignore fog.**
+
+**City-centric scanning (the correct approach):**
+
+Instead of scanning all water tiles, scan outward from each coastal city:
+
+```
+For each coastal city:
+    Skip if city is INTERIOR (land strategic map says no threat)
+    Skip if city is on a lake (CvLandmass::isLake())
+    
+    Scan RING1..RING5 (37-91 plots):
+        Count water tiles by direction → coastal exposure
+        Check for IsWaterAreaSeparator() on adjacent land → nearby chokepoint
+        Check for narrow water passages (water tile with ≤2 water neighbors) → strait
+    
+    Cache results. Only re-scan if:
+        - City founded/captured nearby
+        - Improvement built on strait plot (fort/citadel)
+```
+
+**Budget comparison:**
+
+| Approach | Tiles Scanned | Per Player Per Turn |
+|----------|--------------|-------------------|
+| Full water scan | ~10,000 | ~60,000 ops |
+| City-centric (15 coastal cities × 91 ring plots) | ~1,365 | ~8,000 ops |
+| City-centric with INTERIOR skip | ~500-800 | ~3,000-5,000 ops |
+| With caching (only re-scan on events) | 0 (most turns) | ~0 (amortized) |
+
+**Visibility as a natural filter:**
+
+The AI should only analyze water it has **revealed** (not necessarily currently visible). Rationale:
+- Water terrain never changes. Once you've seen a strait, it stays a strait.
+- Unrevealed water is too far from any city to matter strategically.
+- Chokepoints discovered by exploration should be **cached permanently** — add to a persistent set of known naval chokepoints per player.
+- When a scout/naval unit reveals new coastline, trigger a local re-scan around the newly revealed area, not a full re-scan.
+
+**How the land strategic geography map helps:**
+
+The existing `CvStrategicGeographyMap` already classifies every city. This directly helps:
+- **FRONT_LINE coastal cities:** Full water analysis (exposure + chokepoint scan + threat assessment). These are the cities that face enemies across water.
+- **SECOND_LINE coastal cities:** Moderate analysis (exposure only — chokepoint scan if near a known strait).
+- **INTERIOR coastal cities:** Skip entirely or minimal (lake check only).
+- **Non-coastal cities:** No water analysis at all.
+
+This means the land classification acts as a **priority filter** before any water scanning begins. On a typical game with 20 cities, maybe 5-8 are coastal, and only 3-4 of those are FRONT_LINE — so the actual scan budget is very small.
+
+**Static vs dynamic features:**
+
+| Feature | Static? | Scan Strategy |
+|---------|---------|---------------|
+| Water body shapes (straits, narrows) | Yes — terrain never changes | Compute once on discovery, cache permanently |
+| Coastal exposure per city | Semi-static — changes only when cities founded/captured nearby | Recompute on city events only |
+| Naval chokepoint control (who owns the canal city) | Dynamic — changes on capture | Update on city capture events only |
+| Enemy naval threat near our coast | Dynamic — changes every turn | This is existing danger system, NOT geography |
+
+**Key insight: naval geography is almost entirely static.** Unlike land strategic geography (which shifts with front lines), water terrain and chokepoint locations are fixed at map generation. Only *control* of chokepoints changes (city captures, fort construction). This means:
+
+1. **Compute chokepoints once** (during `calculateAreas()` or first update), cache in plot bitflags.
+2. **Compute coastal exposure once per city**, recompute only on nearby city events.
+3. **Track chokepoint control** as a lightweight ownership check (whose city/fort sits on the chokepoint?), not a full re-scan.
+
+This makes the naval geography system essentially **free** on most turns — amortized cost approaches zero.
