@@ -576,7 +576,7 @@ The strategic geography map does **not** replace the previous fixes — it provi
 
 3. **Should this affect human players?** The map could be exposed to human players via an overlay in the advisor UI, but that's a separate feature. For now, AI-only.
 
-4. **What about naval strategic geography?** Sea lanes, straits (e.g., Gibraltar, Bosphorus), and naval chokepoints are important but significantly more complex. Recommendation: defer to a separate naval strategic geography pass after land is working.
+4. **What about naval strategic geography?** Sea lanes, straits (e.g., Gibraltar, Bosphorus), and naval chokepoints are important but significantly more complex. Recommendation: defer to a separate naval strategic geography pass after land is working. **See Appendix C for detailed research and feasibility analysis.**
 
 5. **Turn-budget when many AI players compute simultaneously?** On Giant Earth with 20+ AI civs, each computing strategic geography, total budget could reach 1-2 seconds per turn. May need to stagger (not all civs update the same turn).
 
@@ -603,3 +603,295 @@ The strategic geography map does **not** replace the previous fixes — it provi
 - **CvAStar**: Has `//todo: extra cost if this is a chokepoint` — chokepoint-aware pathfinding is planned but unimplemented
 
 The strategic geography map should **aggregate** per-plot `IsChokePoint()` flags into city-level chokepoint classification rather than recomputing from scratch.
+
+---
+
+## Appendix C: Naval Strategic Geography — Research & Feasibility Analysis
+
+> **Status:** Research complete, implementation deferred  
+> **Date:** Feb 2026  
+> **Prerequisite:** Land strategic geography (Phases 1-6) — COMPLETED  
+> **Complexity estimate:** HIGH — significantly harder than land geography  
+
+### C.1 Problem Statement
+
+The land strategic geography system (Phases 1-6) handles terrain chokepoints, defensive layers, floodgate cities, and approach corridors for land warfare. But coastal civs face a fundamentally different threat model:
+
+- **Amphibious assault**: Enemy fleets can bypass land chokepoints entirely by landing troops on an undefended coast
+- **Naval blockade**: Cutting sea trade routes cripples cities that depend on coastal trade
+- **Strait control**: Narrow water passages (Gibraltar, Bosphorus, Malacca) are the naval equivalents of mountain passes
+- **Multi-ocean reachability**: Islands and peninsulas may face threats from multiple ocean basins independently
+- **Coastal exposure asymmetry**: A city with 2 coastal tiles is less exposed than one with 5
+
+**Motivating example:** Japan on Giant Earth TSL has all cities coastal. Land chokepoints are irrelevant. The AI needs to understand that control of the Sea of Japan and the Pacific approaches determines Japan's survival — not mountain passes.
+
+### C.2 What Exists Today (Codebase Audit)
+
+| Concept | Status | Location | Notes |
+|---------|--------|----------|-------|
+| **Water body identification** | Partial | `CvArea` (flood-fill), `CvLandmass` (groups areas) | Contiguous water of same passability = one Area. No "Atlantic vs Pacific" naming. |
+| **Lake vs ocean** | Yes | `CvLandmass::isLake()` | `numTiles < MIN_WATER_SIZE_FOR_OCEAN (default 10)` |
+| **Land bridge detection** | Yes | `CvPlot::IsWaterAreaSeparator()` | Detects land tiles adjacent to 2+ different water Areas. Used for canal site / settle scoring. |
+| **Coastal city detection** | Yes | `CvCity::isCoastal(int minSize)` | Uses `CvPlot::isCoastalLand()` checking adjacent water Landmass size. |
+| **Naval pathfinding** | Yes | `CvAStar` with `NavalUnitSimpleValid` | Domain checks, deep water gating, ice. Coastal cities + passable forts act as "canals" for naval transit. |
+| **Naval trade paths** | Yes | `CvGameTrade` with `PT_TRADE_WATER` | Separate water path cache (`m_aPotentialTradePathsWater`). Trade paths implicitly define navigable sea lanes. |
+| **Canal detection (prospective)** | Yes | `CvBuilderTaskingAI::WantCanalAtPlot()` | Uses `MOVEFLAG_PRETEND_CANALS` to find potential canal locations via trade pathfinding. |
+| **Tactical water zones** | Partial | `CvTacticalAnalysisMap` | Water zones have negative IDs (= `-cityID`), separate strength counting (naval ranged/melee), posture selection. Water zones get 1/3 base priority of land zones. |
+| **Naval defense state** | Yes | `CvMilitaryAI::UpdateDefenseState()` | `m_eNavalDefenseState` computed from naval unit count vs recommended, coastal siege status, enemy naval movement. |
+| **Naval chokepoints** | **NO** | — | No concept of narrow water passages, sea lane control points, or naval strategic positions. |
+| **Water area connectivity graph** | **NO** | — | Areas don't track which other water areas they connect to, or what land separates them. |
+| **Amphibious landing zones** | **NO** | — | Per-unit embark/disembark only. No strategic-level "vulnerable coastline" concept. |
+| **Sea lane identification** | **NO** | — | Trade paths are cached but not abstracted into "sea lanes" with strategic value. |
+| **Coastal exposure scoring** | **NO** | — | No per-city count of how much coastline is exposed to open ocean vs sheltered water. |
+
+### C.3 Proposed Naval Strategic Geography Concepts
+
+#### C.3.1 Naval Chokepoint Detection (Narrow Water Passages)
+
+The naval analog of a mountain pass. A water tile (or small set of tiles) where the navigable water narrows to ≤ 2-3 tiles wide, forcing all naval traffic through a bottleneck.
+
+**Algorithm sketch:**
+```
+For each water tile W:
+  1. Count adjacent water tiles (not lake, not ice) in a cross-section
+     perpendicular to the "flow" direction
+  2. If the narrowest cross-section ≤ 3 tiles AND water exists on both sides:
+     → W is a NAVAL_CHOKEPOINT
+  
+  More robust approach:
+  - For each pair of large water Areas separated by land:
+    - Find the shortest water path connecting them (may go through coastal cities/canals)
+    - Measure the minimum "width" along that path
+    - If minimum width ≤ 3: the narrowest point is a NAVAL_CHOKEPOINT
+```
+
+**Difficulty:** MEDIUM-HIGH. The main challenge is defining "perpendicular to flow" on a hex grid. The cross-section measurement requires knowing the local direction of the waterway, which means computing it from the path between two water bodies.
+
+**Simpler alternative:** For each water plot, scan all 6 hex directions. In each direction, count consecutive water tiles. If the plot has water extending far (>5 tiles) in exactly 2 opposite-ish directions but only 0-1 tiles in the perpendicular directions, it's a strait tile. This is the "narrow corridor" approach used in land chokepoint detection (Phase 3), adapted for water.
+
+**Real-world examples on Giant Earth:**
+- **Gibraltar**: 1-2 tile gap between Iberian Peninsula and North Africa
+- **Bosphorus**: 1 tile between Europe and Anatolia (often a city site)
+- **Strait of Malacca**: Narrow water between Malay Peninsula and Sumatra
+- **English Channel**: 2-3 tiles wide at narrowest
+- **Danish Straits**: Narrow passages between Denmark and Scandinavia
+- **Suez (canal)**: Man-made connection, handled by `IsWaterAreaSeparator()` + canal building
+
+#### C.3.2 Coastal Exposure Classification
+
+Per-city assessment of how vulnerable each coastal city is to naval attack.
+
+```
+For each coastal city C:
+  1. Count water tiles in RING1 (0-6) and RING2 (0-12)
+  2. Classify:
+     - 1-2 water tiles in RING1: SHELTERED_COAST (harbor access but limited exposure)
+     - 3-4 water tiles in RING1: MODERATE_COAST (standard coastal city)
+     - 5-6 water tiles in RING1: EXPOSED_COAST (peninsula tip, island)
+  3. Check if those water tiles connect to open ocean or only to a lake/small sea
+  4. Compute "landing zone" count: how many coastline tiles within RING2 are
+     flat land adjacent to deep-enough water for troop landings
+```
+
+**Difficulty:** LOW. This is straightforward tile counting, similar to Phase 2 salient detection. The main complexity is distinguishing "connected to ocean" from "connected to lake."
+
+#### C.3.3 Sea Lane Identification
+
+Abstract paths that connect important coastal cities or ocean basins.
+
+```
+For each pair of coastal cities (own or allied):
+  1. Compute water path between them (reuse trade path cache)
+  2. If path exists and distance < threshold:
+     → This is a SEA_LANE
+  3. Identify tiles along the sea lane that are near naval chokepoints
+  4. Assign strategic value to the sea lane based on:
+     - Economic value (trade routes using this path)
+     - Military value (reinforcement route between theaters)
+     - Vulnerability (passes through enemy-controlled water)
+```
+
+**Difficulty:** MEDIUM. The trade path cache already computes these paths (`m_aPotentialTradePathsWater`). The challenge is abstracting individual paths into strategic sea lanes and measuring their vulnerability. Could reuse `CvGameTrade::UpdateTradePathCache()` output.
+
+#### C.3.4 Water Area Connectivity Graph
+
+A graph showing how water bodies connect to each other through straits, canals, and coastal city passages.
+
+```
+Nodes: each CvArea where isWater() == true
+Edges: connections through:
+  - Direct adjacency (tiles of two different water areas touch)
+  - Coastal city passages (naval units can transit through coastal cities)
+  - Canal improvements (passable forts connecting water areas)
+  - Potential canal sites (for forward planning)
+  
+Edge weight: width of the connection (1 tile = chokepoint, 5+ tiles = open water)
+```
+
+**Difficulty:** MEDIUM-HIGH. Requires iterating all water area boundaries. The `IsWaterAreaSeparator()` function already identifies land tiles between different water areas — this could be the foundation. But building a full graph with weighted edges and transit nodes (cities/canals) is non-trivial.
+
+#### C.3.5 Amphibious Threat Assessment
+
+Per-city evaluation of vulnerability to amphibious landing.
+
+```
+For each coastal city C:
+  1. Find all coast tiles within RING2 that are flat land adjacent to water
+     (potential landing zones)
+  2. For each enemy with naval capability:
+     - Can their fleet reach our coastal waters? (water area connectivity)
+     - Do they have embarked units or transports?
+     - How many landing zones can they hit simultaneously?
+  3. Compute amphibious_threat_score per-enemy per-city
+  4. Cities with high scores need garrison units + coastal defenses
+```
+
+**Difficulty:** HIGH. Requires cross-referencing water area connectivity, enemy naval strength, embarkation capability, and landing zone geometry. Most complex individual feature.
+
+### C.4 Integration Points
+
+| Consumer | How Naval Geography Improves It |
+|----------|-------------------------------|
+| **`UpdateDefenseState()`** (`CvMilitaryAI`) | Factor in coastal exposure and naval chokepoint control when computing `m_eNavalDefenseState` |
+| **`PrioritizeZones()`** (`CvTacticalAnalysisMap`) | Water zones near naval chokepoints get higher priority (currently water zones are 1/3 of land) |
+| **`CheckBuildingBuildSanity()`** (`CvBuildingProductionAI`) | Exposed coastal cities prioritize harbor defenses, walls |
+| **`PlotFoundValue()`** (`CvSiteEvaluationClasses`) | Penalize settlements on fully exposed coastline; bonus for sheltered harbors |
+| **`ConnectPointsForStrategy()`** (`CvBuilderTaskingAI`) | Prioritize canal construction at plots that connect two large water areas |
+| **`DoUpdateWarTargets()`** (`CvDiplomacyAI`) | Consider naval geography when evaluating island / peninsular targets |
+| **Naval superiority operations** (`CvMilitaryAI`) | Deploy fleets to naval chokepoints, not just nearest threatened city |
+| **Trade route security** (`CvEconomicAI`) | Factor in sea lane vulnerability when choosing trade routes |
+| **City ranged strike priority** | Coastal cities near chokepoints should have ranged strike capability (walls, castle) |
+
+### C.5 Proposed Implementation Phases
+
+#### Naval Phase 1: Coastal Exposure Classification (LOW complexity, ~150 lines)
+
+**Goal:** Every coastal city knows how exposed it is to naval attack.
+
+- Count water tiles in RING1/RING2 for each city
+- Classify as SHELTERED / MODERATE / EXPOSED
+- Check if adjacent water is ocean vs lake
+- Count potential landing zones (flat coastal tiles in RING2)
+- Feed into city defense priority and building production AI
+
+**Estimated effort:** 1-2 sessions. Reuses existing `isCoastalLand()`, `isWater()`, `isLake()` APIs.
+
+#### Naval Phase 2: Naval Chokepoint Detection (MEDIUM complexity, ~300 lines)
+
+**Goal:** Identify narrow water passages (straits) on the map.
+
+- Adapt land chokepoint corridor-width scanning for water domains
+- For each water tile, measure navigable width perpendicular to the waterway direction
+- Tag narrow passages (width ≤ 3) as NAVAL_CHOKEPOINT
+- Aggregate into per-city "controls naval chokepoint" flag for adjacent cities
+- Boost tactical zone priority for water zones containing chokepoints
+
+**Estimated effort:** 2-3 sessions. The corridor-width scan from Phase 3 land chokepoints is a template, but hex-grid perpendicular direction computation adds complexity.
+
+**Key challenge:** Determining the local "flow direction" of a waterway. Options:
+1. **Brute force:** For each water tile, test all 3 hex axis pairs. The axis where water extends farthest in both directions is the "flow" axis; the perpendicular is the "width."
+2. **Path-based:** Find shortest water path between two large bodies; width is measured perpendicular to each path segment.
+3. **Gradient-based:** Compute distance-to-nearest-land for each water tile; gradient direction is perpendicular to coastline; width is measured along gradient.
+
+Recommend option 1 (brute force) for simplicity. It's O(water_tiles × 6_directions × scan_depth) — feasible.
+
+#### Naval Phase 3: Water Area Connectivity Graph (MEDIUM-HIGH complexity, ~400 lines)
+
+**Goal:** Know how ocean basins connect through straits and canals.
+
+- Build adjacency graph of water Areas
+- Edge weight = narrowest connection width
+- Track transit points (coastal cities, canals, potential canal sites)
+- Identify when an enemy controls a transit point (city on a strait)
+- Enables "can our fleet reach their coast?" queries
+
+**Estimated effort:** 3-4 sessions. Iterating area boundaries, building graph, handling canal transit. Requires careful handling of the Area/Landmass distinction.
+
+#### Naval Phase 4: Sea Lane & Amphibious Threat (HIGH complexity, ~500 lines)
+
+**Goal:** Abstract sea lanes between important cities; assess amphibious vulnerability.
+
+- Extract strategic sea lanes from trade path cache
+- Identify vulnerable segments (near enemy territory, through chokepoints)
+- Per-city amphibious threat scoring
+- Cross-reference with enemy fleet composition and embarkation tech
+
+**Estimated effort:** 4-5 sessions. Heavy cross-system integration. Depends on Phases 1-3.
+
+### C.6 Complexity Assessment Summary
+
+| Naval Phase | Complexity | Lines (est.) | Sessions | Dependencies |
+|-------------|-----------|-------------|----------|-------------|
+| N1: Coastal Exposure | LOW | ~150 | 1-2 | None (standalone) |
+| N2: Naval Chokepoints | MEDIUM | ~300 | 2-3 | N1 preferred but not required |
+| N3: Water Connectivity | MEDIUM-HIGH | ~400 | 3-4 | N2 (chokepoint data feeds edges) |
+| N4: Sea Lanes + Amphibious | HIGH | ~500 | 4-5 | N1 + N2 + N3 |
+| **Total** | | **~1,350** | **~10-14** | |
+
+**Comparison with land system:** Land Phases 1-6 totaled ~1,964 insertions across ~27 files. Naval would be ~1,350 lines but is **architecturally harder** because:
+
+1. **No existing naval chokepoint concept** — land has `IsChokePoint()` to aggregate; water has nothing
+2. **Water area topology is complex** — multiple disjoint areas per Landmass, canal transit, deep/shallow split
+3. **Cross-domain interactions** — amphibious threats bridge land and sea; land chokepoints don't
+4. **Performance concerns** — scanning all water tiles for chokepoint detection is O(water_tiles) not O(cities), and Giant Earth has ~8,000+ water tiles
+5. **Harder to validate** — naval AI behavior is less visible than land (fleets hidden at sea, hard to observe chokepoint control)
+
+### C.7 Key API Building Blocks
+
+| API | File | What It Provides |
+|-----|------|-----------------|
+| `CvPlot::isWater()` | CvPlot.h | Basic water check |
+| `CvPlot::isDeepWater()` / `isShallowWater()` | CvPlot.h | Ocean vs coast depth |
+| `CvPlot::isCoastalLand(int)` | CvPlot.cpp | Is land adjacent to water of given min size |
+| `CvPlot::IsWaterAreaSeparator()` | CvPlot.cpp | Land tile between two different water Areas — **key for strait adjacent land** |
+| `CvPlot::isCoastalCityOrPassableImprovement()` | CvPlot.cpp | Can naval units transit through this land tile |
+| `CvPlot::getArea()` | CvPlot.h | Water area ID for this tile |
+| `CvPlot::getLandmass()` | CvPlot.h | Landmass ID (groups areas) |
+| `CvArea::isWater()` / `getNumTiles()` | CvArea.h | Water body identification and size |
+| `CvLandmass::isLake()` | CvMap.h | `isWater && numTiles < MIN_WATER_SIZE_FOR_OCEAN` |
+| `CvMap::getAreaById(int)` | CvMap.h | Look up specific area |
+| `CvCity::isCoastal(int)` | CvCity.h | City coastal check |
+| `CvGameTrade::m_aPotentialTradePathsWater` | CvTradeClasses.h | Cached naval trade paths — implicit sea lanes |
+| `TradePathWaterValid()` / `TradePathWaterCost()` | CvAStar.cpp | Naval trade pathfinding validity/cost |
+| `NavalUnitSimpleValid()` | CvAStar.cpp | Naval unit movement validity |
+| `CvUnit::needsEmbarkation()` / `CanEverEmbark()` | CvUnit.h | Embarkation checks |
+| `iterateRingPlots()` / `RING1_PLOTS..RING3_PLOTS` | CvGameCoreUtils.h | Ring scanning (reuse for coastal exposure) |
+
+### C.8 Recommendations
+
+1. **Start with Naval Phase 1 (Coastal Exposure)** — it's standalone, low-risk, immediately useful. Even without full naval geography, classifying coastal cities by exposure level feeds into existing defense/production systems.
+
+2. **Naval Phase 2 (Chokepoints) is the highest-value target** — straits and narrow passages are where naval strategic control is won or lost. But it requires solving the "perpendicular to waterway" problem on a hex grid.
+
+3. **Naval Phase 3 (Connectivity) may not be needed initially** — the game already handles naval pathfinding correctly; the value is in *strategic awareness* (knowing the enemy controls a chokepoint), which Phase 2 provides.
+
+4. **Naval Phase 4 should wait for testing** — sea lane vulnerability and amphibious threat are the most complex and least likely to produce visible AI improvement without extensive tuning.
+
+5. **Performance mitigation:** Compute naval geography on map initialization and re-scan only when cities are founded/captured near water. Water terrain doesn't change — only control of transit points (cities/canals on straits) changes.
+
+6. **Consider adding `IsNavalChokePoint()` to CvPlot** as a cached bitflag (like existing `IsChokePoint()`) computed once during `calculateAreas()`. This amortizes the cost and gives all systems free access.
+
+### C.9 Open Questions (Naval-Specific) — Refined
+
+1. **How to handle deep water gating?**
+   - Before Astronomy, civs can only use coastal water, so ocean basins seem disconnected — but multiple exceptions exist: Polynesia UA ignores this entirely, explorers and caravels cross ocean before embarked units can, and tech timing varies per player.
+   - **Resolution: Don't era-gate.** Compute naval geography for all non-lake water bodies unconditionally. The existing naval threat assessment already handles reachability on a per-enemy basis (it knows who has Astronomy). Adding era-awareness to the geography layer would duplicate that logic and add complexity for marginal gain.
+
+2. **Ice dynamics?**
+   - In Civ 5, ice is permanent — it cannot be cleared by any ability (unlike Civ 6). Only submarines can traverse ice tiles. Ice appears only in polar regions, far from any strategic city locations.
+   - **Resolution: Safely ignore.** No implementation needed. If a future mod adds ice-clearing, revisit then.
+
+3. **City canal transit — controllable chokepoints.**
+   - City canals (coastal cities connecting two water areas) are owner-controlled: only the city owner's units can transit freely. Passable forts (`isCoastalCityOrPassableImprovement()`) allow friend-accessible transit (open borders). This creates an asymmetry: losing a canal city doesn't just lose territory — it severs sea connectivity for the owner while potentially granting it to the conqueror.
+   - **Resolution: Tag as `CONTROLLABLE_NAVAL_CHOKEPOINT`** with higher strategic value than natural straits. This should feed into:
+     - **Defense AI:** Prioritize garrison and defensive buildings for canal cities (they're naval floodgates).
+     - **Diplomacy AI:** Allied civs that depend on a canal city for sea access have strong incentive to defend it — if an allied canal city falls, the ally loses naval connectivity too. This could increase willingness to join defensive wars or provide military support.
+     - **War targeting:** Capturing an enemy's canal city is disproportionately valuable — it breaks their naval network. Conversely, attacking into a well-defended canal city should be penalized (hard chokepoint with naval + land defenders).
+
+4. **Submarine/stealth considerations.**
+   - Submarines bypass surface zone-of-control but cannot hold territory, capture cities, or operate deep in enemy waters without fleet support. A submarine slipping past a chokepoint is tactically useful but strategically insignificant — it can't project sustained power or deny the chokepoint to the enemy.
+   - **Resolution: Don't degrade chokepoint value for submarines.** This is a niche tactical concern, not a strategic geography issue. The tactical AI already handles submarine pathfinding separately.
+
+5. **Island civ special handling.**
+   - Island civs (Japan, Britain, Polynesia, Indonesia, etc.) have fundamentally different strategic needs: ALL threats arrive by sea, coastal defense is paramount, embarked units are maximum-vulnerability targets, naval superiority is the primary strategic objective rather than a supporting arm, ranged naval units (frigates, battleships) become the core military rather than land siege, and coastal food/production tiles matter more than inland expansion.
+   - **Resolution: Warrants a separate research document.** The strategic model for island civs is too divergent from the continental model to handle as a sub-feature. A dedicated doc should cover: coastal defense classification (exposed vs sheltered harbors), naval control zones (how many sea tiles a navy can deny), amphibious threat assessment, island economy priorities, and inter-island logistics. Appendix D or a standalone `ISLAND_CIV_STRATEGY.md`.
