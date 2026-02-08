@@ -2048,6 +2048,7 @@ int CvMilitaryAI::CalculateMemoryThreatWeight() const
 		return 0;
 
 	int iThreat = 0;
+	int iHostileNeighborCount = 0; // track number of hostile neighbors for coalition multiplier
 	PlayerTypes ePlayer = m_pPlayer->GetID();
 	for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
 	{
@@ -2058,16 +2059,37 @@ int CvMilitaryAI::CalculateMemoryThreatWeight() const
 		if (GET_PLAYER(eOther).GetProximityToPlayer(ePlayer) < PLAYER_PROXIMITY_CLOSE)
 			continue;
 
+		bool bHostile = false;
 		if (pDiploAI->IsAttackLikelyImminent(eOther))
+		{
 			iThreat += 40;
+			bHostile = true;
+		}
 		if (pDiploAI->IsSiegeWarningActive(eOther))
+		{
 			iThreat += 25;
+			bHostile = true;
+		}
 		if (pDiploAI->IsPlayerBuildingUpNearUs(eOther))
+		{
 			iThreat += 15;
+			bHostile = true;
+		}
+
+		if (bHostile)
+			iHostileNeighborCount++;
 
 		if (iThreat >= 100)
 			return 100;
 	}
+
+	// Coalition multiplier: if multiple hostile neighbors are detected simultaneously,
+	// the combined threat is greater than the sum of individual threats.
+	// This helps the AI recognize coalition attacks forming before they happen.
+	if (iHostileNeighborCount >= 3)
+		iThreat = min(100, iThreat * 150 / 100); // 50% bonus for 3+ hostile neighbors
+	else if (iHostileNeighborCount >= 2)
+		iThreat = min(100, iThreat * 125 / 100); // 25% bonus for 2 hostile neighbors
 
 	return min(100, iThreat);
 }
@@ -3131,8 +3153,16 @@ void CvMilitaryAI::CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity
 		// If we are losing, concentrate on defense against this player
 		m_pPlayer->StopAllLandOffensiveOperationsAgainstPlayer(eEnemy, AI_ABORT_WAR_STATE_CHANGE);
 	else if (eWarState == WAR_STATE_NEARLY_DEFEATED)
-		// If we are really losing, let's pull back everywhere.	
-		m_pPlayer->StopAllLandOffensiveOperationsAgainstPlayer(NO_PLAYER, AI_ABORT_WAR_STATE_CHANGE);
+	{
+		// If we are really losing on this front, pull back offensives against THIS enemy only.
+		// Don't cancel offensives against other players where we may be winning.
+		// This prevents multi-front wars from collapsing all fronts due to one bad front.
+		m_pPlayer->StopAllLandOffensiveOperationsAgainstPlayer(eEnemy, AI_ABORT_WAR_STATE_CHANGE);
+
+		// Also check: if we are losing ALL wars overall, then pull back everywhere
+		if (m_pPlayer->GetDiplomacyAI()->GetStateAllWars() == STATE_ALL_WARS_LOSING)
+			m_pPlayer->StopAllLandOffensiveOperationsAgainstPlayer(NO_PLAYER, AI_ABORT_WAR_STATE_CHANGE);
+	}
 
 	//first a quick one if necessary
 	bool bHasOperationUnderway = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_RAPID_RESPONSE, NO_PLAYER, pThreatenedCity->plot()) != NULL;
@@ -3158,7 +3188,14 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 	else if (eWarState ==  WAR_STATE_DEFENSIVE)
 		m_pPlayer->StopAllSeaOffensiveOperationsAgainstPlayer(ePlayer, AI_ABORT_WAR_STATE_CHANGE);
 	else if (eWarState == WAR_STATE_NEARLY_DEFEATED)
-		m_pPlayer->StopAllSeaOffensiveOperationsAgainstPlayer(NO_PLAYER, AI_ABORT_WAR_STATE_CHANGE);
+	{
+		// Per-front: only cancel sea offense against THIS enemy
+		m_pPlayer->StopAllSeaOffensiveOperationsAgainstPlayer(ePlayer, AI_ABORT_WAR_STATE_CHANGE);
+
+		// Only cancel everything if losing all wars
+		if (m_pPlayer->GetDiplomacyAI()->GetStateAllWars() == STATE_ALL_WARS_LOSING)
+			m_pPlayer->StopAllSeaOffensiveOperationsAgainstPlayer(NO_PLAYER, AI_ABORT_WAR_STATE_CHANGE);
+	}
 
 	if (!pThreatenedCity->isCoastal())
 		return;
@@ -3211,11 +3248,82 @@ void CvMilitaryAI::UpdateOperations()
 		return;
 
 	vector<CvCity*> allCities = m_pPlayer->GetThreatenedCities(false);
-	CvCity* pThreatenedCityA = allCities.size()<1 ? NULL : allCities[0];
-	CvCity* pThreatenedCityB = allCities.size()<2 ? NULL : allCities[1];
 	vector<CvCity*> coastCities = m_pPlayer->GetThreatenedCities(true);
-	CvCity* pThreatenedCoastalCityA = coastCities.size()<1 ? NULL : coastCities[0];
-	CvCity* pThreatenedCoastalCityB = coastCities.size()<2 ? NULL : coastCities[1];
+
+	// Multi-front defense: build per-enemy city assignments.
+	// Instead of using only the global top-2 for all enemies, also find the most threatened
+	// city facing each specific enemy so different fronts get appropriate defense.
+	int iNumEnemies = 0;
+	std::map<PlayerTypes, CvCity*> perEnemyLandCity;
+	std::map<PlayerTypes, CvCity*> perEnemyCoastalCity;
+	for (int iELoop = 0; iELoop < MAX_PLAYERS; iELoop++)
+	{
+		PlayerTypes eEnemy = (PlayerTypes)iELoop;
+		if (eEnemy == m_pPlayer->GetID() || !IsPlayerValid(eEnemy) || !m_pPlayer->IsAtWarWith(eEnemy))
+			continue;
+
+		iNumEnemies++;
+
+		// Find the most threatened city near THIS enemy (closest to their territory)
+		for (size_t c = 0; c < allCities.size(); c++)
+		{
+			CvCity* pCity = allCities[c];
+			if (!pCity) continue;
+			// Check if this enemy has units or territory near this city
+			bool bRelevant = m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, eEnemy);
+			if (!bRelevant)
+			{
+				// Fallback: check if enemy has territory within 10 tiles
+				for (int r = RING2_PLOTS; r < RING5_PLOTS; r++)
+				{
+					CvPlot* pNearby = iterateRingPlots(pCity->plot(), r);
+					if (pNearby && pNearby->getOwner() == eEnemy)
+					{
+						bRelevant = true;
+						break;
+					}
+				}
+			}
+			if (bRelevant)
+			{
+				perEnemyLandCity[eEnemy] = pCity;
+				break; // allCities is sorted by threat, so first relevant city is the best
+			}
+		}
+
+		// Same for coastal
+		for (size_t c = 0; c < coastCities.size(); c++)
+		{
+			CvCity* pCity = coastCities[c];
+			if (!pCity || !pCity->isCoastal()) continue;
+			bool bRelevant = m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, eEnemy);
+			if (!bRelevant)
+			{
+				for (int r = RING2_PLOTS; r < RING5_PLOTS; r++)
+				{
+					CvPlot* pNearby = iterateRingPlots(pCity->plot(), r);
+					if (pNearby && pNearby->getOwner() == eEnemy)
+					{
+						bRelevant = true;
+						break;
+					}
+				}
+			}
+			if (bRelevant)
+			{
+				perEnemyCoastalCity[eEnemy] = pCity;
+				break;
+			}
+		}
+	}
+
+	// Also keep the global top cities as fallback
+	CvCity* pThreatenedCityA = allCities.size() < 1 ? NULL : allCities[0];
+	CvCity* pThreatenedCityB = allCities.size() < 2 ? NULL : allCities[1];
+	CvCity* pThreatenedCityC = allCities.size() < 3 ? NULL : allCities[2]; // extend to 3rd city when fighting multiple enemies
+	CvCity* pThreatenedCoastalCityA = coastCities.size() < 1 ? NULL : coastCities[0];
+	CvCity* pThreatenedCoastalCityB = coastCities.size() < 2 ? NULL : coastCities[1];
+	CvCity* pThreatenedCoastalCityC = coastCities.size() < 3 ? NULL : coastCities[2];
 	int iMemoryThreatWeight = m_iMemoryThreatWeight;
 	bool bMemoryThreatHigh = (iMemoryThreatWeight >= 60);
 	bool bDefensivePressure = (pThreatenedCityA || pThreatenedCoastalCityA || m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED);
@@ -3254,11 +3362,37 @@ void CvMilitaryAI::UpdateOperations()
 				if(pThreatenedCityA == NULL)
 					m_pPlayer->StopAllLandDefensiveOperationsAgainstPlayer(eLoopPlayer, AI_ABORT_WAR_STATE_CHANGE);
 
+				// Per-enemy front-aware defense: use the city most relevant to this specific enemy
+				CvCity* pEnemyLandCity = NULL;
+				CvCity* pEnemyCoastalCity = NULL;
+				std::map<PlayerTypes, CvCity*>::iterator itLand = perEnemyLandCity.find(eLoopPlayer);
+				std::map<PlayerTypes, CvCity*>::iterator itCoast = perEnemyCoastalCity.find(eLoopPlayer);
+				if (itLand != perEnemyLandCity.end())
+					pEnemyLandCity = itLand->second;
+				if (itCoast != perEnemyCoastalCity.end())
+					pEnemyCoastalCity = itCoast->second;
+
+				// Always defend global top-2 threatened cities
 				CheckLandDefenses(eLoopPlayer,pThreatenedCityA);
 				CheckLandDefenses(eLoopPlayer,pThreatenedCityB);
 
+				// If this enemy has a specific front city not already covered, defend that too
+				if (pEnemyLandCity && pEnemyLandCity != pThreatenedCityA && pEnemyLandCity != pThreatenedCityB)
+					CheckLandDefenses(eLoopPlayer, pEnemyLandCity);
+
+				// In multi-front wars (3+ enemies), also defend the 3rd most threatened city globally
+				if (iNumEnemies >= 3 && pThreatenedCityC && pThreatenedCityC != pEnemyLandCity)
+					CheckLandDefenses(eLoopPlayer, pThreatenedCityC);
+
 				CheckSeaDefenses(eLoopPlayer, pThreatenedCoastalCityA);
 				CheckSeaDefenses(eLoopPlayer, pThreatenedCoastalCityB);
+
+				// Per-enemy coastal front
+				if (pEnemyCoastalCity && pEnemyCoastalCity != pThreatenedCoastalCityA && pEnemyCoastalCity != pThreatenedCoastalCityB)
+					CheckSeaDefenses(eLoopPlayer, pEnemyCoastalCity);
+
+				if (iNumEnemies >= 3 && pThreatenedCoastalCityC && pThreatenedCoastalCityC != pEnemyCoastalCity)
+					CheckSeaDefenses(eLoopPlayer, pThreatenedCoastalCityC);
 
 				//finally offense
 				DoNuke(eLoopPlayer);
@@ -5310,15 +5444,107 @@ void CvMilitaryAI::ApplyLossAdaptationFlavors()
 // Evaluate if army should retreat to defensible position to regroup
 void CvMilitaryAI::EvaluateTacticalRetreat()
 {
-	// If army balance is critically low (< 30), recommend retreat
+	// If army balance is critically low, recommend strategic retreat toward core cities
 	if (m_iArmyBalanceScore < 30)
 	{
-		// Look for defensible capital or central city
 		CvCity* pCapital = m_pPlayer->getCapitalCity();
-		if (pCapital && pCapital->plot())
+		if (!pCapital || !pCapital->plot())
+			return;
+
+		int iNumWars = GetNumberCivsAtWarWith(false);
+		if (iNumWars < 2)
+			return; // Single-front wars don't need strategic retreat logic
+
+		// In multi-front wars with badly depleted army, ensure the capital has a defense operation
+		// This prevents the AI from leaving its capital undefended while chasing peripheral fights
+		bool bCapitalHasDefenseOp = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_CITY_DEFENSE, NO_PLAYER, pCapital->plot()) != NULL;
+		bool bCapitalHasRapidResponse = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_RAPID_RESPONSE, NO_PLAYER, pCapital->plot()) != NULL;
+
+		if (!bCapitalHasDefenseOp && !bCapitalHasRapidResponse)
 		{
-			// This could trigger AI to move units toward capital for regrouping
-			// For now, just mark that retreat is recommended via the balance score
+			// Find which enemy is closest to our capital to assign the defense op
+			PlayerTypes eClosestEnemy = NO_PLAYER;
+			int iBestDist = MAX_INT;
+			for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+			{
+				PlayerTypes eEnemy = (PlayerTypes)i;
+				if (!m_pPlayer->IsAtWarWith(eEnemy) || !GET_PLAYER(eEnemy).isAlive())
+					continue;
+
+				CvCity* pEnemyCapital = GET_PLAYER(eEnemy).getCapitalCity();
+				if (pEnemyCapital)
+				{
+					int iDist = plotDistance(pCapital->getX(), pCapital->getY(), pEnemyCapital->getX(), pEnemyCapital->getY());
+					if (iDist < iBestDist)
+					{
+						iBestDist = iDist;
+						eClosestEnemy = eEnemy;
+					}
+				}
+			}
+
+			if (eClosestEnemy != NO_PLAYER)
+			{
+				m_pPlayer->addAIOperation(AI_OPERATION_RAPID_RESPONSE, 3, eClosestEnemy, pCapital);
+
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = GetPlayer()->getCivilizationShortDescription();
+					FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+					CvString msg;
+					msg.Format("%03d, %s, STRATEGIC RETREAT: army balance=%d, wars=%d, setting up capital defense vs %s",
+						GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+						m_iArmyBalanceScore, iNumWars, GET_PLAYER(eClosestEnemy).getCivilizationShortDescription());
+					pLog->Msg(msg.c_str());
+				}
+			}
+		}
+
+		// Also stop offensive operations against distant enemies to consolidate forces
+		// Only keep offense against the weakest/closest enemy
+		if (m_iArmyBalanceScore < 15 && iNumWars >= 3)
+		{
+			PlayerTypes eBestOffenseTarget = NO_PLAYER;
+			WarStateTypes eBestWarState = NO_WAR_STATE_TYPE;
+
+			for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+			{
+				PlayerTypes eEnemy = (PlayerTypes)i;
+				if (!m_pPlayer->IsAtWarWith(eEnemy) || !GET_PLAYER(eEnemy).isAlive())
+					continue;
+
+				WarStateTypes eWarState = m_pPlayer->GetDiplomacyAI()->GetWarState(eEnemy);
+				if (eWarState > eBestWarState)
+				{
+					eBestWarState = eWarState;
+					eBestOffenseTarget = eEnemy;
+				}
+			}
+
+			// Stop offense against all enemies except the one we're doing best against
+			for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+			{
+				PlayerTypes eEnemy = (PlayerTypes)i;
+				if (eEnemy == eBestOffenseTarget)
+					continue;
+				if (!m_pPlayer->IsAtWarWith(eEnemy) || !GET_PLAYER(eEnemy).isAlive())
+					continue;
+
+				m_pPlayer->StopAllLandOffensiveOperationsAgainstPlayer(eEnemy, AI_ABORT_WAR_STATE_CHANGE);
+				m_pPlayer->StopAllSeaOffensiveOperationsAgainstPlayer(eEnemy, AI_ABORT_WAR_STATE_CHANGE);
+			}
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString playerName = GetPlayer()->getCivilizationShortDescription();
+				FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+				CvString msg;
+				msg.Format("%03d, %s, STRATEGIC CONSOLIDATION: army balance=%d, wars=%d, keeping offense only vs %s",
+					GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+					m_iArmyBalanceScore, iNumWars,
+					eBestOffenseTarget != NO_PLAYER ? GET_PLAYER(eBestOffenseTarget).getCivilizationShortDescription() : "NONE");
+				pLog->Msg(msg.c_str());
+			}
 		}
 	}
 }

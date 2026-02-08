@@ -312,6 +312,7 @@ public:
 	bool HasApproachChangedRecently(PlayerTypes ePlayer, int iWithinTurns) const;
 	bool HasTurnedHostileRecently(PlayerTypes ePlayer, int iWithinTurns) const;
 	bool AmIOverextended() const;
+	int  GetCoalitionThreatScore() const;
 	int  GetHistoricalThreat(PlayerTypes ePlayer, int iTurnsAgo) const;
 	bool IsThreatRising(PlayerTypes ePlayer) const;
 	bool IsAttackLikelyImminent(PlayerTypes ePlayer) const;

@@ -1820,7 +1820,38 @@ bool CvDiplomacyAI::AmIOverextended() const
 {
 	const TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
 	if (!pNow) return false;
-	return (pNow->numWars >= 2 && pNow->militaryRank > 20);
+
+	// Classic check: 2+ wars and weak military rank
+	if (pNow->numWars >= 2 && pNow->militaryRank > 20)
+		return true;
+
+	// Coalition-aware check: if we're in 3+ wars regardless of military rank,
+	// or 2+ wars where at least one enemy is strong, we're overextended
+	if (pNow->numWars >= 3)
+		return true;
+
+	// Check if multiple hostile civs are likely to attack soon (coalition forming)
+	if (pNow->numWars >= 1)
+	{
+		int iImminentAttacks = 0;
+		for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+		{
+			PlayerTypes ePlayer = (PlayerTypes)i;
+			if (ePlayer == GetID() || !GET_PLAYER(ePlayer).isAlive())
+				continue;
+			if (m_pPlayer->IsAtWarWith(ePlayer))
+				continue; // already at war, skip
+
+			if (IsAttackLikelyImminent(ePlayer))
+				iImminentAttacks++;
+		}
+
+		// Already in a war and another attack is likely? We're overextended.
+		if (iImminentAttacks >= 1)
+			return true;
+	}
+
+	return false;
 }
 
 /// Calculate threat level for a past turn from stored components.
@@ -1850,6 +1881,50 @@ bool CvDiplomacyAI::IsThreatRising(PlayerTypes ePlayer) const
 	int iNow  = GetHistoricalThreat(ePlayer, 0);
 	int i5Ago = GetHistoricalThreat(ePlayer, 5);
 	return (iNow > i5Ago * 130 / 100);
+}
+
+/// Aggregate coalition threat: count how many non-war hostile civs are likely to attack.
+/// Returns a score where 0 = no coalition threat, higher = more dangerous.
+/// Used to trigger pre-emptive diplomacy and defensive posture changes.
+int CvDiplomacyAI::GetCoalitionThreatScore() const
+{
+	int iScore = 0;
+
+	for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+	{
+		PlayerTypes ePlayer = (PlayerTypes)i;
+		if (ePlayer == GetID() || !GET_PLAYER(ePlayer).isAlive())
+			continue;
+		if (m_pPlayer->IsAtWarWith(ePlayer))
+			continue; // already at war, counted separately
+
+		// Each imminent attacker adds significantly to coalition threat
+		if (IsAttackLikelyImminent(ePlayer))
+		{
+			iScore += 40;
+			continue;
+		}
+
+		// Each hostile player building up adds moderately
+		if (IsPlayerBuildingUpNearUs(ePlayer))
+		{
+			iScore += 20;
+			if (IsThreatRising(ePlayer))
+				iScore += 10;
+			continue;
+		}
+
+		// Hostile/war approach players who are neighbors add a small amount
+		CivApproachTypes eApproach = GetCivApproach(ePlayer);
+		if (eApproach == CIV_APPROACH_WAR || eApproach == CIV_APPROACH_HOSTILE)
+		{
+			PlayerProximityTypes eProximity = m_pPlayer->GetProximityToPlayer(ePlayer);
+			if (eProximity >= PLAYER_PROXIMITY_CLOSE)
+				iScore += 10;
+		}
+	}
+
+	return iScore;
 }
 
 /// Composite attack prediction: 4+ warning signals = high confidence.
@@ -27870,6 +27945,64 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 		int iThresholdReductionPerOtherWar = bLeeway ? /*3*/ GD_INT_GET(REQUEST_PEACE_LEEWAY_THRESHOLD_REDUCTION_PER_WAR) : /*2*/ GD_INT_GET(REQUEST_PEACE_THRESHOLD_REDUCTION_PER_WAR);
 
 		iThreshold = max(iThreshold - max(iThresholdReductionPerOtherWar * iWarCount, 0), 1);
+
+		// Multi-front strategic peace: when fighting 2+ wars and losing overall, make peace
+		// more easily with enemies that are distant or where we're doing relatively well,
+		// so we can focus on the most dangerous front. This helps the AI triage its wars.
+		if (iWarCount >= 1 && (bAnySeriousDangerUs || bInTerribleShape))
+		{
+			// Check if this enemy is the LEAST dangerous among our current enemies
+			// If so, reduce threshold further to make peace easier with them
+			bool bLeastDangerousEnemy = true;
+			bool bMostDangerousEnemy = true;
+			for (int iCheckPlayer = 0; iCheckPlayer < MAX_MAJOR_CIVS; iCheckPlayer++)
+			{
+				PlayerTypes eCheckPlayer = (PlayerTypes)iCheckPlayer;
+				if (!GET_PLAYER(eCheckPlayer).isAlive() || !IsAtWar(eCheckPlayer))
+					continue;
+				if (GET_PLAYER(eCheckPlayer).getTeam() == *it)
+					continue; // skip this team
+
+				WarStateTypes eOtherWarState = GetWarState(eCheckPlayer);
+				WarStateTypes eThisTeamWorstState = WAR_STATE_NEARLY_WON;
+				for (size_t i = 0; i < vEnemyTeamMembers.size(); i++)
+				{
+					if (GET_PLAYER(vEnemyTeamMembers[i]).isAlive())
+					{
+						WarStateTypes eState = GetWarState(vEnemyTeamMembers[i]);
+						if (eState < eThisTeamWorstState)
+							eThisTeamWorstState = eState;
+					}
+				}
+
+				// If we're doing worse against the other enemy, this one isn't the most dangerous
+				if (eOtherWarState < eThisTeamWorstState)
+					bMostDangerousEnemy = false;
+				// If we're doing better against the other enemy, this one isn't the least dangerous
+				if (eOtherWarState > eThisTeamWorstState)
+					bLeastDangerousEnemy = false;
+			}
+
+			// Easier to peace out with secondary threats so we can focus on the main threat
+			if (bLeastDangerousEnemy && !bMostDangerousEnemy)
+			{
+				iThreshold = max(iThreshold - 5, 1);
+				if (bLog)
+				{
+					for (size_t i = 0; i < vEnemyTeamMembers.size(); i++)
+					{
+						if (GET_PLAYER(vEnemyTeamMembers[i]).isAlive())
+							LogPeaceWillingnessReason(vEnemyTeamMembers[i], CvString("Multi-front triage: reducing threshold for least dangerous enemy (-5)"));
+					}
+				}
+			}
+			// Harder to peace out with the biggest threat - we need to handle it, not ignore it
+			// (but only if we're not in terrible shape overall)
+			else if (bMostDangerousEnemy && !bLeastDangerousEnemy && !bInTerribleShape)
+			{
+				iThreshold += 3;
+			}
+		}
 
 		if (iFinalPeaceScore >= iThreshold)
 		{

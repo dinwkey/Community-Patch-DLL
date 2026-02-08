@@ -996,6 +996,25 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 				iBaseValue *= 3;
 			}
 
+			// Capital zone gets priority so it's processed first and gets best unit picks.
+			// In multi-front wars this ensures the capital zone isn't starved of defenders
+			// because a remote zone consumed available units first.
+			if (pZoneCity->isCapital())
+			{
+				iBaseValue *= 2;
+			}
+			// Cities near the capital are also important core territory
+			else
+			{
+				CvCity* pCapital = GET_PLAYER(m_ePlayer).getCapitalCity();
+				if (pCapital)
+				{
+					int iDistToCapital = plotDistance(pZoneCity->getX(), pZoneCity->getY(), pCapital->getX(), pCapital->getY());
+					if (iDistToCapital <= 6)
+						iBaseValue = (iBaseValue * 3) / 2; // 50% boost for core cities
+				}
+			}
+
 			if (pZoneCity->isVisible(GET_PLAYER(m_ePlayer).getTeam(), false))
 			{
 				iBaseValue *= 2;

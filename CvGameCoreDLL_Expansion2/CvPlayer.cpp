@@ -5068,8 +5068,91 @@ void CvPlayer::UpdateCityThreatCriteria()
 			}
 		}
 
-		//note: we don't consider a cities size or economic importance here
-		//after all, small border cities are especially vulnerable
+		// Capital and core city defense priority: the capital and cities near it
+		// are strategically critical and should always be prioritized for defense,
+		// especially in multi-front wars where peripheral cities may need to be sacrificed.
+		if (pLoopCity->isCapital())
+		{
+			// Capital gets a large bonus so it's almost always near the top of defense priority
+			iThreatValue += 150;
+		}
+		else if (pLoopCity->IsOriginalMajorCapital())
+		{
+			// Original capitals of other civs that we hold are also strategically important
+			iThreatValue += 75;
+		}
+
+		// Cities adjacent to the capital get a moderate bonus (core territory)
+		CvCity* pCapital = getCapitalCity();
+		if (pCapital && pLoopCity != pCapital)
+		{
+			int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapital->getX(), pCapital->getY());
+			if (iDistToCapital <= 6)
+				iThreatValue += 40; // close to capital, part of core
+			else if (iDistToCapital <= 10)
+				iThreatValue += 15; // moderately close
+		}
+
+		// Large / high-value cities get a small bonus - losing them is more costly
+		int iPop = pLoopCity->getPopulation();
+		if (iPop >= 15)
+			iThreatValue += 30;
+		else if (iPop >= 10)
+			iThreatValue += 15;
+		else if (iPop >= 6)
+			iThreatValue += 5;
+
+		// City triage in multi-front wars: deprioritize overextended cities that are
+		// surrounded by enemy cities and far from our core. These cities are expendable
+		// if we need to concentrate defense on more important positions.
+		int iNumWars = CountNumDangerousMajorsAtWarWith(true, false);
+		if (iNumWars >= 2 && pCapital && pLoopCity != pCapital)
+		{
+			int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapital->getX(), pCapital->getY());
+
+			// Count nearby enemy cities vs nearby friendly cities
+			int iNearbyEnemyCities = 0;
+			int iNearbyFriendlyCities = 0;
+			int iCityLoop = 0;
+			for (CvCity* pOtherCity = firstCity(&iCityLoop); pOtherCity != NULL; pOtherCity = nextCity(&iCityLoop))
+			{
+				if (pOtherCity == pLoopCity) continue;
+				int iDist = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pOtherCity->getX(), pOtherCity->getY());
+				if (iDist <= 8)
+					iNearbyFriendlyCities++;
+			}
+
+			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+			{
+				PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+				if (eEnemy == GetID() || !IsAtWarWith(eEnemy))
+					continue;
+				int iEnemyCityLoop = 0;
+				for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iEnemyCityLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iEnemyCityLoop))
+				{
+					int iDist = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pEnemyCity->getX(), pEnemyCity->getY());
+					if (iDist <= 8)
+						iNearbyEnemyCities++;
+				}
+			}
+
+			// If this city is surrounded by enemy cities (3+) and far from capital,
+			// reduce its defense priority - it's likely indefensible and resources
+			// are better spent defending core territory
+			if (iNearbyEnemyCities >= 3 && iDistToCapital > 10 && iNearbyFriendlyCities <= 1)
+			{
+				iThreatValue -= 80; // significant penalty for overextended isolated city
+			}
+			else if (iNearbyEnemyCities >= 2 && iDistToCapital > 15 && iNearbyFriendlyCities == 0)
+			{
+				iThreatValue -= 50; // moderate penalty for distant isolated city
+			}
+		}
+
+		// Ensure threat value doesn't go negative
+		if (iThreatValue < 0)
+			iThreatValue = 0;
+
 		pLoopCity->setThreatValue(iThreatValue);
 	}
 }
@@ -36494,6 +36577,21 @@ void CvPlayer::DoUpdateWarDamageAndWeariness(bool bDamageOnly)
 	}
 
 	// Loop through all (known) Players
+	// First pass: compute total war value lost across all enemies for multi-war correction
+	int iTotalWarValueLost = 0;
+	int iNumActiveWars = 0;
+	for (int iPreLoop = 0; iPreLoop < MAX_CIV_PLAYERS; iPreLoop++)
+	{
+		PlayerTypes ePrePlayer = (PlayerTypes)iPreLoop;
+		if (GET_PLAYER(ePrePlayer).getTeam() == getTeam() || !GET_PLAYER(ePrePlayer).isAlive())
+			continue;
+		if (!IsAtWarWith(ePrePlayer))
+			continue;
+
+		iTotalWarValueLost += GetWarValueLost(ePrePlayer);
+		iNumActiveWars++;
+	}
+
 	for (int iPlayerLoop = 0; iPlayerLoop < MAX_CIV_PLAYERS; iPlayerLoop++)
 	{
 		PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
@@ -36519,6 +36617,25 @@ void CvPlayer::DoUpdateWarDamageAndWeariness(bool bDamageOnly)
 			if (iCurrentValue > 0)
 			{
 				iValueLostRatio = (iWarValueLost * 200) / iCurrentValue; // 2x the value so that odd values in GetWarScore() are possible
+
+				// Multi-war cascading fix: when fighting multiple wars, the global iCurrentValue
+				// has been reduced by losses to ALL enemies, which inflates the damage ratio
+				// against each individual enemy (cascading pessimism). Correct this by estimating
+				// what iCurrentValue would be if we only counted losses to THIS enemy.
+				// Correction: add back losses to OTHER enemies to the denominator.
+				if (iNumActiveWars >= 2 && iTotalWarValueLost > iWarValueLost)
+				{
+					int iOtherLosses = iTotalWarValueLost - iWarValueLost;
+					// The corrected denominator includes value lost to other enemies
+					// (since that wasn't lost to THIS enemy, it shouldn't penalize this ratio)
+					int iCorrectedCurrentValue = iCurrentValue + (iOtherLosses / 3); // partial correction - don't fully undo the loss
+					if (iCorrectedCurrentValue > 0)
+					{
+						int iCorrectedRatio = (iWarValueLost * 200) / iCorrectedCurrentValue;
+						// Use the average of raw and corrected to avoid over-correction
+						iValueLostRatio = (iValueLostRatio + iCorrectedRatio) / 2;
+					}
+				}
 			}
 			else
 			{
