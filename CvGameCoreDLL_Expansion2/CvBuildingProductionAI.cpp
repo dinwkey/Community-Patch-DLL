@@ -881,6 +881,23 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 				// Fleet route blocked by enemy → local defenses matter more (no naval support).
 				if (pAnalysis->bEnemyBlocksNavalRoute)
 					iDefenseMod += 100;
+
+				// Naval Phase 4: Amphibious threat boosts.
+				// Cities vulnerable to amphibious assault need defensive buildings urgently.
+				if (pAnalysis->bVulnerableToAmphibious)
+				{
+					// Graduated by threat score
+					if (pAnalysis->iAmphibiousThreatScore >= 80)
+						iDefenseMod += 500;
+					else if (pAnalysis->iAmphibiousThreatScore >= 60)
+						iDefenseMod += 300;
+					else
+						iDefenseMod += 150;
+
+					// Multiple sea enemies = multiple threat vectors
+					if (pAnalysis->iHostileSeaApproaches >= 2)
+						iDefenseMod += 150;
+				}
 			}
 		}
 	}

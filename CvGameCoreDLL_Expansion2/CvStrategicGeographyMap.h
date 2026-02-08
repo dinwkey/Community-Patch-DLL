@@ -128,6 +128,10 @@ struct StrategicCityAnalysis
 		, iConnectedWaterAreaCount(0)
 		, bFleetCanReachOcean(false)
 		, bEnemyBlocksNavalRoute(false)
+		, iAmphibiousThreatScore(0)
+		, iHostileSeaApproaches(0)
+		, iEnemyNavalPower(0)
+		, bVulnerableToAmphibious(false)
 	{
 	}
 
@@ -185,6 +189,12 @@ struct StrategicCityAnalysis
 	int iConnectedWaterAreaCount;    // Distinct non-lake water areas reachable from this city via open transits
 	bool bFleetCanReachOcean;        // Fleet from this city can reach the global largest ocean body
 	bool bEnemyBlocksNavalRoute;     // Enemy controls a transit point that blocks our route to the largest ocean
+
+	// Naval Phase 4 fields — Amphibious Threat Assessment
+	int iAmphibiousThreatScore;        // 0-100 composite score: higher = more vulnerable to amphibious attack
+	int iHostileSeaApproaches;         // Number of enemy players at war whose fleet can reach this city's water area
+	int iEnemyNavalPower;              // Sum of threatening enemy sea military power (normalized by our sea might)
+	bool bVulnerableToAmphibious;      // True if score >= 40 and at least one enemy can reach by sea
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -253,6 +263,11 @@ public:
 	bool IsNavalRouteBlocked(int iCityID) const;
 	bool AreWaterAreasConnected(int iAreaA, int iAreaB) const;
 
+	// Naval Phase 4: Amphibious threat queries
+	int GetAmphibiousThreatScore(int iCityID) const;
+	int GetHostileSeaApproaches(int iCityID) const;
+	bool IsCityVulnerableToAmphibious(int iCityID) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -294,6 +309,9 @@ private:
 	bool IsTransitOpenForPlayer(const WaterAreaEdge& edge) const;
 	std::map<int, std::vector<WaterAreaEdge> > m_waterAreaGraph;
 	int m_iLargestOceanAreaID;
+
+	// Naval Phase 4: Amphibious threat assessment
+	void AssessAmphibiousThreats();
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H

@@ -19,6 +19,7 @@
 #include "CvGlobals.h"
 #include "CvTeam.h"
 #include "CvDiplomacyAI.h"
+#include "CvMilitaryAI.h"
 #include "CvUnit.h"
 #include "CvCityCitizens.h"
 #include "CvGameCoreUtils.h"
@@ -174,6 +175,25 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 	if (bEnemyBlocksNavalRoute)
 		iModifier += 15;
 
+	// Naval Phase 4: Amphibious threat modifier.
+	// Cities scored as highly vulnerable to amphibious assault need extra
+	// garrison priority — they can be hit from unexpected angles by sea.
+	if (bVulnerableToAmphibious)
+	{
+		// Graduated by threat score:
+		// 40-59 = moderate threat (+20), 60-79 = serious (+40), 80-100 = critical (+60)
+		if (iAmphibiousThreatScore >= 80)
+			iModifier += 60;
+		else if (iAmphibiousThreatScore >= 60)
+			iModifier += 40;
+		else
+			iModifier += 20;
+
+		// Multiple sea approaches compound the threat
+		if (iHostileSeaApproaches >= 2)
+			iModifier += 15;
+	}
+
 	return iModifier;
 }
 
@@ -243,6 +263,7 @@ void CvStrategicGeographyMap::Update()
 	AnalyzeCoastalExposure();
 	DetectNavalChokepoints();
 	BuildWaterConnectivityGraph();
+	AssessAmphibiousThreats();
 	LogStrategicGeography();
 }
 
@@ -511,6 +532,28 @@ bool CvStrategicGeographyMap::AreWaterAreasConnected(int iAreaA, int iAreaB) con
 		}
 	}
 	return false;
+}
+
+// ---------------------------------------------------------------------------
+//  Naval Phase 4: Amphibious threat queries
+// ---------------------------------------------------------------------------
+
+int CvStrategicGeographyMap::GetAmphibiousThreatScore(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iAmphibiousThreatScore : 0;
+}
+
+int CvStrategicGeographyMap::GetHostileSeaApproaches(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iHostileSeaApproaches : 0;
+}
+
+bool CvStrategicGeographyMap::IsCityVulnerableToAmphibious(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bVulnerableToAmphibious : false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2060,6 +2103,257 @@ void CvStrategicGeographyMap::BuildWaterConnectivityGraph()
 }
 
 // ---------------------------------------------------------------------------
+//  Naval Phase 4: Amphibious Threat Assessment
+// ---------------------------------------------------------------------------
+
+/// For each coastal city, compute an amphibious threat score by evaluating
+/// enemy naval capability and reachability through the water area graph.
+///
+/// Score components (0-100 scale):
+///   - Base from coastal exposure (N1): EXPOSED=30, MODERATE=15, SHELTERED=5
+///   - Landing zone density: iLandingZonesRing2 * 3, capped at 15
+///   - Per-enemy contribution (summed):
+///       Enemy has embarkation + fleet can reach our waters: +10
+///       Enemy naval ranged units exist: +5 additional
+///       Scale enemy contribution by their naval power ratio
+///   - Ocean connectivity bonus: bConnectedToOcean adds +5 (blue-water threats)
+///   - Deep water bonus: iDeepWaterTilesRing2 > 3 adds +5
+///   - Capped at 100.
+void CvStrategicGeographyMap::AssessAmphibiousThreats()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	int iOurSeaMight = kPlayer.GetMilitarySeaMight();
+	if (iOurSeaMight <= 0)
+		iOurSeaMight = 1; // avoid div by zero
+
+	// Pre-compute which enemies at war have naval capability and can embark.
+	struct EnemyNavalInfo
+	{
+		PlayerTypes eEnemy;
+		int iNavalUnits;
+		int iSeaMight;
+		bool bCanEmbark;
+		bool bHasRangedNaval;
+		int iPrimaryWaterAreaID; // Largest water area adjacent to any enemy coastal city
+	};
+
+	std::vector<EnemyNavalInfo> vEnemies;
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+	{
+		PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+		CvPlayer& kEnemy = GET_PLAYER(eEnemy);
+		if (!kEnemy.isAlive())
+			continue;
+		if (!kPlayer.IsAtWarWith(eEnemy))
+			continue;
+
+		EnemyNavalInfo info;
+		info.eEnemy = eEnemy;
+		info.iNavalUnits = kEnemy.GetMilitaryAI()->GetNumNavalUnits();
+		info.iSeaMight = kEnemy.GetMilitarySeaMight();
+		info.bCanEmbark = kEnemy.CanEmbark();
+		info.bHasRangedNaval = false;
+		info.iPrimaryWaterAreaID = -1;
+
+		// Check for ranged naval units via the military AI fields
+		// The military AI tracks m_iNumRangedNavalUnits but it's private,
+		// so we use the domain-based count + ranged check.
+		// Simple heuristic: if they have 3+ naval units, they likely have ranged.
+		if (info.iNavalUnits >= 3)
+			info.bHasRangedNaval = true;
+
+		// Find enemy's primary water area from their coastal cities
+		int iBestEnemyWaterSize = 0;
+		int iEnemyCityLoop;
+		for (CvCity* pEnemyCity = kEnemy.firstCity(&iEnemyCityLoop); pEnemyCity != NULL; pEnemyCity = kEnemy.nextCity(&iEnemyCityLoop))
+		{
+			if (!pEnemyCity->isCoastal())
+				continue;
+			CvPlot** aNeighbors = GC.getMap().getNeighborsUnchecked(pEnemyCity->plot());
+			for (int d = 0; d < NUM_DIRECTION_TYPES; d++)
+			{
+				CvPlot* pNeighbor = aNeighbors[d];
+				if (!pNeighbor || !pNeighbor->isWater())
+					continue;
+				CvArea* pWaterArea = pNeighbor->area();
+				if (!pWaterArea || pWaterArea->getNumTiles() < GD_INT_GET(MIN_WATER_SIZE_FOR_OCEAN))
+					continue;
+				if (pWaterArea->getNumTiles() > iBestEnemyWaterSize)
+				{
+					iBestEnemyWaterSize = pWaterArea->getNumTiles();
+					info.iPrimaryWaterAreaID = pWaterArea->GetID();
+				}
+			}
+		}
+
+		// Only include enemies with some naval presence or embarkation
+		if (info.iNavalUnits > 0 || info.bCanEmbark)
+			vEnemies.push_back(info);
+	}
+
+	// No naval threats — clear all cities and return
+	if (vEnemies.empty())
+	{
+		for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+		{
+			it->second.iAmphibiousThreatScore = 0;
+			it->second.iHostileSeaApproaches = 0;
+			it->second.iEnemyNavalPower = 0;
+			it->second.bVulnerableToAmphibious = false;
+		}
+		return;
+	}
+
+	// Score each coastal city
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		StrategicCityAnalysis& analysis = it->second;
+
+		// Reset N4 fields
+		analysis.iAmphibiousThreatScore = 0;
+		analysis.iHostileSeaApproaches = 0;
+		analysis.iEnemyNavalPower = 0;
+		analysis.bVulnerableToAmphibious = false;
+
+		// Non-coastal cities have zero amphibious threat
+		if (analysis.eExposure == COASTAL_EXPOSURE_NONE)
+			continue;
+
+		// No water area → can't be reached by sea
+		if (analysis.iPrimaryWaterAreaID < 0)
+			continue;
+
+		int iScore = 0;
+
+		// --- Component 1: Coastal exposure base score (from N1) ---
+		switch (analysis.eExposure)
+		{
+		case COASTAL_EXPOSURE_EXPOSED:
+			iScore += 30;
+			break;
+		case COASTAL_EXPOSURE_MODERATE:
+			iScore += 15;
+			break;
+		case COASTAL_EXPOSURE_SHELTERED:
+			iScore += 5;
+			break;
+		default:
+			break;
+		}
+
+		// --- Component 2: Landing zone density ---
+		int iLandingBonus = analysis.iLandingZonesRing2 * 3;
+		if (iLandingBonus > 15)
+			iLandingBonus = 15;
+		iScore += iLandingBonus;
+
+		// --- Component 3: Ocean connectivity and deep water ---
+		if (analysis.bConnectedToOcean)
+			iScore += 5;
+		if (analysis.iDeepWaterTilesRing2 > 3)
+			iScore += 5;
+
+		// --- Component 4: Per-enemy naval threat contribution ---
+		int iEnemyContribution = 0;
+		int iTotalEnemySeaMight = 0;
+		int iReachableEnemies = 0;
+
+		for (size_t e = 0; e < vEnemies.size(); e++)
+		{
+			const EnemyNavalInfo& enemy = vEnemies[e];
+
+			// Can enemy fleet reach this city's water area?
+			bool bCanReach = false;
+			if (enemy.iPrimaryWaterAreaID >= 0)
+			{
+				// Same water area — direct access
+				if (enemy.iPrimaryWaterAreaID == analysis.iPrimaryWaterAreaID)
+				{
+					bCanReach = true;
+				}
+				else
+				{
+					// Check connectivity through the water area graph (ignoring control)
+					// We use "ignoring control" because enemy fleet CAN transit through
+					// their own cities and allied forts — we care about physical reachability
+					std::set<int> visited;
+					std::vector<int> frontier;
+					visited.insert(enemy.iPrimaryWaterAreaID);
+					frontier.push_back(enemy.iPrimaryWaterAreaID);
+
+					size_t head = 0;
+					while (head < frontier.size() && !bCanReach)
+					{
+						int iCurrent = frontier[head++];
+						std::map<int, std::vector<WaterAreaEdge> >::const_iterator graphIt = m_waterAreaGraph.find(iCurrent);
+						if (graphIt == m_waterAreaGraph.end())
+							continue;
+
+						const std::vector<WaterAreaEdge>& edges = graphIt->second;
+						for (size_t ei = 0; ei < edges.size(); ei++)
+						{
+							if (visited.find(edges[ei].iOtherAreaID) != visited.end())
+								continue;
+							if (edges[ei].iOtherAreaID == analysis.iPrimaryWaterAreaID)
+							{
+								bCanReach = true;
+								break;
+							}
+							visited.insert(edges[ei].iOtherAreaID);
+							frontier.push_back(edges[ei].iOtherAreaID);
+						}
+					}
+				}
+			}
+
+			if (!bCanReach)
+				continue;
+			if (!enemy.bCanEmbark && enemy.iNavalUnits == 0)
+				continue;
+
+			iReachableEnemies++;
+			iTotalEnemySeaMight += enemy.iSeaMight;
+
+			// Base: enemy can reach us by sea with embarkation capability
+			int iEnemyScore = 10;
+
+			// Bonus for ranged naval — can bombard from sea without landing
+			if (enemy.bHasRangedNaval)
+				iEnemyScore += 5;
+
+			// Scale by enemy fleet size relative to an "average fleet" (avoid large numbers)
+			// 6 naval units = 1x, 12 = 1.5x, 3 = 0.75x
+			int iFleetScale = 100;
+			if (enemy.iNavalUnits > 0)
+				iFleetScale = 50 + (enemy.iNavalUnits * 50 / 6);
+			if (iFleetScale > 200)
+				iFleetScale = 200;
+			iEnemyScore = iEnemyScore * iFleetScale / 100;
+
+			iEnemyContribution += iEnemyScore;
+		}
+
+		// Cap enemy contribution at 45 to keep total reasonable
+		if (iEnemyContribution > 45)
+			iEnemyContribution = 45;
+		iScore += iEnemyContribution;
+
+		// Cap total at 100
+		if (iScore > 100)
+			iScore = 100;
+
+		analysis.iAmphibiousThreatScore = iScore;
+		analysis.iHostileSeaApproaches = iReachableEnemies;
+
+		// Normalize enemy naval power relative to our sea might (percentage)
+		analysis.iEnemyNavalPower = (iTotalEnemySeaMight * 100) / iOurSeaMight;
+
+		// Flag: vulnerable if score is significant AND enemies can actually reach us
+		analysis.bVulnerableToAmphibious = (iScore >= 40 && iReachableEnemies > 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  Phase 6: Logging
 // ---------------------------------------------------------------------------
 
@@ -2105,7 +2399,7 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 		strCityName.Replace(' ', '_');
 
 		CvString strMsg;
-		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d, navalChoke=%s, canalCity=%d, straitTiles=%d, separators=%d, chokeW=%d, waterArea=%d, connAreas=%d, reachOcean=%d, blocked=%d",
+		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d, navalChoke=%s, canalCity=%d, straitTiles=%d, separators=%d, chokeW=%d, waterArea=%d, connAreas=%d, reachOcean=%d, blocked=%d, amphThreat=%d, seaEnemies=%d, enemyNaval=%d, vulnAmph=%d",
 			strBaseString.c_str(),
 			strCityName.c_str(),
 			(analysis.eLayer >= 0 && analysis.eLayer <= 4) ? szLayerNames[analysis.eLayer] : "???",
@@ -2131,7 +2425,11 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 			analysis.iPrimaryWaterAreaID,
 			analysis.iConnectedWaterAreaCount,
 			analysis.bFleetCanReachOcean ? 1 : 0,
-			analysis.bEnemyBlocksNavalRoute ? 1 : 0);
+			analysis.bEnemyBlocksNavalRoute ? 1 : 0,
+			analysis.iAmphibiousThreatScore,
+			analysis.iHostileSeaApproaches,
+			analysis.iEnemyNavalPower,
+			analysis.bVulnerableToAmphibious ? 1 : 0);
 
 		pLog->Msg(strMsg.c_str());
 	}
