@@ -3396,6 +3396,31 @@ void CvMilitaryAI::UpdateOperations()
 				if (iNumEnemies >= 3 && pThreatenedCityC && pThreatenedCityC != pEnemyLandCity)
 					CheckLandDefenses(eLoopPlayer, pThreatenedCityC);
 
+				// Phase 3: Ensure chokepoint cities always have defense operations.
+				// Chokepoint cities are strategically critical — losing them opens wide fronts.
+				// If a chokepoint city facing this enemy doesn't already have defense, set one up.
+				if (m_pStrategyMap)
+				{
+					int iCityLoop = 0;
+					for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
+					{
+						if (!m_pStrategyMap->IsCityChokepoint(pCity->GetID()))
+							continue;
+
+						// Only assign defense if this enemy is relevant to this city
+						if (!IsExposedToEnemy(pCity, eLoopPlayer))
+							continue;
+
+						// Don't duplicate — check if already covered
+						if (m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_CITY_DEFENSE, NO_PLAYER, pCity->plot()))
+							continue;
+						if (m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_RAPID_RESPONSE, NO_PLAYER, pCity->plot()))
+							continue;
+
+						CheckLandDefenses(eLoopPlayer, pCity);
+					}
+				}
+
 				CheckSeaDefenses(eLoopPlayer, pThreatenedCoastalCityA);
 				CheckSeaDefenses(eLoopPlayer, pThreatenedCoastalCityB);
 
@@ -5521,6 +5546,10 @@ void CvMilitaryAI::EvaluateTacticalRetreat()
 			for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
 			{
 				if (pCity == pCapital)
+					continue;
+
+				// Phase 3: Never abandon chokepoint city defense — losing them is catastrophic
+				if (m_pStrategyMap->IsCityChokepoint(pCity->GetID()))
 					continue;
 
 				bool bExpendable = m_pStrategyMap->IsExpendableSalient(pCity->GetID());

@@ -1008,8 +1008,14 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 					iBaseValue *= 2;
 
 				// Chokepoint cities get a massive boost — losing them opens wide approach corridors
-				if (pCityStrat->iChokePointCount >= 3)
-					iBaseValue = (iBaseValue * 5) / 2; // 2.5x for chokepoint cities
+				// Phase 3: Formal chokepoint city detection with 3x multiplier
+				if (pCityStrat->bIsChokepointCity)
+				{
+					iBaseValue *= 3; // 3x for formal chokepoint cities (acceptance criteria)
+					// Extra boost for extreme chokepoints (1 or fewer open approach corridors)
+					if (pCityStrat->iApproachCorridors <= 1)
+						iBaseValue = (iBaseValue * 3) / 2; // total 4.5x for Thermopylae-level chokes
+				}
 				else if (pCityStrat->iChokePointCount >= 1)
 					iBaseValue = (iBaseValue * 3) / 2; // 1.5x for near-chokepoint cities
 
@@ -1034,7 +1040,7 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 						// Defensible salient: hedgehog is viable, moderate boost
 						iBaseValue = (iBaseValue * 3) / 2; // 1.5x
 					}
-					else if (!pCityStrat->bIsCapital && pCityStrat->iChokePointCount < 3)
+					else if (!pCityStrat->bIsCapital && !pCityStrat->bIsChokepointCity && pCityStrat->iChokePointCount < 3)
 					{
 						// Expendable salient: reduce priority so we don't waste tactical resources
 						iBaseValue = (iBaseValue * 3) / 4; // 0.75x

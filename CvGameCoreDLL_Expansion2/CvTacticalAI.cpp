@@ -9025,6 +9025,15 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		if (bMovingTowardEnemy)
 			iScore += bImminentAttack ? 160 : 100;
 
+		//Phase 3: Prefer retreating to chokepoint tiles — creates a defensive bottleneck
+		//where the enemy can only attack through a narrow corridor.
+		//Only relevant for land combat units (civilians and naval units don't benefit from chokepoints).
+		if (pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_LAND && !bWouldEmbark)
+		{
+			if (pPlot->IsChokePoint())
+				iScore -= 20; // significant preference for chokepoint retreat positions
+		}
+
 		//THIRD-PARTY SAFE HAVEN for LAND plots (applies to iScore for danger/zero lists)
 		//Retreating into neutral territory where enemy can't follow is tactically smart
 		bool bIsThirdPartySafeHaven = false;

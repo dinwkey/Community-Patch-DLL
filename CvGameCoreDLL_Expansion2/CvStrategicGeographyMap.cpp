@@ -3,6 +3,7 @@
 	Strategic Geography Map: persistent terrain-aware layer for AI defense allocation.
 	Phase 1: Defensive Layer Classification + Capital Protection.
 	Phase 2: Salient Detection + Defensible Salient Exception.
+	Phase 3: Chokepoint City Detection + Approach Corridor Analysis.
 	See docs/military-ai/STRATEGIC_GEOGRAPHY_MAP_PLAN.md for design rationale.
 	------------------------------------------------------------------------------------------------------- */
 
@@ -16,6 +17,7 @@
 #include "CvTeam.h"
 #include "CvDiplomacyAI.h"
 #include "CvUnit.h"
+#include "CvGameCoreUtils.h"
 #include "LintFree.h"
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,18 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 		iModifier += 60;   // city is effectively a chokepoint city
 	else if (iChokePointCount >= 1)
 		iModifier += 20;   // some chokepoint influence
+
+	// Phase 3: Formal chokepoint city bonus (approach corridor analysis)
+	// This is on top of the raw chokepoint count — it captures the "few approach corridors" property
+	// that makes a city strategically critical as a bottleneck.
+	if (bIsChokepointCity)
+	{
+		iModifier += 80;  // massive bonus — losing a chokepoint city is catastrophic
+
+		// Extra bonus for extreme chokepoints (only 1 open approach corridor)
+		if (iApproachCorridors <= 1)
+			iModifier += 40;  // Thermopylae-level chokepoint
+	}
 
 	// Phase 2: Salient modifiers
 	if (bIsSalient)
@@ -147,6 +161,7 @@ void CvStrategicGeographyMap::Update()
 	m_iLastFullUpdate = GC.getGame().getGameTurn();
 	ClassifyAllCities();
 	DetectSalients();
+	DetectChokepointCities();
 }
 
 // ---------------------------------------------------------------------------
@@ -208,12 +223,24 @@ bool CvStrategicGeographyMap::IsExpendableSalient(int iCityID) const
 	if (pAnalysis->bIsCapital)
 		return false;
 	// Chokepoint salients are not expendable (losing them opens corridors)
-	if (pAnalysis->iChokePointCount >= 3)
+	if (pAnalysis->iChokePointCount >= 3 || pAnalysis->bIsChokepointCity)
 		return false;
 	// Defensible salients pre-Indirect Fire are not expendable
 	if (pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire)
 		return false;
 	return true;
+}
+
+bool CvStrategicGeographyMap::IsCityChokepoint(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bIsChokepointCity : false;
+}
+
+int CvStrategicGeographyMap::GetApproachCorridors(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iApproachCorridors : 6;
 }
 
 // ---------------------------------------------------------------------------
@@ -590,5 +617,106 @@ void CvStrategicGeographyMap::DetectSalients()
 				analysis.bIsDefensibleSalient = true;
 			}
 		}
+	}
+}
+
+// ========================================================================
+// Phase 3: Chokepoint City Detection + Approach Corridor Analysis
+// ========================================================================
+
+/// Scan a corridor in a single hex direction from pStart.
+/// Walk up to 3 tiles in eDirection, measuring cross-section width at each step.
+/// Cross-section = center tile + one tile to each side (perpendicular).
+/// Returns minimum corridor width along the 3-step path (0-3).
+/// 0 = completely blocked, 1 = extreme choke, 2 = narrow, 3 = wide open.
+int CvStrategicGeographyMap::ScanCorridorWidth(CvPlot* pStart, DirectionTypes eDirection) const
+{
+	if (!pStart)
+		return 0;
+
+	// The two "side" directions perpendicular-ish to eDirection in hex geometry.
+	// Using ±1 step (60° offset) gives us the nearest neighbors on either side of the corridor.
+	DirectionTypes eLeftDir = (DirectionTypes)(((int)eDirection + NUM_DIRECTION_TYPES - 1) % NUM_DIRECTION_TYPES);
+	DirectionTypes eRightDir = (DirectionTypes)(((int)eDirection + 1) % NUM_DIRECTION_TYPES);
+
+	int iMinWidth = 3;
+	CvPlot* pCurrent = pStart;
+
+	for (int iStep = 0; iStep < 3; iStep++)
+	{
+		// Step one tile in the main direction
+		pCurrent = plotDirection(pCurrent->getX(), pCurrent->getY(), eDirection);
+		if (!pCurrent)
+			return 0; // off map edge — direction is blocked
+
+		// If center tile is impassable, this direction is completely blocked
+		if (pCurrent->isImpassable(BARBARIAN_TEAM) || pCurrent->isWater())
+			return 0;
+
+		// Count passable land tiles in the 3-tile cross-section at this step
+		int iWidth = 1; // center tile is passable (checked above)
+
+		CvPlot* pLeft = plotDirection(pCurrent->getX(), pCurrent->getY(), eLeftDir);
+		if (pLeft && !pLeft->isImpassable(BARBARIAN_TEAM) && !pLeft->isWater())
+			iWidth++;
+
+		CvPlot* pRight = plotDirection(pCurrent->getX(), pCurrent->getY(), eRightDir);
+		if (pRight && !pRight->isImpassable(BARBARIAN_TEAM) && !pRight->isWater())
+			iWidth++;
+
+		if (iWidth < iMinWidth)
+			iMinWidth = iWidth;
+	}
+
+	return iMinWidth;
+}
+
+/// Phase 3 main routine: analyze approach corridors for all cities and detect chokepoint cities.
+/// A chokepoint city has few open approach directions, making it a terrain bottleneck.
+/// Losing a chokepoint city is catastrophic because it opens a wide front behind it.
+void CvStrategicGeographyMap::DetectChokepointCities()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	int iLoop = 0;
+
+	for (CvCity* pCity = kPlayer.firstCity(&iLoop); pCity != NULL; pCity = kPlayer.nextCity(&iLoop))
+	{
+		std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.find(pCity->GetID());
+		if (it == m_cityAnalysis.end())
+			continue;
+
+		StrategicCityAnalysis& analysis = it->second;
+		CvPlot* pCityPlot = pCity->plot();
+		if (!pCityPlot)
+			continue;
+
+		// Scan all 6 hex directions for approach corridor width
+		int iOpenCorridors = 0;  // Corridors with width >= 2 (wide enough for flanking)
+		int iNarrow = 0;         // Corridors with width == 1 (single-file, extreme choke)
+		int iBlocked = 0;        // Completely blocked directions (mountains/water)
+
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			int iWidth = ScanCorridorWidth(pCityPlot, (DirectionTypes)iDir);
+			if (iWidth >= 2)
+				iOpenCorridors++;
+			else if (iWidth == 1)
+				iNarrow++;
+			else
+				iBlocked++;
+		}
+
+		analysis.iApproachCorridors = iOpenCorridors;
+		analysis.iNarrowCorridors = iNarrow;
+
+		// Chokepoint city criteria (any one is sufficient):
+		// 1. Few wide-open approach corridors (≤2 out of 6) — most directions are choked or blocked
+		// 2. Many adjacent IsChokePoint() plots (≥3) from Phase 1 — plot-level chokepoint density
+		// 3. City's own plot is a chokepoint — sitting directly on a terrain bottleneck
+		bool bFewApproaches = (iOpenCorridors <= 2);
+		bool bManyChokePlots = (analysis.iChokePointCount >= 3);
+		bool bSelfIsChokepoint = pCityPlot->IsChokePoint();
+
+		analysis.bIsChokepointCity = bFewApproaches || bManyChokePlots || bSelfIsChokepoint;
 	}
 }

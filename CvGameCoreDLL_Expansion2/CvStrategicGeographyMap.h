@@ -22,7 +22,7 @@ enum eStrategicLayer
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//  Per-city strategic analysis (Phase 1: layer, Phase 2: salient detection)
+//  Per-city strategic analysis (Phase 1: layer, Phase 2: salient, Phase 3: chokepoint)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 struct StrategicCityAnalysis
@@ -43,6 +43,9 @@ struct StrategicCityAnalysis
 		, iHostileTilesRing3(0)
 		, iFriendlyTilesRing3(0)
 		, iAdjacentDefensiveTerrain(0)
+		, bIsChokepointCity(false)
+		, iApproachCorridors(6)
+		, iNarrowCorridors(0)
 	{
 	}
 
@@ -64,6 +67,11 @@ struct StrategicCityAnalysis
 	int iHostileTilesRing3;    // Count of hostile-owned tiles within RING3
 	int iFriendlyTilesRing3;   // Count of friendly-owned tiles within RING3
 	int iAdjacentDefensiveTerrain; // Count of adjacent (RING1) tiles with forest/jungle/hills+forest
+
+	// Phase 3 fields — Chokepoint City Detection
+	bool bIsChokepointCity;    // City controls a terrain chokepoint (few open approach corridors)
+	int iApproachCorridors;    // Number of wide-open approach directions (0-6; fewer = more choked)
+	int iNarrowCorridors;      // Number of directions with corridor width == 1 (partial choke)
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -97,6 +105,10 @@ public:
 	bool IsDefensibleSalient(int iCityID) const;
 	bool IsExpendableSalient(int iCityID) const; // Salient AND not defensible AND not capital
 
+	// Phase 3: Chokepoint queries
+	bool IsCityChokepoint(int iCityID) const;
+	int GetApproachCorridors(int iCityID) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -108,7 +120,9 @@ private:
 
 	// Internal computation
 	void ClassifyAllCities();
-	void DetectSalients();  // Phase 2: salient + defensible salient detection
+	void DetectSalients();          // Phase 2: salient + defensible salient detection
+	void DetectChokepointCities();  // Phase 3: approach corridor analysis
+	int ScanCorridorWidth(CvPlot* pStart, DirectionTypes eDirection) const;
 	int ComputeMinBorderDistance(CvCity* pCity) const;
 	int CountAdjacentChokepoints(CvCity* pCity) const;
 	int ComputeTerrainDefenseScore(CvCity* pCity) const;
