@@ -34,6 +34,17 @@ enum eCoastalExposure
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Naval Phase 2: Naval Chokepoint Classification
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+enum eNavalChokeType
+{
+	NAVAL_CHOKE_NONE,              // City has no nearby naval chokepoint
+	NAVAL_CHOKE_NEAR_STRAIT,       // City is near a narrow water passage (within RING3)
+	NAVAL_CHOKE_CANAL_CITY,        // City itself is a canal connecting 2 water areas (controllable chokepoint)
+};
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //  Per-enemy approach data (Phase 5)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -88,6 +99,11 @@ struct StrategicCityAnalysis
 		, iDeepWaterTilesRing2(0)
 		, iLandingZonesRing2(0)
 		, bConnectedToOcean(false)
+		, eNavalChoke(NAVAL_CHOKE_NONE)
+		, bIsNavalCanalCity(false)
+		, iStraitTilesNearby(0)
+		, iWaterSeparatorLandNearby(0)
+		, iNavalChokeWidth(0)
 	{
 	}
 
@@ -132,6 +148,13 @@ struct StrategicCityAnalysis
 	int iDeepWaterTilesRing2;      // Deep water (ocean) tiles in RING1+RING2 — can receive ocean-going threats
 	int iLandingZonesRing2;        // Flat coastal land tiles in RING2 adjacent to non-lake water (amphibious landing spots)
 	bool bConnectedToOcean;        // True if adjacent water connects to non-lake ocean body (vs isolated lake)
+
+	// Naval Phase 2 fields — Naval Chokepoint Detection
+	eNavalChokeType eNavalChoke;    // Naval chokepoint classification
+	bool bIsNavalCanalCity;        // THIS city connects 2+ different water areas (controllable chokepoint)
+	int iStraitTilesNearby;        // Count of narrow-water-passage tiles within RING3
+	int iWaterSeparatorLandNearby; // Count of IsWaterAreaSeparator() land tiles within RING2 (strait land bridges)
+	int iNavalChokeWidth;          // Narrowest water passage width near this city (1-3; 0=none found)
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -186,6 +209,13 @@ public:
 	int GetLandingZoneCount(int iCityID) const;
 	bool IsCityConnectedToOcean(int iCityID) const;
 
+	// Naval Phase 2: Naval chokepoint queries
+	eNavalChokeType GetNavalChokeType(int iCityID) const;
+	bool CityControlsNavalChokepoint(int iCityID) const; // True if eNavalChoke != NONE
+	bool IsCityNavalCanal(int iCityID) const;              // True if city IS a canal (connects 2 water areas)
+	int GetNearbyStraitTileCount(int iCityID) const;
+	int GetNavalChokeWidth(int iCityID) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -217,6 +247,10 @@ private:
 
 	// Naval Phase 1: Coastal exposure computation
 	void AnalyzeCoastalExposure();
+
+	// Naval Phase 2: Naval chokepoint detection
+	void DetectNavalChokepoints();
+	int ScanWaterCorridorWidth(CvPlot* pWaterPlot) const;
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H

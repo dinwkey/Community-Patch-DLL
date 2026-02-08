@@ -142,6 +142,28 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 		break;
 	}
 
+	// Naval Phase 2: Naval chokepoint modifier.
+	// Cities that control naval chokepoints are strategically invaluable —
+	// they gate fleet movement between water bodies (canals, straits).
+	switch (eNavalChoke)
+	{
+	case NAVAL_CHOKE_CANAL_CITY:
+		// This city IS the canal — losing it severs fleet transit entirely.
+		// Massive bonus: worth defending at nearly any cost.
+		iModifier += 80;
+		break;
+	case NAVAL_CHOKE_NEAR_STRAIT:
+		// City overlooks a narrow strait — can project power to blockade.
+		// Significant bonus but less than a canal city (strait works without the city).
+		iModifier += 35;
+		// Extra if the strait is very narrow (width 1) — almost a canal equivalent
+		if (iNavalChokeWidth == 1)
+			iModifier += 20;
+		break;
+	default:
+		break;
+	}
+
 	return iModifier;
 }
 
@@ -206,6 +228,7 @@ void CvStrategicGeographyMap::Update()
 	AnalyzeApproachCorridors();
 	DeriveRoadPriorities();
 	AnalyzeCoastalExposure();
+	DetectNavalChokepoints();
 	LogStrategicGeography();
 }
 
@@ -374,6 +397,40 @@ bool CvStrategicGeographyMap::IsCityConnectedToOcean(int iCityID) const
 {
 	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
 	return pAnalysis && pAnalysis->bConnectedToOcean;
+}
+
+// ---------------------------------------------------------------------------
+//  Naval Phase 2: Naval chokepoint queries
+// ---------------------------------------------------------------------------
+
+eNavalChokeType CvStrategicGeographyMap::GetNavalChokeType(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->eNavalChoke : NAVAL_CHOKE_NONE;
+}
+
+bool CvStrategicGeographyMap::CityControlsNavalChokepoint(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis && pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE;
+}
+
+bool CvStrategicGeographyMap::IsCityNavalCanal(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis && pAnalysis->bIsNavalCanalCity;
+}
+
+int CvStrategicGeographyMap::GetNearbyStraitTileCount(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iStraitTilesNearby : 0;
+}
+
+int CvStrategicGeographyMap::GetNavalChokeWidth(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iNavalChokeWidth : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1374,6 +1431,237 @@ void CvStrategicGeographyMap::AnalyzeCoastalExposure()
 }
 
 // ---------------------------------------------------------------------------
+//  Naval Phase 2: Naval Chokepoint Detection
+// ---------------------------------------------------------------------------
+
+/// Measure the navigable water width at a given water plot.
+/// Uses the "brute force axis" method: test all 3 hex axis pairs.
+/// For each axis, count consecutive water tiles in both opposite directions.
+/// The axis with the longest reach is the "flow" direction; the perpendicular
+/// axis gives the "width" of the passage.
+/// Returns the minimum perpendicular width found (1 = extreme strait, 2-3 = narrow, 0 = not a strait).
+int CvStrategicGeographyMap::ScanWaterCorridorWidth(CvPlot* pWaterPlot) const
+{
+	if (!pWaterPlot || !pWaterPlot->isWater())
+		return 0;
+
+	// Skip lakes — they don't have strategic naval chokepoints
+	CvLandmass* pBody = pWaterPlot->landmass();
+	if (pBody && pBody->isLake())
+		return 0;
+
+	// Hex has 3 axis pairs: (NE/SW=0/3), (E/W=1/4), (SE/NW=2/5)
+	// For each axis pair, measure:
+	//   flowReach = how far water extends along that axis (both directions)
+	//   perpWidth = how many water tiles in the perpendicular cross-section
+	int iBestFlowReach = 0;
+	int iBestPerpWidth = 99;
+
+	for (int iAxis = 0; iAxis < 3; iAxis++)
+	{
+		DirectionTypes eDirA = (DirectionTypes)iAxis;              // e.g., NE (0)
+		DirectionTypes eDirB = (DirectionTypes)(iAxis + 3);        // e.g., SW (3) — opposite
+
+		// Perpendicular directions: rotate 90° (±2 steps on hex = ±120°... actually ±1 step = ±60°)
+		// For hex, "perpendicular" to axis pair {A,B} is the OTHER two axis pairs.
+		// We use ±1 step and ±2 steps from eDirA as the perpendicular probes.
+		DirectionTypes ePerpL1 = (DirectionTypes)(((int)eDirA + NUM_DIRECTION_TYPES - 1) % NUM_DIRECTION_TYPES);
+		DirectionTypes ePerpR1 = (DirectionTypes)(((int)eDirA + 1) % NUM_DIRECTION_TYPES);
+		DirectionTypes ePerpL2 = (DirectionTypes)(((int)eDirA + NUM_DIRECTION_TYPES - 2) % NUM_DIRECTION_TYPES);
+		DirectionTypes ePerpR2 = (DirectionTypes)(((int)eDirA + 2) % NUM_DIRECTION_TYPES);
+
+		// Measure flow reach along this axis
+		int iReachA = 0;
+		CvPlot* pProbe = pWaterPlot;
+		for (int iStep = 0; iStep < 6; iStep++)
+		{
+			pProbe = plotDirection(pProbe->getX(), pProbe->getY(), eDirA);
+			if (!pProbe || !pProbe->isWater())
+				break;
+			CvLandmass* pProbeBody = pProbe->landmass();
+			if (pProbeBody && pProbeBody->isLake())
+				break;
+			iReachA++;
+		}
+
+		int iReachB = 0;
+		pProbe = pWaterPlot;
+		for (int iStep = 0; iStep < 6; iStep++)
+		{
+			pProbe = plotDirection(pProbe->getX(), pProbe->getY(), eDirB);
+			if (!pProbe || !pProbe->isWater())
+				break;
+			CvLandmass* pProbeBody = pProbe->landmass();
+			if (pProbeBody && pProbeBody->isLake())
+				break;
+			iReachB++;
+		}
+
+		int iFlowReach = iReachA + iReachB;
+
+		// Only consider this a "flow" axis if water extends at least 3 tiles total along it
+		if (iFlowReach < 3)
+			continue;
+
+		// Measure perpendicular width: count water tiles at the center in the perpendicular direction.
+		// Width = 1 (just this tile) + extend left + extend right.
+		int iPerpWidth = 1; // the center tile itself
+
+		// Check 4 perpendicular neighbors (±60° and ±120° from the flow axis)
+		// For a narrow strait, at least one pair should be land/blocked.
+		CvPlot* pPerpL1 = plotDirection(pWaterPlot->getX(), pWaterPlot->getY(), ePerpL1);
+		if (pPerpL1 && pPerpL1->isWater())
+		{
+			CvLandmass* pPBody = pPerpL1->landmass();
+			if (!pPBody || !pPBody->isLake())
+				iPerpWidth++;
+		}
+
+		CvPlot* pPerpR1 = plotDirection(pWaterPlot->getX(), pWaterPlot->getY(), ePerpR1);
+		if (pPerpR1 && pPerpR1->isWater())
+		{
+			CvLandmass* pPBody = pPerpR1->landmass();
+			if (!pPBody || !pPBody->isLake())
+				iPerpWidth++;
+		}
+
+		CvPlot* pPerpL2 = plotDirection(pWaterPlot->getX(), pWaterPlot->getY(), ePerpL2);
+		if (pPerpL2 && pPerpL2->isWater())
+		{
+			CvLandmass* pPBody = pPerpL2->landmass();
+			if (!pPBody || !pPBody->isLake())
+				iPerpWidth++;
+		}
+
+		CvPlot* pPerpR2 = plotDirection(pWaterPlot->getX(), pWaterPlot->getY(), ePerpR2);
+		if (pPerpR2 && pPerpR2->isWater())
+		{
+			CvLandmass* pPBody = pPerpR2->landmass();
+			if (!pPBody || !pPBody->isLake())
+				iPerpWidth++;
+		}
+
+		// Track the axis with the best flow reach, and use its perpendicular width
+		if (iFlowReach > iBestFlowReach || (iFlowReach == iBestFlowReach && iPerpWidth < iBestPerpWidth))
+		{
+			iBestFlowReach = iFlowReach;
+			iBestPerpWidth = iPerpWidth;
+		}
+	}
+
+	// A strait tile has: good flow (>=3) AND narrow perpendicular width (<=3)
+	if (iBestFlowReach >= 3 && iBestPerpWidth <= 3)
+		return iBestPerpWidth;
+
+	return 0; // Not a strait
+}
+
+/// Detect naval chokepoints near each coastal city.
+/// City-centric: for each coastal city, scan RING1-RING3 for:
+///   1. Water tiles that are narrow straits (ScanWaterCorridorWidth <= 3)
+///   2. Land tiles that are water area separators (IsWaterAreaSeparator — land between 2 water bodies)
+///   3. Whether the city itself is a canal city (coastal city connecting 2 different water Areas)
+void CvStrategicGeographyMap::DetectNavalChokepoints()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		StrategicCityAnalysis& analysis = it->second;
+		CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+		if (!pCity)
+			continue;
+
+		// Skip non-coastal cities — no naval chokepoints relevant
+		if (analysis.eExposure == COASTAL_EXPOSURE_NONE)
+			continue;
+
+		CvPlot* pCityPlot = pCity->plot();
+		if (!pCityPlot)
+			continue;
+
+		// --- Check 1: Is this city itself a canal city? ---
+		// A canal city is a coastal city adjacent to 2+ different non-lake water Areas.
+		int iFirstWaterAreaID = -1;
+		bool bIsCanalCity = false;
+
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pCityPlot->getX(), pCityPlot->getY(), (DirectionTypes)iDir);
+			if (!pAdj || !pAdj->isWater())
+				continue;
+
+			CvLandmass* pWaterBody = pAdj->landmass();
+			if (pWaterBody && pWaterBody->isLake())
+				continue;
+
+			int iAreaID = pAdj->getArea();
+			if (iFirstWaterAreaID == -1)
+			{
+				iFirstWaterAreaID = iAreaID;
+			}
+			else if (iAreaID != iFirstWaterAreaID)
+			{
+				bIsCanalCity = true;
+				break;
+			}
+		}
+
+		analysis.bIsNavalCanalCity = bIsCanalCity;
+
+		// --- Check 2: Scan RING1-RING3 for strait indicators ---
+		int iStraitTiles = 0;
+		int iSeparatorLand = 0;
+		int iNarrowestWidth = 99;
+
+		for (int i = 1; i < RING3_PLOTS; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+			if (!pLoopPlot)
+				continue;
+
+			if (pLoopPlot->isWater())
+			{
+				// Check if this water tile is a narrow strait
+				int iWidth = ScanWaterCorridorWidth(pLoopPlot);
+				if (iWidth > 0) // iWidth <= 3 means it's a strait
+				{
+					iStraitTiles++;
+					if (iWidth < iNarrowestWidth)
+						iNarrowestWidth = iWidth;
+				}
+			}
+			else
+			{
+				// Check if this is a land bridge between water areas (within RING2 only — closer relevance)
+				if (i < RING2_PLOTS && pLoopPlot->IsWaterAreaSeparator())
+					iSeparatorLand++;
+			}
+		}
+
+		analysis.iStraitTilesNearby = iStraitTiles;
+		analysis.iWaterSeparatorLandNearby = iSeparatorLand;
+		analysis.iNavalChokeWidth = (iNarrowestWidth < 99) ? iNarrowestWidth : 0;
+
+		// --- Classify naval chokepoint type ---
+		if (bIsCanalCity)
+		{
+			// Highest priority: city IS the chokepoint (controllable — owner-only transit)
+			analysis.eNavalChoke = NAVAL_CHOKE_CANAL_CITY;
+		}
+		else if (iStraitTiles >= 2 || iSeparatorLand >= 1)
+		{
+			// City is near a natural strait or land bridge between water areas
+			analysis.eNavalChoke = NAVAL_CHOKE_NEAR_STRAIT;
+		}
+		else
+		{
+			analysis.eNavalChoke = NAVAL_CHOKE_NONE;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  Phase 6: Logging
 // ---------------------------------------------------------------------------
 
@@ -1406,6 +1694,7 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 
 	static const char* szLayerNames[] = { "UNKNOWN", "FRONT_LINE", "SECOND_LINE", "REAR_AREA", "CORE" };
 	static const char* szExposureNames[] = { "NONE", "SHELTERED", "MODERATE", "EXPOSED" };
+	static const char* szNavalChokeNames[] = { "NONE", "NEAR_STRAIT", "CANAL_CITY" };
 
 	for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
 	{
@@ -1418,7 +1707,7 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 		strCityName.Replace(' ', '_');
 
 		CvString strMsg;
-		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d",
+		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d, navalChoke=%s, canalCity=%d, straitTiles=%d, separators=%d, chokeW=%d",
 			strBaseString.c_str(),
 			strCityName.c_str(),
 			(analysis.eLayer >= 0 && analysis.eLayer <= 4) ? szLayerNames[analysis.eLayer] : "???",
@@ -1435,7 +1724,12 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 			analysis.iWaterTilesRing2,
 			analysis.iDeepWaterTilesRing2,
 			analysis.iLandingZonesRing2,
-			analysis.bConnectedToOcean ? 1 : 0);
+			analysis.bConnectedToOcean ? 1 : 0,
+			(analysis.eNavalChoke >= 0 && analysis.eNavalChoke <= 2) ? szNavalChokeNames[analysis.eNavalChoke] : "???",
+			analysis.bIsNavalCanalCity ? 1 : 0,
+			analysis.iStraitTilesNearby,
+			analysis.iWaterSeparatorLandNearby,
+			analysis.iNavalChokeWidth);
 
 		pLog->Msg(strMsg.c_str());
 	}

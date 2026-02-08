@@ -859,6 +859,20 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 				{
 					iDefenseMod += 50;
 				}
+
+				// Naval Phase 2: Naval chokepoint boosts defensive building priority.
+				// Canal cities and strait-adjacent cities gate fleet movement — defend them heavily.
+				if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
+				{
+					iDefenseMod += 400;
+				}
+				else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
+				{
+					iDefenseMod += 200;
+					// Very narrow strait (width 1) is nearly canal-equivalent
+					if (pAnalysis->iNavalChokeWidth == 1)
+						iDefenseMod += 100;
+				}
 			}
 		}
 	}
