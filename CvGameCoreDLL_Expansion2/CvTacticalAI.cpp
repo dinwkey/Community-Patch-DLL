@@ -8620,9 +8620,9 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
 						{
 							UnitPredictedIntent eIntent = pGarrisonOwnerDiplo->GetSightingManager()
-								.InferUnitIntentNearCity(pSighting, pCity->getX(), pCity->getY());
+								.InferUnitIntentNearCity(pSighting, pCity->getX(), pCity->getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
 							bLikelyRetreating = (eIntent == UNIT_INTENT_RETREAT);
-							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY || eIntent == UNIT_INTENT_ATTACK_UNIT);
+							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY);
 						}
 						else
 						{

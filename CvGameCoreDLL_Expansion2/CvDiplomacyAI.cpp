@@ -1279,7 +1279,7 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(const UnitSighting* p
 /// This gives city defense better targeting: a wounded unit moving TOWARD
 /// the city is still attacking, and a healthy unit moving AWAY after a
 /// failed assault is retreating.
-UnitPredictedIntent CvUnitSightingManager::InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY) const
+UnitPredictedIntent CvUnitSightingManager::InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY, int iCurrentTurn, bool bMovedThisTurn) const
 {
 	if (!pSighting || !m_pPlayer)
 		return UNIT_INTENT_UNKNOWN;
@@ -1298,7 +1298,8 @@ UnitPredictedIntent CvUnitSightingManager::InferUnitIntentNearCity(const UnitSig
 	// === Directional analysis ===
 	// Use dot product of (movement vector) and (unit → city vector)
 	// Positive dot = moving toward city, negative = moving away
-	bool bHasDirection = (pSighting->lastDeltaX != 0 || pSighting->lastDeltaY != 0);
+	bool bIsFresh = (pSighting->lastSeenTurn == (short)iCurrentTurn);
+	bool bHasDirection = bMovedThisTurn && bIsFresh && (pSighting->lastDeltaX != 0 || pSighting->lastDeltaY != 0);
 	int iDot = 0;
 	if (bHasDirection)
 	{

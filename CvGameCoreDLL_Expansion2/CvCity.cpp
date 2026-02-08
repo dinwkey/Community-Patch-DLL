@@ -33139,9 +33139,9 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						const UnitSighting* pSighting = pOwnerDiploAI->GetSightingManager().GetSighting(pTarget->getOwner(), pTarget->GetID());
 						if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
 						{
-							UnitPredictedIntent eIntent = pOwnerDiploAI->GetSightingManager().InferUnitIntentNearCity(pSighting, getX(), getY());
+							UnitPredictedIntent eIntent = pOwnerDiploAI->GetSightingManager().InferUnitIntentNearCity(pSighting, getX(), getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
 							bRetreating = (eIntent == UNIT_INTENT_RETREAT);
-							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY || eIntent == UNIT_INTENT_ATTACK_UNIT);
+							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY);
 						}
 						else
 						{

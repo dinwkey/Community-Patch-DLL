@@ -217,7 +217,7 @@ public:
 	/// City-aware intent inference: uses movement direction relative to a specific
 	/// city to distinguish approach from retreat. More accurate than the general
 	/// InferUnitIntent() for city defense targeting decisions.
-	UnitPredictedIntent InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY) const;
+	UnitPredictedIntent InferUnitIntentNearCity(const UnitSighting* pSighting, int iCityX, int iCityY, int iCurrentTurn, bool bMovedThisTurn) const;
 
 	// === Serialization ===
 	void Read(FDataStream& kStream);
