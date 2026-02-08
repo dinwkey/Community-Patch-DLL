@@ -5,6 +5,7 @@
 	Phase 2: Salient Detection + Defensible Salient Exception.
 	Phase 3: Chokepoint City Detection + Approach Corridor Analysis.
 	Phase 4: Floodgate/Dependency Detection — cities whose loss exposes multiple others.
+	Phase 5: Approach Corridor Analysis + Road Priority derivation.
 	See docs/military-ai/STRATEGIC_GEOGRAPHY_MAP_PLAN.md for design rationale.
 	------------------------------------------------------------------------------------------------------- */
 
@@ -18,6 +19,7 @@
 #include "CvTeam.h"
 #include "CvDiplomacyAI.h"
 #include "CvUnit.h"
+#include "CvCityCitizens.h"
 #include "CvGameCoreUtils.h"
 #include "LintFree.h"
 
@@ -175,6 +177,8 @@ void CvStrategicGeographyMap::Update()
 	DetectSalients();
 	DetectChokepointCities();
 	BuildDependencyGraph();
+	AnalyzeApproachCorridors();
+	DeriveRoadPriorities();
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +273,45 @@ int CvStrategicGeographyMap::GetDependentCityCount(int iCityID) const
 {
 	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
 	return pAnalysis ? pAnalysis->iDependentCityCount : 0;
+}
+
+int CvStrategicGeographyMap::GetRoadPriority(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iRoadPriority : 0;
+}
+
+bool CvStrategicGeographyMap::CityNeedsStrategicRoad(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bNeedsStrategicRoad : false;
+}
+
+const std::vector<EnemyApproach>* CvStrategicGeographyMap::GetEnemyApproaches(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? &pAnalysis->vEnemyApproaches : NULL;
+}
+
+/// Returns the approach direction of the closest/most-dangerous enemy, or NO_DIRECTION.
+DirectionTypes CvStrategicGeographyMap::GetPrimaryThreatDirection(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	if (!pAnalysis || pAnalysis->vEnemyApproaches.empty())
+		return NO_DIRECTION;
+
+	// Return the direction of the closest enemy approach
+	int iMinDist = 99;
+	DirectionTypes eBest = NO_DIRECTION;
+	for (size_t i = 0; i < pAnalysis->vEnemyApproaches.size(); i++)
+	{
+		if (pAnalysis->vEnemyApproaches[i].iDistanceFromEnemy < iMinDist)
+		{
+			iMinDist = pAnalysis->vEnemyApproaches[i].iDistanceFromEnemy;
+			eBest = pAnalysis->vEnemyApproaches[i].eLikelyApproachDirection;
+		}
+	}
+	return eBest;
 }
 
 // ---------------------------------------------------------------------------
@@ -914,5 +957,232 @@ void CvStrategicGeographyMap::BuildDependencyGraph()
 				analysis.vDependentCities.push_back(*sit);
 			}
 		}
+	}
+}
+
+// ========================================================================
+// Phase 5: Approach Corridor Analysis + Road Priority
+// ========================================================================
+
+/// Compute approach difficulty for a single enemy city attacking our city.
+/// Higher = harder for the enemy (better for us). 0 = trivial approach, 100 = very difficult.
+/// Scans RING2 tiles around our city in the approach direction for defensive terrain.
+int CvStrategicGeographyMap::ComputeApproachDifficulty(CvCity* pOurCity, CvCity* pEnemyCity) const
+{
+	if (!pOurCity || !pEnemyCity)
+		return 0;
+
+	CvPlot* pOurPlot = pOurCity->plot();
+	CvPlot* pEnemyPlot = pEnemyCity->plot();
+	if (!pOurPlot || !pEnemyPlot)
+		return 0;
+
+	// Estimate approach direction from enemy to us
+	DirectionTypes eApproachDir = estimateDirection(pEnemyPlot->getX(), pEnemyPlot->getY(),
+		pOurPlot->getX(), pOurPlot->getY());
+
+	if (eApproachDir == NO_DIRECTION)
+		return 0;
+
+	// Perpendicular directions for cross-section scanning
+	DirectionTypes eLeftDir = (DirectionTypes)(((int)eApproachDir + NUM_DIRECTION_TYPES - 1) % NUM_DIRECTION_TYPES);
+	DirectionTypes eRightDir = (DirectionTypes)(((int)eApproachDir + 1) % NUM_DIRECTION_TYPES);
+
+	int iDifficulty = 0;
+
+	// Walk 4 tiles outward from our city in the approach direction
+	// checking center + left + right at each step for defensive terrain
+	CvPlot* pCurrent = pOurPlot;
+	for (int iStep = 0; iStep < 4; iStep++)
+	{
+		pCurrent = plotDirection(pCurrent->getX(), pCurrent->getY(), eApproachDir);
+		if (!pCurrent)
+			break;
+
+		// Check center, left, and right tiles at this step
+		CvPlot* pScan[3];
+		pScan[0] = pCurrent;
+		pScan[1] = plotDirection(pCurrent->getX(), pCurrent->getY(), eLeftDir);
+		pScan[2] = plotDirection(pCurrent->getX(), pCurrent->getY(), eRightDir);
+
+		for (int j = 0; j < 3; j++)
+		{
+			if (!pScan[j])
+				continue;
+
+			// Mountains completely block this approach tile
+			if (pScan[j]->isMountain())
+				iDifficulty += 8;
+			// Hills slow attackers and give defenders advantage
+			else if (pScan[j]->isHills())
+				iDifficulty += 4;
+
+			// Forest/jungle slows movement and blocks LOS
+			if (pScan[j]->HasFeature(FEATURE_FOREST) || pScan[j]->HasFeature(FEATURE_JUNGLE))
+				iDifficulty += 3;
+
+			// River crossings penalize attackers
+			if (pScan[j]->isRiver())
+				iDifficulty += 3;
+
+			// Chokepoint tiles constrict the approach corridor
+			if (pScan[j]->IsChokePoint())
+				iDifficulty += 5;
+
+			// Water is impassable for land armies
+			if (pScan[j]->isWater())
+				iDifficulty += 6;
+		}
+	}
+
+	// Cap at 100
+	return min(iDifficulty, 100);
+}
+
+/// Phase 5 main routine: for each city and each hostile/at-war enemy, compute
+/// approach distance, direction, and terrain difficulty.
+void CvStrategicGeographyMap::AnalyzeApproachCorridors()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	TeamTypes eOurTeam = kPlayer.getTeam();
+
+	// Collect enemies at war or hostile (competitor+ opinion)
+	std::vector<PlayerTypes> vEnemies;
+	for (int iP = 0; iP < MAX_MAJOR_CIVS; iP++)
+	{
+		PlayerTypes eEnemy = (PlayerTypes)iP;
+		if (eEnemy == m_ePlayer)
+			continue;
+		CvPlayer& kEnemy = GET_PLAYER(eEnemy);
+		if (!kEnemy.isAlive() || kEnemy.isMinorCiv())
+			continue;
+		if (kEnemy.getNumCities() == 0)
+			continue;
+
+		bool bHostile = false;
+		if (GET_TEAM(eOurTeam).isAtWar(kEnemy.getTeam()))
+			bHostile = true;
+		else
+		{
+			CivOpinionTypes eOpinion = kPlayer.GetDiplomacyAI()->GetCivOpinion(eEnemy);
+			if (eOpinion <= CIV_OPINION_COMPETITOR)
+				bHostile = true;
+		}
+
+		if (bHostile)
+			vEnemies.push_back(eEnemy);
+	}
+
+	// For each of our cities, compute approach data for each enemy
+	int iCityLoop = 0;
+	for (CvCity* pCity = kPlayer.firstCity(&iCityLoop); pCity != NULL; pCity = kPlayer.nextCity(&iCityLoop))
+	{
+		std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.find(pCity->GetID());
+		if (it == m_cityAnalysis.end())
+			continue;
+
+		StrategicCityAnalysis& analysis = it->second;
+		analysis.vEnemyApproaches.clear();
+
+		for (size_t iE = 0; iE < vEnemies.size(); iE++)
+		{
+			PlayerTypes eEnemy = vEnemies[iE];
+
+			// Find the nearest enemy city to this city
+			CvCity* pNearestEnemyCity = NULL;
+			int iMinDist = 99;
+			int iEnemyCityLoop = 0;
+			for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iEnemyCityLoop);
+				pEnemyCity != NULL;
+				pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iEnemyCityLoop))
+			{
+				int iDist = plotDistance(pCity->getX(), pCity->getY(), pEnemyCity->getX(), pEnemyCity->getY());
+				if (iDist < iMinDist)
+				{
+					iMinDist = iDist;
+					pNearestEnemyCity = pEnemyCity;
+				}
+			}
+
+			if (!pNearestEnemyCity || iMinDist > 30)
+				continue; // Too far away to be a realistic threat
+
+			EnemyApproach approach;
+			approach.eEnemy = eEnemy;
+			approach.iDistanceFromEnemy = iMinDist;
+
+			// Approach direction: from enemy toward our city
+			approach.eLikelyApproachDirection = estimateDirection(
+				pNearestEnemyCity->getX(), pNearestEnemyCity->getY(),
+				pCity->getX(), pCity->getY());
+
+			// Terrain difficulty along the approach corridor
+			approach.iApproachDifficulty = ComputeApproachDifficulty(pCity, pNearestEnemyCity);
+
+			analysis.vEnemyApproaches.push_back(approach);
+		}
+	}
+}
+
+/// Phase 5 road priority: compute a strategic road priority for each city.
+/// Higher priority cities should get roads/rails built to them first.
+void CvStrategicGeographyMap::DeriveRoadPriorities()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	CvCity* pCapital = kPlayer.getCapitalCity();
+
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		StrategicCityAnalysis& analysis = it->second;
+		int iPriority = 0;
+
+		// Floodgate cities: high road priority — losing connectivity to them is devastating
+		if (analysis.bIsFloodgate)
+			iPriority += 50 + analysis.iDependentCityCount * 10;
+
+		// Chokepoint cities: need rapid reinforcement capability
+		if (analysis.bIsChokepointCity)
+			iPriority += 40;
+
+		// Front-line cities: need supply lines for defense
+		if (analysis.bIsFrontLine)
+			iPriority += 30;
+		else if (analysis.bIsSecondLine)
+			iPriority += 15;
+
+		// Capital always gets top road priority
+		if (analysis.bIsCapital)
+			iPriority += 80;
+
+		// Expendable salients: de-prioritize road building — don't invest in them
+		if (analysis.bIsSalient && !analysis.bIsDefensibleSalient && !analysis.bIsFloodgate && !analysis.bIsChokepointCity && !analysis.bIsCapital)
+			iPriority -= 20;
+
+		// Check if city has a road connection to capital
+		analysis.bNeedsStrategicRoad = false;
+		if (pCapital && !analysis.bIsCapital)
+		{
+			CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+			if (pCity)
+			{
+				// If not connected to capital by road, massive priority boost
+				if (!kPlayer.IsCityConnectedToCity(pCapital, pCity, ROUTE_ROAD, true))
+				{
+					analysis.bNeedsStrategicRoad = true;
+					iPriority += 100;
+				}
+			}
+		}
+
+		// Nearby enemy threats increase road priority (need fast reinforcement)
+		for (size_t iA = 0; iA < analysis.vEnemyApproaches.size(); iA++)
+		{
+			if (analysis.vEnemyApproaches[iA].iDistanceFromEnemy <= 10)
+				iPriority += 15;
+			else if (analysis.vEnemyApproaches[iA].iDistanceFromEnemy <= 20)
+				iPriority += 5;
+		}
+
+		analysis.iRoadPriority = max(iPriority, 0);
 	}
 }

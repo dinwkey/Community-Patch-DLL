@@ -22,8 +22,28 @@ enum eStrategicLayer
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//  Per-city strategic analysis (Phase 1-4: layer, salient, chokepoint, floodgate)
+//  Per-enemy approach data (Phase 5)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+struct EnemyApproach
+{
+	EnemyApproach()
+		: eEnemy(NO_PLAYER)
+		, iDistanceFromEnemy(99)
+		, iApproachDifficulty(0)
+		, eLikelyApproachDirection(NO_DIRECTION)
+	{
+	}
+
+	PlayerTypes eEnemy;
+	int iDistanceFromEnemy;           // plotDistance from nearest enemy city to our city
+	int iApproachDifficulty;          // 0-100: terrain difficulty for enemy to reach us (higher = harder)
+	DirectionTypes eLikelyApproachDirection; // Direction FROM which the enemy approaches
+};
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Per-city strategic analysis (Phase 1-5)
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 struct StrategicCityAnalysis
 {
@@ -48,6 +68,8 @@ struct StrategicCityAnalysis
 		, iNarrowCorridors(0)
 		, bIsFloodgate(false)
 		, iDependentCityCount(0)
+		, iRoadPriority(0)
+		, bNeedsStrategicRoad(false)
 	{
 	}
 
@@ -79,6 +101,11 @@ struct StrategicCityAnalysis
 	bool bIsFloodgate;         // Losing this city would expose 2+ other cities to hostile territory
 	int iDependentCityCount;   // Number of cities that depend on this city for protection
 	std::vector<int> vDependentCities; // City IDs of cities that would become exposed if this city fell
+
+	// Phase 5 fields — Approach Corridor Analysis + Road Priority
+	std::vector<EnemyApproach> vEnemyApproaches; // Per-enemy approach data (wartime only)
+	int iRoadPriority;         // Derived priority for strategic road building (higher = build first)
+	bool bNeedsStrategicRoad;  // True if city lacks road/rail connection to capital
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -120,6 +147,12 @@ public:
 	bool IsCityFloodgate(int iCityID) const;
 	int GetDependentCityCount(int iCityID) const;
 
+	// Phase 5: Approach & road queries
+	int GetRoadPriority(int iCityID) const;
+	bool CityNeedsStrategicRoad(int iCityID) const;
+	const std::vector<EnemyApproach>* GetEnemyApproaches(int iCityID) const;
+	DirectionTypes GetPrimaryThreatDirection(int iCityID) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -134,6 +167,9 @@ private:
 	void DetectSalients();          // Phase 2: salient + defensible salient detection
 	void DetectChokepointCities();  // Phase 3: approach corridor analysis
 	void BuildDependencyGraph();    // Phase 4: floodgate/dependency detection
+	void AnalyzeApproachCorridors();// Phase 5: per-enemy approach analysis
+	void DeriveRoadPriorities();    // Phase 5: road priority derivation
+	int ComputeApproachDifficulty(CvCity* pOurCity, CvCity* pEnemyCity) const;
 	int ScanCorridorWidth(CvPlot* pStart, DirectionTypes eDirection) const;
 	int ComputeMinBorderDistance(CvCity* pCity) const;
 	int CountAdjacentChokepoints(CvCity* pCity) const;

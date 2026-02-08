@@ -16,6 +16,7 @@
 #include "CvCityConnections.h"
 #include "CvEconomicAI.h"
 #include "CvDiplomacyAI.h"
+#include "CvMilitaryAI.h"
 #include "CvGameCoreEnumSerialization.h" //toString(const YieldTypes& v)
 #include "CvTypes.h"
 
@@ -941,6 +942,22 @@ void CvBuilderTaskingAI::ConnectPointsForStrategy(CvCity* pOriginCity, CvPlot* p
 		return;
 
 	int iDefensiveValue = pTargetPlot->GetStrategicValue(m_pPlayer->GetID());
+
+	// Phase 5: Strategic geography road priority — bypass the low-strategic-value gate
+	// for plots near cities that need strategic roads (floodgates, chokepoints, etc.)
+	CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (pStratGeo && iDefensiveValue < 50)
+	{
+		// Check if the target plot is near a city with high road priority
+		CvCity* pNearestCity = GC.getMap().findCity(pTargetPlot->getX(), pTargetPlot->getY(), m_pPlayer->GetID());
+		if (pNearestCity)
+		{
+			int iRoadPri = pStratGeo->GetRoadPriority(pNearestCity->GetID());
+			if (iRoadPri >= 50)
+				iDefensiveValue = max(iDefensiveValue, iRoadPri);
+		}
+	}
+
 	if (iDefensiveValue < 50)
 		return;
 
@@ -1820,6 +1837,35 @@ int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair
 	// Bonus for defending threatened cities
 	// Each nearby threatened city adds 15 bonus points (capped at 45 for 3+ cities)
 	iStrategicBonus += min(iThreatenedCitiesNearby * 15, 45);
+
+	// Phase 5: Strategic geography boost — routes connecting to strategically critical cities
+	// get extra priority for road/railroad construction.
+	CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (pStratGeo)
+	{
+		int iMaxCityRoadPri = 0;
+		int iCityLoop2 = 0;
+		for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop2); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop2))
+		{
+			int iCityDist = min(
+				plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY()),
+				plotDistance(pEndPlot->getX(), pEndPlot->getY(), pCity->getX(), pCity->getY()));
+
+			if (iCityDist <= 4)
+			{
+				int iRoadPri = pStratGeo->GetRoadPriority(pCity->GetID());
+				if (iRoadPri > iMaxCityRoadPri)
+					iMaxCityRoadPri = iRoadPri;
+			}
+		}
+
+		// Convert road priority to a route value bonus (scale 0-60)
+		// Road priority of 100+ (capital/disconnected) → 60 bonus
+		// Road priority of 50-99 (floodgate/chokepoint) → 30-59 bonus
+		// Road priority of <50 → proportional bonus
+		if (iMaxCityRoadPri > 0)
+			iStrategicBonus += min((iMaxCityRoadPri * 60) / 100, 60);
+	}
 
 	// Cap total bonus at 100 (max 2x multiplier)
 	iStrategicBonus = min(iStrategicBonus, 100);
