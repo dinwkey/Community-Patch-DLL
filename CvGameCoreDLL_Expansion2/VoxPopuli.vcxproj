@@ -605,6 +605,10 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Use</PrecompiledHeader>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CvGameCoreDLLPCH.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="CvStrategicGeographyMap.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Use</PrecompiledHeader>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CvGameCoreDLLPCH.h</PrecompiledHeaderFile>
+    </ClCompile>
     <ClCompile Include="cvStopWatch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Use</PrecompiledHeader>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CvGameCoreDLLPCH.h</PrecompiledHeaderFile>
@@ -898,6 +902,7 @@
     <ClInclude Include="CvSpan.h" />
     <ClInclude Include="CvSpanSerialization.h" />
     <ClInclude Include="CvStartPositioner.h" />
+    <ClInclude Include="CvStrategicGeographyMap.h" />
     <ClInclude Include="cvStopWatch.h" />
     <ClInclude Include="CvTacticalAI.h" />
     <ClInclude Include="CvTacticalAnalysisMap.h" />

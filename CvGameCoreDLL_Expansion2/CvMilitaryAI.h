@@ -11,6 +11,7 @@
 #define CIV5_MILITARY_AI_H
 
 #include "CvEnumMap.h"
+#include "CvStrategicGeographyMap.h"
 struct TradeConnection;
 
 enum DefenseState
@@ -415,6 +416,12 @@ private:
 
 	DefenseState m_eLandDefenseState;
 	DefenseState m_eNavalDefenseState;
+
+	// Strategic Geography Map — persistent terrain-aware defense layer
+	CvStrategicGeographyMap* m_pStrategyMap;
+public:
+	CvStrategicGeographyMap* GetStrategicGeographyMap() { return m_pStrategyMap; }
+	const CvStrategicGeographyMap* GetStrategicGeographyMap() const { return m_pStrategyMap; }
 };
 
 FDataStream& operator>>(FDataStream&, CvMilitaryAI&);

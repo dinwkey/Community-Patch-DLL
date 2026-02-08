@@ -232,6 +232,7 @@ $CPP = @(
     'CvGameCoreDLL_Expansion2\CvSerialize.cpp',
     'CvGameCoreDLL_Expansion2\CvSiteEvaluationClasses.cpp',
     'CvGameCoreDLL_Expansion2\CvStartPositioner.cpp',
+    'CvGameCoreDLL_Expansion2\CvStrategicGeographyMap.cpp',
     'CvGameCoreDLL_Expansion2\cvStopWatch.cpp',
     'CvGameCoreDLL_Expansion2\CvTacticalAI.cpp',
     'CvGameCoreDLL_Expansion2\CvTacticalAnalysisMap.cpp',

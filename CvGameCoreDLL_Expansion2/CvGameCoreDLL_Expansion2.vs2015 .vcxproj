@@ -250,6 +250,7 @@
     <ClCompile Include="CvReplayMessage.cpp" />
     <ClCompile Include="CvSiteEvaluationClasses.cpp" />
     <ClCompile Include="CvStartPositioner.cpp" />
+    <ClCompile Include="CvStrategicGeographyMap.cpp" />
     <ClCompile Include="cvStopWatch.cpp" />
     <ClCompile Include="CvStructs.cpp" />
     <ClCompile Include="CvTacticalAI.cpp" />
@@ -428,6 +429,7 @@
     <ClInclude Include="CvReplayMessage.h" />
     <ClInclude Include="CvSiteEvaluationClasses.h" />
     <ClInclude Include="CvStartPositioner.h" />
+    <ClInclude Include="CvStrategicGeographyMap.h" />
     <ClInclude Include="cvStopWatch.h" />
     <ClInclude Include="CvStructs.h" />
     <ClInclude Include="CvTacticalAI.h" />

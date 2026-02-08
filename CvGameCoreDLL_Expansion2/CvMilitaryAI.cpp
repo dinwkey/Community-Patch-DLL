@@ -258,7 +258,8 @@ CvMilitaryAI::CvMilitaryAI():
 	m_pabUsingStrategy(NULL),
 	m_paiTurnStrategyAdopted(NULL),
 	m_iNumberOfTimesOpsBuildSkippedOver(0),
-	m_iNumberOfTimesSettlerBuildSkippedOver(0)
+	m_iNumberOfTimesSettlerBuildSkippedOver(0),
+	m_pStrategyMap(NULL)
 {
 }
 
@@ -286,6 +287,12 @@ void CvMilitaryAI::Init(CvMilitaryAIStrategyXMLEntries* pAIStrategies, CvPlayer*
 	m_aiTempFlavors.init();
 
 	m_iPreviousMilitaryUnitCount = 0;
+
+	// Initialize strategic geography map
+	if (!m_pStrategyMap)
+		m_pStrategyMap = FNEW(CvStrategicGeographyMap, c_eCiv5GameplayDLL, 0);
+	m_pStrategyMap->Init(pPlayer->GetID());
+
 	Reset();
 }
 
@@ -295,6 +302,7 @@ void CvMilitaryAI::Uninit()
 	SAFE_DELETE_ARRAY(m_pabUsingStrategy);
 	SAFE_DELETE_ARRAY(m_paiTurnStrategyAdopted);
 	m_aiTempFlavors.uninit();
+	SAFE_DELETE(m_pStrategyMap);
 }
 
 /// Reset AIStrategy status array to all false
@@ -500,6 +508,10 @@ void CvMilitaryAI::DoTurn()
 	ScanForBarbarians();
 	UpdateBaseData();
 	UpdateDefenseState();
+
+	// Update strategic geography map if it's time (every 3-5 turns depending on war state)
+	if (m_pStrategyMap && m_pStrategyMap->NeedsUpdate())
+		m_pStrategyMap->Update();
 
 	// Issue 7.2: Evaluate escort needs for returning trade units
 	if(!m_pPlayer->isHuman(ISHUMAN_AI_UNITS))

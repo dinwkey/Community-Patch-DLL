@@ -996,22 +996,52 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 				iBaseValue *= 3;
 			}
 
-			// Capital zone gets priority so it's processed first and gets best unit picks.
-			// In multi-front wars this ensures the capital zone isn't starved of defenders
-			// because a remote zone consumed available units first.
-			if (pZoneCity->isCapital())
+			// Strategic Geography: use layer classification for zone prioritization when available.
+			// Chokepoint cities get massive priority; core/second-line get moderate boosts;
+			// front-line gets a small boost. Falls back to simple capital/distance heuristic.
+			CvStrategicGeographyMap* pStratMap = GET_PLAYER(m_ePlayer).GetMilitaryAI()->GetStrategicGeographyMap();
+			const StrategicCityAnalysis* pCityStrat = pStratMap ? pStratMap->GetCityAnalysis(pZoneCity->GetID()) : NULL;
+			if (pCityStrat)
 			{
-				iBaseValue *= 2;
+				// Capital always gets top-tier boost
+				if (pCityStrat->bIsCapital)
+					iBaseValue *= 2;
+
+				// Chokepoint cities get a massive boost — losing them opens wide approach corridors
+				if (pCityStrat->iChokePointCount >= 3)
+					iBaseValue = (iBaseValue * 5) / 2; // 2.5x for chokepoint cities
+				else if (pCityStrat->iChokePointCount >= 1)
+					iBaseValue = (iBaseValue * 3) / 2; // 1.5x for near-chokepoint cities
+
+				// Layer-based boost
+				switch (pCityStrat->eLayer)
+				{
+				case STRATEGIC_LAYER_CORE:
+					iBaseValue = (iBaseValue * 3) / 2; // 50% boost for core territory
+					break;
+				case STRATEGIC_LAYER_SECOND_LINE:
+					iBaseValue = (iBaseValue * 5) / 4; // 25% boost for second-line
+					break;
+				default:
+					break; // front-line and rear get base value
+				}
 			}
-			// Cities near the capital are also important core territory
 			else
 			{
-				CvCity* pCapital = GET_PLAYER(m_ePlayer).getCapitalCity();
-				if (pCapital)
+				// Fallback: simple capital/distance heuristic
+				if (pZoneCity->isCapital())
 				{
-					int iDistToCapital = plotDistance(pZoneCity->getX(), pZoneCity->getY(), pCapital->getX(), pCapital->getY());
-					if (iDistToCapital <= 6)
-						iBaseValue = (iBaseValue * 3) / 2; // 50% boost for core cities
+					iBaseValue *= 2;
+				}
+				else
+				{
+					CvCity* pCapital = GET_PLAYER(m_ePlayer).getCapitalCity();
+					if (pCapital)
+					{
+						int iDistToCapital = plotDistance(pZoneCity->getX(), pZoneCity->getY(), pCapital->getX(), pCapital->getY());
+						if (iDistToCapital <= 6)
+							iBaseValue = (iBaseValue * 3) / 2;
+					}
 				}
 			}
 

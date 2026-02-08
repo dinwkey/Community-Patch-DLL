@@ -5068,29 +5068,35 @@ void CvPlayer::UpdateCityThreatCriteria()
 			}
 		}
 
-		// Capital and core city defense priority: the capital and cities near it
-		// are strategically critical and should always be prioritized for defense,
-		// especially in multi-front wars where peripheral cities may need to be sacrificed.
-		if (pLoopCity->isCapital())
+		// Strategic Geography: use layer classification + chokepoint/terrain data when available.
+		// Falls back to simple heuristics if the strategic map hasn't been computed yet.
+		CvStrategicGeographyMap* pStratMap = GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratMap && pStratMap->HasAnyCityData())
 		{
-			// Capital gets a large bonus so it's almost always near the top of defense priority
-			iThreatValue += 150;
-		}
-		else if (pLoopCity->IsOriginalMajorCapital())
-		{
-			// Original capitals of other civs that we hold are also strategically important
-			iThreatValue += 75;
-		}
+			// Use the geography-derived priority modifier (layer + chokepoints + terrain defense)
+			iThreatValue += pStratMap->GetDefensePriorityModifier(pLoopCity->GetID());
 
-		// Cities adjacent to the capital get a moderate bonus (core territory)
-		CvCity* pCapital = getCapitalCity();
-		if (pCapital && pLoopCity != pCapital)
+			// Original major capitals we captured are also strategically valuable
+			if (!pLoopCity->isCapital() && pLoopCity->IsOriginalMajorCapital())
+				iThreatValue += 75;
+		}
+		else
 		{
-			int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapital->getX(), pCapital->getY());
-			if (iDistToCapital <= 6)
-				iThreatValue += 40; // close to capital, part of core
-			else if (iDistToCapital <= 10)
-				iThreatValue += 15; // moderately close
+			// Fallback: simple capital/core heuristic (pre-strategic-map)
+			if (pLoopCity->isCapital())
+				iThreatValue += 150;
+			else if (pLoopCity->IsOriginalMajorCapital())
+				iThreatValue += 75;
+
+			CvCity* pCapitalFallback = getCapitalCity();
+			if (pCapitalFallback && pLoopCity != pCapitalFallback)
+			{
+				int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapitalFallback->getX(), pCapitalFallback->getY());
+				if (iDistToCapital <= 6)
+					iThreatValue += 40;
+				else if (iDistToCapital <= 10)
+					iThreatValue += 15;
+			}
 		}
 
 		// Large / high-value cities get a small bonus - losing them is more costly
@@ -5106,6 +5112,7 @@ void CvPlayer::UpdateCityThreatCriteria()
 		// surrounded by enemy cities and far from our core. These cities are expendable
 		// if we need to concentrate defense on more important positions.
 		int iNumWars = CountNumDangerousMajorsAtWarWith(true, false);
+		CvCity* pCapital = getCapitalCity();
 		if (iNumWars >= 2 && pCapital && pLoopCity != pCapital)
 		{
 			int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapital->getX(), pCapital->getY());
