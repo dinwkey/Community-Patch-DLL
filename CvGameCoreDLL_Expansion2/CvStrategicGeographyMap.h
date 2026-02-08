@@ -22,6 +22,18 @@ enum eStrategicLayer
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Naval Phase 1: Coastal Exposure Classification
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+enum eCoastalExposure
+{
+	COASTAL_EXPOSURE_NONE,       // Not a coastal city (or lake-only)
+	COASTAL_EXPOSURE_SHELTERED,  // 1-2 water tiles in RING1: minimal naval threat vector
+	COASTAL_EXPOSURE_MODERATE,   // 3-4 water tiles in RING1: standard coastal city
+	COASTAL_EXPOSURE_EXPOSED,    // 5-6 water tiles in RING1: peninsula tip, island, wide-open coast
+};
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //  Per-enemy approach data (Phase 5)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -70,6 +82,12 @@ struct StrategicCityAnalysis
 		, iDependentCityCount(0)
 		, iRoadPriority(0)
 		, bNeedsStrategicRoad(false)
+		, eExposure(COASTAL_EXPOSURE_NONE)
+		, iWaterTilesRing1(0)
+		, iWaterTilesRing2(0)
+		, iDeepWaterTilesRing2(0)
+		, iLandingZonesRing2(0)
+		, bConnectedToOcean(false)
 	{
 	}
 
@@ -106,6 +124,14 @@ struct StrategicCityAnalysis
 	std::vector<EnemyApproach> vEnemyApproaches; // Per-enemy approach data (wartime only)
 	int iRoadPriority;         // Derived priority for strategic road building (higher = build first)
 	bool bNeedsStrategicRoad;  // True if city lacks road/rail connection to capital
+
+	// Naval Phase 1 fields — Coastal Exposure
+	eCoastalExposure eExposure;    // Overall coastal exposure classification
+	int iWaterTilesRing1;          // Water tiles in RING1 (0-6)
+	int iWaterTilesRing2;          // Water tiles in RING2 only (0-12)
+	int iDeepWaterTilesRing2;      // Deep water (ocean) tiles in RING1+RING2 — can receive ocean-going threats
+	int iLandingZonesRing2;        // Flat coastal land tiles in RING2 adjacent to non-lake water (amphibious landing spots)
+	bool bConnectedToOcean;        // True if adjacent water connects to non-lake ocean body (vs isolated lake)
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -153,6 +179,13 @@ public:
 	const std::vector<EnemyApproach>* GetEnemyApproaches(int iCityID) const;
 	DirectionTypes GetPrimaryThreatDirection(int iCityID) const;
 
+	// Naval Phase 1: Coastal exposure queries
+	eCoastalExposure GetCoastalExposure(int iCityID) const;
+	bool IsCityCoastal(int iCityID) const;          // True if eExposure != NONE
+	bool IsCityExposedCoast(int iCityID) const;      // True if EXPOSED (5-6 water in RING1)
+	int GetLandingZoneCount(int iCityID) const;
+	bool IsCityConnectedToOcean(int iCityID) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -181,6 +214,9 @@ private:
 	int CountFriendlyTilesInRing3(CvCity* pCity) const;
 	int CountAdjacentDefensiveTerrain(CvCity* pCity) const;
 	bool DoesAnyEnemyHaveIndirectFire() const;
+
+	// Naval Phase 1: Coastal exposure computation
+	void AnalyzeCoastalExposure();
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H

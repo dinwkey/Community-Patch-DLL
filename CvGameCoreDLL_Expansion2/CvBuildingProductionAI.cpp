@@ -838,6 +838,27 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 				{
 					iDefenseMod -= 300;
 				}
+
+				// Naval Phase 1: Coastal exposure boosts defensive building priority.
+				// Exposed coastal cities need walls/castles to survive naval bombardment + amphibious assault.
+				if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
+				{
+					iDefenseMod += 300;
+					// Extra if deep ocean access — can receive blue-water fleets, not just coastal galleys
+					if (pAnalysis->iDeepWaterTilesRing2 > 0)
+						iDefenseMod += 150;
+					// Many landing zones mean amphibious assault is likely
+					if (pAnalysis->iLandingZonesRing2 >= 4)
+						iDefenseMod += 100;
+				}
+				else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
+				{
+					iDefenseMod += 150;
+				}
+				else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
+				{
+					iDefenseMod += 50;
+				}
 			}
 		}
 	}

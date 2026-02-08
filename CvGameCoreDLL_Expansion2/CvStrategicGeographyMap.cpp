@@ -117,6 +117,31 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 	// and therefore more worth holding (hills, forests, rivers)
 	iModifier += iTerrainDefenseScore / 4;
 
+	// Naval Phase 1: Coastal exposure modifier.
+	// Exposed coastal cities face additional naval threat vectors (amphibious assault,
+	// naval bombardment) that pure land analysis doesn't capture.
+	switch (eExposure)
+	{
+	case COASTAL_EXPOSURE_EXPOSED:
+		// Peninsula tip or island city: 5-6 water tiles in RING1.
+		// Very hard to defend — threats from multiple sea directions.
+		iModifier += 30;
+		// Extra bonus if deep ocean access exists (blue-water threats, not just galleys)
+		if (iDeepWaterTilesRing2 > 0)
+			iModifier += 15;
+		break;
+	case COASTAL_EXPOSURE_MODERATE:
+		// Standard coastal city: 3-4 water tiles. Needs some naval defense.
+		iModifier += 15;
+		break;
+	case COASTAL_EXPOSURE_SHELTERED:
+		// Sheltered harbor: 1-2 water tiles. Minimal naval exposure.
+		iModifier += 5;
+		break;
+	default:
+		break;
+	}
+
 	return iModifier;
 }
 
@@ -180,6 +205,7 @@ void CvStrategicGeographyMap::Update()
 	BuildDependencyGraph();
 	AnalyzeApproachCorridors();
 	DeriveRoadPriorities();
+	AnalyzeCoastalExposure();
 	LogStrategicGeography();
 }
 
@@ -314,6 +340,40 @@ DirectionTypes CvStrategicGeographyMap::GetPrimaryThreatDirection(int iCityID) c
 		}
 	}
 	return eBest;
+}
+
+// ---------------------------------------------------------------------------
+//  Naval Phase 1: Coastal exposure queries
+// ---------------------------------------------------------------------------
+
+eCoastalExposure CvStrategicGeographyMap::GetCoastalExposure(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->eExposure : COASTAL_EXPOSURE_NONE;
+}
+
+bool CvStrategicGeographyMap::IsCityCoastal(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis && pAnalysis->eExposure != COASTAL_EXPOSURE_NONE;
+}
+
+bool CvStrategicGeographyMap::IsCityExposedCoast(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis && pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED;
+}
+
+int CvStrategicGeographyMap::GetLandingZoneCount(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iLandingZonesRing2 : 0;
+}
+
+bool CvStrategicGeographyMap::IsCityConnectedToOcean(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis && pAnalysis->bConnectedToOcean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,6 +1250,130 @@ void CvStrategicGeographyMap::DeriveRoadPriorities()
 }
 
 // ---------------------------------------------------------------------------
+//  Naval Phase 1: Coastal Exposure Analysis
+// ---------------------------------------------------------------------------
+
+/// For each coastal city, classify how exposed it is to naval threats by counting
+/// water tiles, deep ocean access, and potential amphibious landing zones.
+/// This is city-centric (not a full-map water scan) — scales with number of coastal cities.
+void CvStrategicGeographyMap::AnalyzeCoastalExposure()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	int iMinOceanSize = GD_INT_GET(MIN_WATER_SIZE_FOR_OCEAN);
+
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		StrategicCityAnalysis& analysis = it->second;
+		CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+		if (!pCity)
+			continue;
+
+		CvPlot* pCityPlot = pCity->plot();
+		if (!pCityPlot)
+			continue;
+
+		// Quick check: skip non-coastal cities entirely.
+		// Use a small min-water-size (1) to catch even cities next to very small seas,
+		// then filter lakes below with the proper threshold.
+		if (!pCity->isCoastal(1))
+		{
+			analysis.eExposure = COASTAL_EXPOSURE_NONE;
+			continue;
+		}
+
+		// --- Pass 1: scan RING1 for water tile count + ocean connectivity ---
+		int iWaterRing1 = 0;
+		bool bOceanConnected = false;
+
+		for (int i = 1; i < RING1_PLOTS; i++)  // skip center (index 0)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+			if (!pLoopPlot)
+				continue;
+
+			if (pLoopPlot->isWater())
+			{
+				// Check if this water body is an ocean (not a lake)
+				CvLandmass* pWaterBody = pLoopPlot->landmass();
+				if (pWaterBody && !pWaterBody->isLake())
+				{
+					iWaterRing1++;
+					bOceanConnected = true;
+				}
+				// Lake tiles don't count for coastal exposure — no naval threat from lakes
+			}
+		}
+
+		// If no ocean-connected water in RING1, this is a lake-only city → not coastally exposed
+		if (!bOceanConnected)
+		{
+			analysis.eExposure = COASTAL_EXPOSURE_NONE;
+			continue;
+		}
+
+		analysis.iWaterTilesRing1 = iWaterRing1;
+		analysis.bConnectedToOcean = true;
+
+		// --- Pass 2: scan RING2 for deeper analysis ---
+		int iWaterRing2 = 0;
+		int iDeepWater = 0;
+		int iLandingZones = 0;
+
+		// Count deep water in RING1 too (for iDeepWaterTilesRing2 which covers RING1+RING2)
+		for (int i = 1; i < RING1_PLOTS; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+			if (pLoopPlot && pLoopPlot->isDeepWater())
+			{
+				CvLandmass* pWaterBody = pLoopPlot->landmass();
+				if (pWaterBody && !pWaterBody->isLake())
+					iDeepWater++;
+			}
+		}
+
+		// RING2 only: indices RING1_PLOTS..RING2_PLOTS-1
+		for (int i = RING1_PLOTS; i < RING2_PLOTS; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+			if (!pLoopPlot)
+				continue;
+
+			if (pLoopPlot->isWater())
+			{
+				CvLandmass* pWaterBody = pLoopPlot->landmass();
+				if (pWaterBody && !pWaterBody->isLake())
+				{
+					iWaterRing2++;
+					if (pLoopPlot->isDeepWater())
+						iDeepWater++;
+				}
+			}
+			else if (pLoopPlot->isFlatlands() && pLoopPlot->isAdjacentToShallowWater())
+			{
+				// Flat land adjacent to coast water = potential amphibious landing zone
+				// Must be adjacent to non-lake water. isAdjacentToShallowWater checks for
+				// TERRAIN_COAST adjacency which includes lake coast, but flat land in RING2
+				// of a coastal city is overwhelmingly next to real ocean coast.
+				// Hills/mountains are not landing zones (units disembark onto flat land).
+				iLandingZones++;
+			}
+		}
+
+		analysis.iWaterTilesRing2 = iWaterRing2;
+		analysis.iDeepWaterTilesRing2 = iDeepWater;
+		analysis.iLandingZonesRing2 = iLandingZones;
+
+		// --- Classify exposure level based on RING1 water count ---
+		if (iWaterRing1 >= 5)
+			analysis.eExposure = COASTAL_EXPOSURE_EXPOSED;
+		else if (iWaterRing1 >= 3)
+			analysis.eExposure = COASTAL_EXPOSURE_MODERATE;
+		else
+			analysis.eExposure = COASTAL_EXPOSURE_SHELTERED;
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  Phase 6: Logging
 // ---------------------------------------------------------------------------
 
@@ -1221,6 +1405,7 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 	strBaseString.Format("%03d, %s, ", GC.getGame().getElapsedGameTurns(), strPlayerName.c_str());
 
 	static const char* szLayerNames[] = { "UNKNOWN", "FRONT_LINE", "SECOND_LINE", "REAR_AREA", "CORE" };
+	static const char* szExposureNames[] = { "NONE", "SHELTERED", "MODERATE", "EXPOSED" };
 
 	for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
 	{
@@ -1233,7 +1418,7 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 		strCityName.Replace(' ', '_');
 
 		CvString strMsg;
-		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d",
+		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d",
 			strBaseString.c_str(),
 			strCityName.c_str(),
 			(analysis.eLayer >= 0 && analysis.eLayer <= 4) ? szLayerNames[analysis.eLayer] : "???",
@@ -1244,7 +1429,13 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 			analysis.iApproachCorridors,
 			analysis.iRoadPriority,
 			analysis.GetDefensePriorityModifier(),
-			analysis.iDependentCityCount);
+			analysis.iDependentCityCount,
+			(analysis.eExposure >= 0 && analysis.eExposure <= 3) ? szExposureNames[analysis.eExposure] : "???",
+			analysis.iWaterTilesRing1,
+			analysis.iWaterTilesRing2,
+			analysis.iDeepWaterTilesRing2,
+			analysis.iLandingZonesRing2,
+			analysis.bConnectedToOcean ? 1 : 0);
 
 		pLog->Msg(strMsg.c_str());
 	}
