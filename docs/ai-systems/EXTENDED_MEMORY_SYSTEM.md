@@ -3,7 +3,7 @@
 **Purpose:** Detailed specification for implementing a multi-turn memory system that enables the AI to detect patterns, track unit movements, and make decisions based on historical context rather than just current turn state.
 
 **Last Updated:** February 2026  
-**Status:** Phase 3 Complete (Unit Tracking)
+**Status:** Phase 4 Complete; City Defense Integration done
 
 **Related:**
 - [AI_DEEP_REASONING.md](AI_DEEP_REASONING.md) — Parent architecture document
@@ -24,6 +24,10 @@
 9. [Serialization (Save Compatibility)](#9-serialization-save-compatibility)
 10. [Integration Points](#10-integration-points)
 11. [Implementation Steps](#11-implementation-steps)
+12. [Relationship to Vanished Units (CvDangerPlots)](#12-relationship-to-vanished-units-cvdangerplots)
+13. [City Defense Integration](#13-city-defense-integration)
+14. [Sighting Manager Limitations](#14-sighting-manager-limitations)
+15. [Architectural Future: Standalone Extraction](#15-architectural-future-standalone-extraction)
 
 ---
 
@@ -872,6 +876,8 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 | `DoUpdateWarTargets()` | Prioritize sneak attacks by buildup/threat, preemptive strike for HOSTILE+imminent, defensive caution | ✅ Phase 4 |
 | `CvDangerPlots::UpdateDangerInternal()` | Add fog danger for predicted ghost positions from sighting manager | ✅ Phase 4 |
 | `CvCity::NeedsGarrison()` | Garrison cities with ≥2 siege sightings via `CountSiegeUnitsNearCity()` | ✅ Phase 4 |
+| `CvCity::getBestRangedStrikeTarget()` | Query sighting manager for directional retreat/attack intent; deprioritize retreating, boost approaching | ✅ Phase 5 |
+| `PerformRangedOpportunityAttack()` | Same directional intent query for garrison ranged targeting | ✅ Phase 5 |
 
 ---
 
@@ -919,13 +925,194 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 4. ~~Preemptive WAR approach boost~~ — `SelectBestApproachTowardsMajorCiv()`: when attack is imminent AND player is building up with rising threat, boosts WAR approach score for preemptive strike consideration
 5. ~~Const-correctness fix~~ — `CountSiegeUnitsNearCity()` now takes `const CvCity*`; `GetSightings()` const accessor added to `CvUnitSightingManager`
 
-### Phase 5: Tuning & Validation (1-2 days)
+### Phase 5: City Defense Integration (DONE)
+
+1. ~~Add `InferUnitIntentNearCity()` to `CvUnitSightingManager`~~ — directional dot-product analysis against a specific city position
+2. ~~Wire into `CvCity::getBestRangedStrikeTarget()`~~ — replaces lightweight heuristic with sighting manager query
+3. ~~Wire into `TacticalAIHelpers::PerformRangedOpportunityAttack()`~~ — garrison ranged unit uses same directional intent
+4. ~~Add `bMovedThisTurn` gating~~ — prevents stale directional vectors from misclassifying stationary units
+5. ~~Confirmed attacker boost (+15)~~ — when sighting manager detects `UNIT_INTENT_ATTACK_CITY` toward the defended city
+6. ~~Fallback path~~ — lightweight heuristic (wounded + moved this turn) when sighting data unavailable or expired
+
+### Phase 6: Tuning & Validation (TODO)
 
 1. Adjust detection thresholds based on gameplay testing
 2. Add logging for debugging
 3. Verify save compatibility with old saves
 4. Memory usage profiling
 5. Documentation update
+
+---
+
+## 12. Relationship to Vanished Units (CvDangerPlots)
+
+Two independent systems track enemy units that leave visibility. They serve different purposes and operate at different time scales.
+
+### Comparison Table
+
+| Property | `m_vanishedUnits` (CvDangerPlots) | `CvUnitSightingManager` (CvDiplomacyAI) |
+|----------|-----------------------------------|------------------------------------------|
+| **Retention** | 1 turn (cleared & rebuilt each turn) | 10 turns (`AI_FOG_GHOST_EXPIRY_TURNS`) |
+| **Scope** | Per-player danger calculation | Per-player strategic intelligence |
+| **What it stores** | Set of `(PlayerID, UnitID)` pairs | Full `UnitSighting` struct (16 bytes): position, direction, health, flags, intent |
+| **When populated** | Start of each turn in `UpdateDangerInternal()` | On every observed unit movement via `CvUnit::setXY()` |
+| **When cleared** | Every turn (`bTurnChange` → `m_vanishedUnits.clear()`) | Expired entries removed in `CvDiplomacyAI::DoTurn()` |
+| **Direction tracking** | No | Yes (`lastDeltaX`, `lastDeltaY` captured when observer sees origin) |
+| **Intent classification** | No (binary: present or vanished) | Yes (`UnitPredictedIntent` enum with 7 categories) |
+| **Used by** | Danger plot calculation (immediate threat assessment) | Diplomacy AI, fog danger projection, city defense targeting |
+
+### How They Interact
+
+1. **`m_vanishedUnits` feeds immediate danger**: At turn start, `UpdateDangerInternal()` compares this turn's visible units against last turn's. Units that disappeared are added to `m_vanishedUnits` and contribute danger with `bIgnoreVisibility=true`. This ensures the AI doesn't instantly forget about a unit that walked one tile into fog.
+
+2. **Sighting manager feeds fog danger projection**: After `m_vanishedUnits` processing, `UpdateDangerInternal()` also queries the sighting manager for ghost units (seen within the last 5 turns, `AI_FOG_GHOST_USEFUL_TURNS`). It projects their positions along `lastDeltaX/lastDeltaY` headings and adds danger around the projected positions.
+
+3. **They don't overlap**: `m_vanishedUnits` handles the immediate 1-turn gap ("it was here last turn"). The sighting manager handles the longer-term fog memory ("it was heading SW 3 turns ago, so it's probably around here now").
+
+### Common Misconception
+
+The extended memory system (Phases 1-3) did **not** increase `m_vanishedUnits` retention from 1 turn to 10. That system remains 1-turn. The 10-turn memory is entirely within the separate `CvUnitSightingManager`.
+
+---
+
+## 13. City Defense Integration
+
+### Problem
+
+City bombardment (`getBestRangedStrikeTarget()`) and garrison ranged attacks (`PerformRangedOpportunityAttack()`) need to distinguish:
+- **Active threats** (units approaching the city) — prioritize these
+- **Retreating units** (wounded units moving away) — deprioritize these
+- **Stationary units** (fortified, healing, or waiting) — use war state heuristic
+
+The original code used a simple heuristic: `bRetreating = (movedThisTurn && HP ≤ 50%)`. This had significant false positives (nearly all AI units move before city fires) and false negatives (healthy units withdrawing after a failed assault).
+
+### Solution: `InferUnitIntentNearCity()`
+
+A new public method on `CvUnitSightingManager` that uses the dot product of the unit's observed movement vector against the unit→city direction vector:
+
+```
+dot = lastDeltaX * (cityX - unitX) + lastDeltaY * (cityY - unitY)
+Positive dot = moving toward city (attacking)
+Negative dot = moving away from city (retreating)
+```
+
+### Decision Matrix
+
+| Direction | Health | War State | Intent |
+|-----------|--------|-----------|--------|
+| Siege unit | Any | Any | **ATTACK_CITY** (always) |
+| Not at war | Any | Any | **PATROL** |
+| Moving **toward** city | Any (even wounded) | Any | **ATTACK_CITY** |
+| Moving **away** | < 50% HP | Any | **RETREAT** |
+| Moving **away** | < 75% HP | We're winning | **RETREAT** |
+| Moving **away** | Healthy | We're winning | **RETREAT** |
+| Moving **away** | Healthy | Stalemate/losing | UNKNOWN (could be flanking) |
+| No direction data | < 50% HP | Not losing | **RETREAT** (fallback) |
+| No direction data | < 50% HP | We're losing | UNKNOWN |
+| No direction data | Healthy | We're winning | **RETREAT** (fallback) |
+| No direction data | Healthy | We're losing | **ATTACK_CITY** (fallback) |
+
+### Freshness Gating
+
+Directional analysis is only used when:
+1. `bMovedThisTurn` — the unit actually moved this game turn (passed by caller)
+2. `bIsFresh` — `lastSeenTurn == currentTurn` (sighting was updated this turn)
+3. Non-zero direction — `lastDeltaX != 0 || lastDeltaY != 0`
+
+If any condition fails, the method falls back to the health + war state heuristic (no directional data). This prevents stale movement vectors from previous turns from misclassifying stationary units.
+
+### Scoring Impact
+
+| Classification | Effect on city/garrison targeting score |
+|----------------|----------------------------------------|
+| `UNIT_INTENT_RETREAT` + city HP ≤ 50% | -60 penalty (-80 if also out of reach) |
+| `UNIT_INTENT_ATTACK_CITY` + can reach city + city HP ≤ 50% | +15 confirmed attacker bonus |
+| Retreating embarked (non-siege) | Embarked bonuses suppressed by -80 (floor 0) |
+| Fallback (no sighting data) | Lightweight heuristic: wounded + moved = retreat |
+
+### Call Flow
+
+```
+CvCity::getBestRangedStrikeTarget()
+  └─ GET_PLAYER(owner).GetDiplomacyAI()->GetSightingManager()
+       └─ .GetSighting(targetOwner, targetUnitId)
+       └─ .InferUnitIntentNearCity(pSighting, cityX, cityY, currentTurn, bMovedThisTurn)
+            └─ Returns UnitPredictedIntent → bRetreating / bConfirmedAttacking
+
+TacticalAIHelpers::PerformRangedOpportunityAttack()
+  └─ Same pattern, using garrison owner's diplo AI and closest city coordinates
+```
+
+---
+
+## 14. Sighting Manager Limitations
+
+### What It Tracks Well
+
+- **Movement direction**: Captured accurately when observer sees the origin plot (even if destination is fog)
+- **Unit classification**: Flags for siege/ranged/naval/embarked are set from live unit data
+- **Health snapshot**: Captured at observation time; accurate for visible units
+- **Fog persistence**: Remembers enemy positions and heading for up to 10 turns after visibility lost
+
+### Known Limitations
+
+1. **One direction sample per unit**: Only the most recent movement step is stored (`lastDeltaX/lastDeltaY`). Multi-turn trends (circling, flanking, zigzag) cannot be detected. A unit that approached for 5 turns then retreated 1 turn will be classified based solely on the last step.
+
+2. **`OnUnitSeen()` is not hooked**: The method exists but has no call site. Units that appear in visibility without moving (e.g., revealed by moving your own scout) don't get tracked until they move. This means a fortified unit visible for the first time has no sighting record.
+
+3. **Intent inference is simple**: `InferUnitIntent()` uses only health threshold (50%) and war state. It doesn't consider:
+   - Unit distance to nearest city
+   - Whether the unit has ranged capability
+   - Group composition (lone scout vs. army stack)
+   - Promotion/experience level
+   
+   The city-aware variant `InferUnitIntentNearCity()` improves on this with directional analysis but still can't detect flanking or multi-unit coordination.
+
+4. **No multi-unit pattern detection**: The sighting manager tracks units individually. It cannot detect:
+   - Army formation (multiple units converging on the same city)
+   - Coordinated attacks from multiple directions
+   - Feints (one army as distraction while another attacks elsewhere)
+
+5. **Human player has sighting data but limited use**: The `OnUnitMoved` hook iterates over ALL major civs including human players, so the human player's sighting manager IS populated. However, it's only used for automated decisions (city bombardment auto-targeting). Human players making manual targeting choices don't benefit from it.
+
+6. **War state can be wrong early**: `InferUnitIntent()` relies on `GetWarState()` which can lag behind reality. In the first turns of a surprise war, `WAR_STATE_STALEMATE` may be returned even when the enemy is clearly attacking.
+
+7. **Direction unreliable for multi-step moves**: A unit that moves 3 tiles in one turn has `lastDeltaX/lastDeltaY` set to only the final step's delta (the last `setXY()` call). The overall heading could differ from the last step.
+
+---
+
+## 15. Architectural Future: Standalone Extraction
+
+### Current Placement
+
+`CvUnitSightingManager` is embedded inside `CvDiplomacyAI` as a member (`m_UnitSightings`), accessed via `GetSightingManager()`. This was chosen for implementation speed during Phase 3.
+
+### Why It Should Eventually Move
+
+| Concern | Detail |
+|---------|--------|
+| **Semantic mismatch** | Unit sighting/tracking is military intelligence, not diplomacy. It's closer to `CvDangerPlots` or `CvMilitaryAI` in purpose. |
+| **CvDiplomacyAI is enormous** | 59,000+ lines. Every new consumer that queries the sighting manager adds coupling to this already oversized class. |
+| **Lifecycle mismatch** | `CleanupExpired()` runs during `CvDiplomacyAI::DoTurn()`, but sighting updates happen during unit movement (game-wide). A standalone class could have its own turn lifecycle. |
+| **Growing consumer list** | Now used by: CvDangerPlots (fog danger), CvCity (garrison decisions + bombardment targeting), CvTacticalAI (garrison ranged targeting). Future: tactical AI movement, operation targeting, defensive positioning. |
+
+### Recommended Extraction Plan
+
+If the consumer list grows further:
+
+1. **Move class to its own files**: `CvUnitSightingManager.h` / `CvUnitSightingManager.cpp`
+2. **Move ownership to `CvPlayer`**: Add `m_pUnitSightingManager` to `CvPlayer`, similar to how `m_pDangerPlots` is owned. Expose via `CvPlayer::GetUnitSightingManager()`.
+3. **Update hooks**: Change `CvUnit::setXY()` and `CvUnit::kill()` to call `GET_PLAYER(observer).GetUnitSightingManager()` instead of going through `GetDiplomacyAI()->GetSightingManager()`.
+4. **Update serialization**: Move `Read/Write` from `CvDiplomacyAI::ReadMemorySystem()`/`WriteMemorySystem()` into `CvPlayer` serialization path.
+5. **Update consumers**: Replace all `GetDiplomacyAI()->GetSightingManager()` calls with `GetUnitSightingManager()`.
+
+### Why Not Now
+
+- The system works correctly from its current location
+- All current consumers already include `CvDiplomacyAI.h`
+- Moving it requires a save format change (serialization path moves)
+- Risk of introducing bugs in a functioning system
+- Better to extract when a refactor is already planned for the area
 
 ---
 
