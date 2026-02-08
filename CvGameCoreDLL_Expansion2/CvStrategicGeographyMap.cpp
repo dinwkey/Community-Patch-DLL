@@ -164,6 +164,16 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 		break;
 	}
 
+	// Naval Phase 3: Connectivity modifier.
+	// Canal cities that bridge to the ocean are strategically critical —
+	// losing them severs fleet access to the main water body.
+	if (bIsNavalCanalCity && bFleetCanReachOcean)
+		iModifier += 25;
+	// If enemy blocks our route to the ocean, we need stronger local defenses
+	// since naval reinforcement/evacuation is impossible.
+	if (bEnemyBlocksNavalRoute)
+		iModifier += 15;
+
 	return iModifier;
 }
 
@@ -174,6 +184,7 @@ int StrategicCityAnalysis::GetDefensePriorityModifier() const
 CvStrategicGeographyMap::CvStrategicGeographyMap()
 	: m_ePlayer(NO_PLAYER)
 	, m_iLastFullUpdate(-1)
+	, m_iLargestOceanAreaID(-1)
 {
 }
 
@@ -182,6 +193,8 @@ void CvStrategicGeographyMap::Init(PlayerTypes ePlayer)
 	m_ePlayer = ePlayer;
 	m_iLastFullUpdate = -1;
 	m_cityAnalysis.clear();
+	m_waterAreaGraph.clear();
+	m_iLargestOceanAreaID = -1;
 }
 
 /// Should we recompute? Every 5 turns peacetime, every 3 turns wartime, or if never computed.
@@ -229,6 +242,7 @@ void CvStrategicGeographyMap::Update()
 	DeriveRoadPriorities();
 	AnalyzeCoastalExposure();
 	DetectNavalChokepoints();
+	BuildWaterConnectivityGraph();
 	LogStrategicGeography();
 }
 
@@ -431,6 +445,72 @@ int CvStrategicGeographyMap::GetNavalChokeWidth(int iCityID) const
 {
 	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
 	return pAnalysis ? pAnalysis->iNavalChokeWidth : 0;
+}
+
+// ---------------------------------------------------------------------------
+//  Naval Phase 3: Water connectivity queries
+// ---------------------------------------------------------------------------
+
+int CvStrategicGeographyMap::GetPrimaryWaterArea(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iPrimaryWaterAreaID : -1;
+}
+
+int CvStrategicGeographyMap::GetConnectedWaterAreaCount(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->iConnectedWaterAreaCount : 0;
+}
+
+bool CvStrategicGeographyMap::CanFleetReachOcean(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bFleetCanReachOcean : false;
+}
+
+bool CvStrategicGeographyMap::IsNavalRouteBlocked(int iCityID) const
+{
+	const StrategicCityAnalysis* pAnalysis = GetCityAnalysis(iCityID);
+	return pAnalysis ? pAnalysis->bEnemyBlocksNavalRoute : false;
+}
+
+/// BFS on the water area graph to check if two non-lake water areas are connected
+/// through transit points (canal cities / passable forts) that are open to our player.
+bool CvStrategicGeographyMap::AreWaterAreasConnected(int iAreaA, int iAreaB) const
+{
+	if (iAreaA == iAreaB)
+		return true;
+	if (iAreaA < 0 || iAreaB < 0)
+		return false;
+
+	std::set<int> visited;
+	std::vector<int> frontier;
+	visited.insert(iAreaA);
+	frontier.push_back(iAreaA);
+
+	size_t head = 0;
+	while (head < frontier.size())
+	{
+		int iCurrent = frontier[head++];
+		std::map<int, std::vector<WaterAreaEdge> >::const_iterator it = m_waterAreaGraph.find(iCurrent);
+		if (it == m_waterAreaGraph.end())
+			continue;
+
+		const std::vector<WaterAreaEdge>& edges = it->second;
+		for (size_t e = 0; e < edges.size(); e++)
+		{
+			if (visited.find(edges[e].iOtherAreaID) != visited.end())
+				continue;
+			if (!IsTransitOpenForPlayer(edges[e]))
+				continue;
+			if (edges[e].iOtherAreaID == iAreaB)
+				return true;
+			visited.insert(edges[e].iOtherAreaID);
+			frontier.push_back(edges[e].iOtherAreaID);
+		}
+	}
+	return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1662,6 +1742,324 @@ void CvStrategicGeographyMap::DetectNavalChokepoints()
 }
 
 // ---------------------------------------------------------------------------
+//  Naval Phase 3: Water Area Connectivity Graph
+// ---------------------------------------------------------------------------
+
+/// Check if a water-area transit edge is usable by our military units.
+/// Canal cities are owner-only; passable forts require friendly territory (open borders).
+bool CvStrategicGeographyMap::IsTransitOpenForPlayer(const WaterAreaEdge& edge) const
+{
+	// No controller — open (shouldn't happen for inter-area edges, but handle gracefully)
+	if (edge.eController == NO_PLAYER)
+		return true;
+
+	// We own the transit point — always open
+	if (edge.eController == m_ePlayer)
+		return true;
+
+	// Canal city — owner-only for military transit
+	if (edge.bViaCanalCity)
+		return false;
+
+	// Fort — open if we have open borders with the controller
+	if (edge.bViaFort)
+	{
+		TeamTypes eOurTeam = GET_PLAYER(m_ePlayer).getTeam();
+		TeamTypes eControllerTeam = GET_PLAYER(edge.eController).getTeam();
+		if (eOurTeam == eControllerTeam)
+			return true;
+		return GET_TEAM(eControllerTeam).IsAllowsOpenBordersToTeam(eOurTeam);
+	}
+
+	return false;
+}
+
+/// Build the water area connectivity graph and analyze per-city reachability.
+///
+/// Phase 1: Enumerate non-lake water areas and find the largest ocean.
+/// Phase 2: Scan all cities on the map — canal cities create edges between water areas.
+/// Phase 3: Scan all map tiles for passable forts on water-area-separator land (fort-canals).
+/// Phase 4: BFS from each city's primary water area to determine connectivity.
+void CvStrategicGeographyMap::BuildWaterConnectivityGraph()
+{
+	CvMap& kMap = GC.getMap();
+	TeamTypes eOurTeam = GET_PLAYER(m_ePlayer).getTeam();
+	int iMinOceanTiles = GD_INT_GET(MIN_WATER_SIZE_FOR_OCEAN);
+
+	// --- Phase 1: Enumerate non-lake water areas, find the largest ocean ---
+	m_waterAreaGraph.clear();
+	m_iLargestOceanAreaID = -1;
+	int iLargestSize = 0;
+
+	int iAreaLoop;
+	for (CvArea* pArea = kMap.firstArea(&iAreaLoop); pArea != NULL; pArea = kMap.nextArea(&iAreaLoop))
+	{
+		if (!pArea->isWater())
+			continue;
+		if (pArea->getNumTiles() < iMinOceanTiles)
+			continue; // skip lakes
+
+		m_waterAreaGraph[pArea->GetID()] = std::vector<WaterAreaEdge>();
+		if (pArea->getNumTiles() > iLargestSize)
+		{
+			iLargestSize = pArea->getNumTiles();
+			m_iLargestOceanAreaID = pArea->GetID();
+		}
+	}
+
+	// No non-lake water areas — nothing to connect
+	if (m_waterAreaGraph.empty())
+		return;
+
+	// --- Phase 2: Find canal cities (all players) → graph edges ---
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_CIV_PLAYERS; iPlayerLoop++)
+	{
+		CvPlayer& kLoopPlayer = GET_PLAYER((PlayerTypes)iPlayerLoop);
+		if (!kLoopPlayer.isAlive())
+			continue;
+
+		int iCityLoop;
+		for (CvCity* pCity = kLoopPlayer.firstCity(&iCityLoop); pCity != NULL; pCity = kLoopPlayer.nextCity(&iCityLoop))
+		{
+			CvPlot* pCityPlot = pCity->plot();
+			if (!pCityPlot || pCityPlot->isWater())
+				continue;
+
+			// Collect distinct non-lake water areas adjacent to this city
+			int aAdjacentAreas[NUM_DIRECTION_TYPES];
+			int iUniqueAreas = 0;
+
+			CvPlot** aNeighbors = kMap.getNeighborsUnchecked(pCityPlot);
+			for (int d = 0; d < NUM_DIRECTION_TYPES; d++)
+			{
+				CvPlot* pNeighbor = aNeighbors[d];
+				if (!pNeighbor || !pNeighbor->isWater())
+					continue;
+
+				int iWaterAreaID = pNeighbor->getArea();
+				CvArea* pWaterArea = kMap.getAreaById(iWaterAreaID);
+				if (!pWaterArea || pWaterArea->getNumTiles() < iMinOceanTiles)
+					continue;
+
+				// Dedup within this city's neighbors
+				bool bDup = false;
+				for (int u = 0; u < iUniqueAreas; u++)
+				{
+					if (aAdjacentAreas[u] == iWaterAreaID)
+					{
+						bDup = true;
+						break;
+					}
+				}
+				if (!bDup && iUniqueAreas < NUM_DIRECTION_TYPES)
+					aAdjacentAreas[iUniqueAreas++] = iWaterAreaID;
+			}
+
+			if (iUniqueAreas < 2)
+				continue; // not a canal city
+
+			// Add bidirectional edges for each pair of adjacent water areas
+			PlayerTypes eController = pCity->getOwner();
+			for (int a = 0; a < iUniqueAreas; a++)
+			{
+				for (int b = a + 1; b < iUniqueAreas; b++)
+				{
+					WaterAreaEdge edge;
+					edge.iOtherAreaID = aAdjacentAreas[b];
+					edge.eController = eController;
+					edge.bViaCanalCity = true;
+					m_waterAreaGraph[aAdjacentAreas[a]].push_back(edge);
+
+					WaterAreaEdge revEdge;
+					revEdge.iOtherAreaID = aAdjacentAreas[a];
+					revEdge.eController = eController;
+					revEdge.bViaCanalCity = true;
+					m_waterAreaGraph[aAdjacentAreas[b]].push_back(revEdge);
+				}
+			}
+		}
+	}
+
+	// --- Phase 3: Find fort-canals on water area separator tiles ---
+	if (MOD_GLOBAL_PASSABLE_FORTS)
+	{
+		for (int iPlot = 0; iPlot < kMap.numPlots(); iPlot++)
+		{
+			CvPlot* pPlot = kMap.plotByIndexUnchecked(iPlot);
+			if (pPlot->isWater())
+				continue;
+			if (!pPlot->IsWaterAreaSeparator())
+				continue;
+			if (pPlot->isCity())
+				continue; // handled in Phase 2
+			if (!pPlot->isRevealed(eOurTeam))
+				continue;
+			if (!pPlot->isOwned())
+				continue;
+			if (!pPlot->IsImprovementPassable())
+				continue;
+			if (pPlot->IsImprovementPillaged())
+				continue;
+
+			// Passable fort on separator land — find connected water areas
+			int aFortAreas[NUM_DIRECTION_TYPES];
+			int iFortUniqueAreas = 0;
+
+			CvPlot** aNeighbors = kMap.getNeighborsUnchecked(pPlot);
+			for (int d = 0; d < NUM_DIRECTION_TYPES; d++)
+			{
+				CvPlot* pNeighbor = aNeighbors[d];
+				if (!pNeighbor || !pNeighbor->isWater())
+					continue;
+
+				int iWaterAreaID = pNeighbor->getArea();
+				CvArea* pWaterArea = kMap.getAreaById(iWaterAreaID);
+				if (!pWaterArea || pWaterArea->getNumTiles() < iMinOceanTiles)
+					continue;
+
+				bool bDup = false;
+				for (int u = 0; u < iFortUniqueAreas; u++)
+				{
+					if (aFortAreas[u] == iWaterAreaID)
+					{
+						bDup = true;
+						break;
+					}
+				}
+				if (!bDup && iFortUniqueAreas < NUM_DIRECTION_TYPES)
+					aFortAreas[iFortUniqueAreas++] = iWaterAreaID;
+			}
+
+			if (iFortUniqueAreas < 2)
+				continue;
+
+			// Add bidirectional edges
+			PlayerTypes eFortOwner = pPlot->getOwner();
+			for (int a = 0; a < iFortUniqueAreas; a++)
+			{
+				for (int b = a + 1; b < iFortUniqueAreas; b++)
+				{
+					WaterAreaEdge edge;
+					edge.iOtherAreaID = aFortAreas[b];
+					edge.eController = eFortOwner;
+					edge.bViaFort = true;
+					m_waterAreaGraph[aFortAreas[a]].push_back(edge);
+
+					WaterAreaEdge revEdge;
+					revEdge.iOtherAreaID = aFortAreas[a];
+					revEdge.eController = eFortOwner;
+					revEdge.bViaFort = true;
+					m_waterAreaGraph[aFortAreas[b]].push_back(revEdge);
+				}
+			}
+		}
+	}
+
+	// --- Phase 4: Per-city connectivity analysis ---
+	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		StrategicCityAnalysis& analysis = it->second;
+
+		// Default: inland / not connected
+		analysis.iPrimaryWaterAreaID = -1;
+		analysis.iConnectedWaterAreaCount = 0;
+		analysis.bFleetCanReachOcean = false;
+		analysis.bEnemyBlocksNavalRoute = false;
+
+		if (analysis.eExposure == COASTAL_EXPOSURE_NONE)
+			continue;
+
+		CvCity* pCity = GET_PLAYER(m_ePlayer).getCity(analysis.iCityID);
+		if (!pCity)
+			continue;
+
+		// Find primary water area (largest non-lake water area adjacent to city)
+		int iBestSize = 0;
+		CvPlot** aNeighbors = kMap.getNeighborsUnchecked(pCity->plot());
+		for (int d = 0; d < NUM_DIRECTION_TYPES; d++)
+		{
+			CvPlot* pNeighbor = aNeighbors[d];
+			if (!pNeighbor || !pNeighbor->isWater())
+				continue;
+			CvArea* pWaterArea = pNeighbor->area();
+			if (!pWaterArea || pWaterArea->getNumTiles() < iMinOceanTiles)
+				continue;
+			if (pWaterArea->getNumTiles() > iBestSize)
+			{
+				iBestSize = pWaterArea->getNumTiles();
+				analysis.iPrimaryWaterAreaID = pWaterArea->GetID();
+			}
+		}
+
+		if (analysis.iPrimaryWaterAreaID < 0)
+			continue;
+
+		// BFS pass 1: traverse only edges open to our player
+		std::set<int> reachableOpen;
+		{
+			std::vector<int> frontier;
+			reachableOpen.insert(analysis.iPrimaryWaterAreaID);
+			frontier.push_back(analysis.iPrimaryWaterAreaID);
+
+			size_t head = 0;
+			while (head < frontier.size())
+			{
+				int iCurrent = frontier[head++];
+				std::map<int, std::vector<WaterAreaEdge> >::const_iterator graphIt = m_waterAreaGraph.find(iCurrent);
+				if (graphIt == m_waterAreaGraph.end())
+					continue;
+
+				const std::vector<WaterAreaEdge>& edges = graphIt->second;
+				for (size_t e = 0; e < edges.size(); e++)
+				{
+					if (reachableOpen.find(edges[e].iOtherAreaID) != reachableOpen.end())
+						continue;
+					if (!IsTransitOpenForPlayer(edges[e]))
+						continue;
+					reachableOpen.insert(edges[e].iOtherAreaID);
+					frontier.push_back(edges[e].iOtherAreaID);
+				}
+			}
+		}
+
+		analysis.iConnectedWaterAreaCount = (int)reachableOpen.size();
+		analysis.bFleetCanReachOcean = (reachableOpen.find(m_iLargestOceanAreaID) != reachableOpen.end());
+
+		// BFS pass 2 (only if ocean not reachable): check if enemy blocks the route
+		if (!analysis.bFleetCanReachOcean && m_iLargestOceanAreaID >= 0)
+		{
+			// Traverse ALL edges regardless of openness — if ocean IS reachable
+			// ignoring transit control, then an enemy is blocking us.
+			std::set<int> reachableAll;
+			std::vector<int> frontier;
+			reachableAll.insert(analysis.iPrimaryWaterAreaID);
+			frontier.push_back(analysis.iPrimaryWaterAreaID);
+
+			size_t head = 0;
+			while (head < frontier.size())
+			{
+				int iCurrent = frontier[head++];
+				std::map<int, std::vector<WaterAreaEdge> >::const_iterator graphIt = m_waterAreaGraph.find(iCurrent);
+				if (graphIt == m_waterAreaGraph.end())
+					continue;
+
+				const std::vector<WaterAreaEdge>& edges = graphIt->second;
+				for (size_t e = 0; e < edges.size(); e++)
+				{
+					if (reachableAll.find(edges[e].iOtherAreaID) != reachableAll.end())
+						continue;
+					reachableAll.insert(edges[e].iOtherAreaID);
+					frontier.push_back(edges[e].iOtherAreaID);
+				}
+			}
+
+			// Enemy blocks if ocean is reachable via all edges but not via open edges
+			analysis.bEnemyBlocksNavalRoute = (reachableAll.find(m_iLargestOceanAreaID) != reachableAll.end());
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  Phase 6: Logging
 // ---------------------------------------------------------------------------
 
@@ -1707,7 +2105,7 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 		strCityName.Replace(' ', '_');
 
 		CvString strMsg;
-		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d, navalChoke=%s, canalCity=%d, straitTiles=%d, separators=%d, chokeW=%d",
+		strMsg.Format("%s%s, %s, salient=%d, chokepoint=%d, floodgate=%d, defDepth=%d, corridors=%d, roadPrio=%d, prioMod=%d, deps=%d, coast=%s, waterR1=%d, waterR2=%d, deepW=%d, landing=%d, ocean=%d, navalChoke=%s, canalCity=%d, straitTiles=%d, separators=%d, chokeW=%d, waterArea=%d, connAreas=%d, reachOcean=%d, blocked=%d",
 			strBaseString.c_str(),
 			strCityName.c_str(),
 			(analysis.eLayer >= 0 && analysis.eLayer <= 4) ? szLayerNames[analysis.eLayer] : "???",
@@ -1729,7 +2127,11 @@ void CvStrategicGeographyMap::LogStrategicGeography() const
 			analysis.bIsNavalCanalCity ? 1 : 0,
 			analysis.iStraitTilesNearby,
 			analysis.iWaterSeparatorLandNearby,
-			analysis.iNavalChokeWidth);
+			analysis.iNavalChokeWidth,
+			analysis.iPrimaryWaterAreaID,
+			analysis.iConnectedWaterAreaCount,
+			analysis.bFleetCanReachOcean ? 1 : 0,
+			analysis.bEnemyBlocksNavalRoute ? 1 : 0);
 
 		pLog->Msg(strMsg.c_str());
 	}

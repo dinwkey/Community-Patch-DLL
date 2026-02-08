@@ -873,6 +873,14 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 					if (pAnalysis->iNavalChokeWidth == 1)
 						iDefenseMod += 100;
 				}
+
+				// Naval Phase 3: Connectivity boosts.
+				// Canal cities that reach the ocean are irreplaceable — losing one severs fleet access.
+				if (pAnalysis->bIsNavalCanalCity && pAnalysis->bFleetCanReachOcean)
+					iDefenseMod += 200;
+				// Fleet route blocked by enemy → local defenses matter more (no naval support).
+				if (pAnalysis->bEnemyBlocksNavalRoute)
+					iDefenseMod += 100;
 			}
 		}
 	}

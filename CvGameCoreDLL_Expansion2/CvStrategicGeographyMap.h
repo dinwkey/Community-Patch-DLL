@@ -45,6 +45,26 @@ enum eNavalChokeType
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Naval Phase 3: Water Area Connectivity — graph edge between two water areas
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+struct WaterAreaEdge
+{
+	WaterAreaEdge()
+		: iOtherAreaID(-1)
+		, eController(NO_PLAYER)
+		, bViaCanalCity(false)
+		, bViaFort(false)
+	{
+	}
+
+	int iOtherAreaID;           // The water area on the other side of the transit
+	PlayerTypes eController;    // Who controls the transit point (NO_PLAYER = open/uncontrolled)
+	bool bViaCanalCity;         // Transit through a canal city (owner-only for military)
+	bool bViaFort;              // Transit through a passable fort (open borders accessible)
+};
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //  Per-enemy approach data (Phase 5)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -104,6 +124,10 @@ struct StrategicCityAnalysis
 		, iStraitTilesNearby(0)
 		, iWaterSeparatorLandNearby(0)
 		, iNavalChokeWidth(0)
+		, iPrimaryWaterAreaID(-1)
+		, iConnectedWaterAreaCount(0)
+		, bFleetCanReachOcean(false)
+		, bEnemyBlocksNavalRoute(false)
 	{
 	}
 
@@ -155,6 +179,12 @@ struct StrategicCityAnalysis
 	int iStraitTilesNearby;        // Count of narrow-water-passage tiles within RING3
 	int iWaterSeparatorLandNearby; // Count of IsWaterAreaSeparator() land tiles within RING2 (strait land bridges)
 	int iNavalChokeWidth;          // Narrowest water passage width near this city (1-3; 0=none found)
+
+	// Naval Phase 3 fields — Water Area Connectivity
+	int iPrimaryWaterAreaID;         // Largest non-lake water area adjacent to city (-1 if inland)
+	int iConnectedWaterAreaCount;    // Distinct non-lake water areas reachable from this city via open transits
+	bool bFleetCanReachOcean;        // Fleet from this city can reach the global largest ocean body
+	bool bEnemyBlocksNavalRoute;     // Enemy controls a transit point that blocks our route to the largest ocean
 
 	// Returns a priority modifier that can be added to threat criteria or zone values.
 	// Higher = more strategically important to defend.
@@ -216,6 +246,13 @@ public:
 	int GetNearbyStraitTileCount(int iCityID) const;
 	int GetNavalChokeWidth(int iCityID) const;
 
+	// Naval Phase 3: Water connectivity queries
+	int GetPrimaryWaterArea(int iCityID) const;
+	int GetConnectedWaterAreaCount(int iCityID) const;
+	bool CanFleetReachOcean(int iCityID) const;
+	bool IsNavalRouteBlocked(int iCityID) const;
+	bool AreWaterAreasConnected(int iAreaA, int iAreaB) const;
+
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
@@ -251,6 +288,12 @@ private:
 	// Naval Phase 2: Naval chokepoint detection
 	void DetectNavalChokepoints();
 	int ScanWaterCorridorWidth(CvPlot* pWaterPlot) const;
+
+	// Naval Phase 3: Water area connectivity
+	void BuildWaterConnectivityGraph();
+	bool IsTransitOpenForPlayer(const WaterAreaEdge& edge) const;
+	std::map<int, std::vector<WaterAreaEdge> > m_waterAreaGraph;
+	int m_iLargestOceanAreaID;
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H
