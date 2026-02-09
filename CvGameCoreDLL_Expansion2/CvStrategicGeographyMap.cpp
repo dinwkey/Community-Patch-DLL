@@ -760,8 +760,9 @@ int CvStrategicGeographyMap::ComputeMinBorderDistance(CvCity* pCity) const
 	int iMinDist = 99;
 
 	// Scan outward from the city in rings up to range 15.
-	// We use RING_PLOTS iteration for efficiency.
-	// Start at ring 1 (adjacent) up to ring 15.
+	// We use iterateRingPlots for ring iteration.
+	// Total plots up to ring n = 3*n*(n+1) + 1 (hex geometry).
+	// RING_PLOTS[] only has 6 entries (rings 0-5), so we compute bounds inline.
 	for (int iRing = 1; iRing <= 15; iRing++)
 	{
 		// Early exit: if we already found a border tile closer than this ring, stop.
@@ -769,8 +770,8 @@ int CvStrategicGeographyMap::ComputeMinBorderDistance(CvCity* pCity) const
 			break;
 
 		// Iterate plots at exactly this ring distance
-		int iStart = (iRing <= 1) ? 0 : RING_PLOTS[iRing - 1];
-		int iEnd = RING_PLOTS[iRing];
+		int iStart = (iRing <= 1) ? 0 : (3 * (iRing - 1) * iRing + 1);
+		int iEnd = 3 * iRing * (iRing + 1) + 1;
 		for (int i = iStart; i < iEnd; i++)
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
