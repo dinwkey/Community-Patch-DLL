@@ -3897,35 +3897,35 @@ Firaxis::Array< int, NUM_YIELD_TYPES > CvPolicyAI::WeightPolicyAttributes(CvPlay
 				yield[YIELD_TOURISM] += iTourismByUnitClassCreated;
 		}
 
-		if (pPlayer->getCapitalCity())
+		// Only call the expensive CheckUnitBuildSanity when the policy actually affects this unit class.
+		// Before commit e632da69db (2024-06-09) this was correctly inside each conditional; the "cleanup"
+		// hoisted it out, making it run for every unit class (~100+) unconditionally — O(policies × unitClasses × sanityWork).
+		bool bFaithPurchase = PolicyInfo->IsFaithPurchaseUnitClass(eUnitClass, /*INDUSTRIAL*/ GD_INT_GET(RELIGION_GP_FAITH_PURCHASE_ERA)) != 0;
+		bool bPolicyUnit = pUnitEntry->GetPolicyType() == ePolicy;
+
+		if ((bFaithPurchase || bPolicyUnit) && pPlayer->getCapitalCity())
 		{
 			int iBaseValue = pPlayer->getCapitalCity()->GetCityStrategyAI()->GetUnitProductionAI()->CheckUnitBuildSanity(eUnit, false, 10, true, true);
 
-			if (PolicyInfo->IsFaithPurchaseUnitClass(eUnitClass, /*INDUSTRIAL*/ GD_INT_GET(RELIGION_GP_FAITH_PURCHASE_ERA)) != 0)
+			if (bFaithPurchase && iBaseValue > 0)
 			{
-				if (iBaseValue > 0)
-				{
-					int iValue = iBaseValue;
-					if (pPlayerTraits->IsReligious())
-						iValue *= 2;
+				int iValue = iBaseValue;
+				if (pPlayerTraits->IsReligious())
+					iValue *= 2;
 
-					yield[YIELD_FAITH] += min(225, iValue);
-				}
+				yield[YIELD_FAITH] += min(225, iValue);
 			}
 
-			if (pUnitEntry->GetPolicyType() == ePolicy)
+			if (bPolicyUnit && iBaseValue > 0)
 			{
-				if (iBaseValue > 0)
-				{
-					int iValue = iBaseValue;
-					if (pPlayerTraits->IsWarmonger())
-						iValue *= 2;
+				int iValue = iBaseValue;
+				if (pPlayerTraits->IsWarmonger())
+					iValue *= 2;
 
-					if (pUnitEntry->GetDomainType() == DOMAIN_LAND || pUnitEntry->GetDomainType() == DOMAIN_AIR)
-						yield[YIELD_GREAT_GENERAL_POINTS] += min(150, iValue);
-					else
-						yield[YIELD_GREAT_ADMIRAL_POINTS] += min(150, iValue);
-				}
+				if (pUnitEntry->GetDomainType() == DOMAIN_LAND || pUnitEntry->GetDomainType() == DOMAIN_AIR)
+					yield[YIELD_GREAT_GENERAL_POINTS] += min(150, iValue);
+				else
+					yield[YIELD_GREAT_ADMIRAL_POINTS] += min(150, iValue);
 			}
 		}
 	}
