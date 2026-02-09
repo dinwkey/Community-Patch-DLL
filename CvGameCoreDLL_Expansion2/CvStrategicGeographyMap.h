@@ -45,6 +45,19 @@ enum eNavalChokeType
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Geographic Posture Classification (Player-level)
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+enum eGeographicPosture
+{
+	GEO_POSTURE_CONTINENTAL,  // Core on large contiguous landmass
+	GEO_POSTURE_COASTAL,      // Large landmass core with heavy coastal exposure
+	GEO_POSTURE_PENINSULAR,   // Large landmass core with a narrow land connection
+	GEO_POSTURE_ISLAND,       // All/most cities on a small landmass
+	GEO_POSTURE_ARCHIPELAGO,  // Cities dispersed across multiple small landmasses
+};
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //  Naval Phase 3: Water Area Connectivity — graph edge between two water areas
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -271,6 +284,7 @@ public:
 	// Bulk queries
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
+	eGeographicPosture GetGeographicPosture() const { return m_eGeographicPosture; }
 
 	// Phase 6: Logging
 	void LogStrategicGeography() const;
@@ -279,9 +293,11 @@ private:
 	PlayerTypes m_ePlayer;
 	int m_iLastFullUpdate;
 	std::map<int, StrategicCityAnalysis> m_cityAnalysis;
+	eGeographicPosture m_eGeographicPosture;
 
 	// Internal computation
 	void ClassifyAllCities();
+	void ComputeGeographicPosture();
 	void DetectSalients();          // Phase 2: salient + defensible salient detection
 	void DetectChokepointCities();  // Phase 3: approach corridor analysis
 	void BuildDependencyGraph();    // Phase 4: floodgate/dependency detection

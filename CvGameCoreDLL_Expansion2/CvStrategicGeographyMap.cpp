@@ -205,6 +205,7 @@ CvStrategicGeographyMap::CvStrategicGeographyMap()
 	: m_ePlayer(NO_PLAYER)
 	, m_iLastFullUpdate(-1)
 	, m_iLargestOceanAreaID(-1)
+	, m_eGeographicPosture(GEO_POSTURE_CONTINENTAL)
 {
 }
 
@@ -215,6 +216,7 @@ void CvStrategicGeographyMap::Init(PlayerTypes ePlayer)
 	m_cityAnalysis.clear();
 	m_waterAreaGraph.clear();
 	m_iLargestOceanAreaID = -1;
+	m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
 }
 
 /// Should we recompute? Every 5 turns peacetime, every 3 turns wartime, or if never computed.
@@ -250,6 +252,7 @@ void CvStrategicGeographyMap::Update()
 	if (kPlayer.getNumCities() == 0)
 	{
 		m_cityAnalysis.clear();
+		m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
 		return;
 	}
 
@@ -257,6 +260,7 @@ void CvStrategicGeographyMap::Update()
 	ClassifyAllCities();
 	DetectSalients();
 	DetectChokepointCities();
+	ComputeGeographicPosture();
 	BuildDependencyGraph();
 	AnalyzeApproachCorridors();
 	DeriveRoadPriorities();
@@ -613,6 +617,122 @@ void CvStrategicGeographyMap::ClassifyAllCities()
 
 		m_cityAnalysis[pCity->GetID()] = analysis;
 	}
+}
+
+/// Compute player-level geographic posture based on landmass distribution and chokepoints.
+void CvStrategicGeographyMap::ComputeGeographicPosture()
+{
+	m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
+
+	if (m_ePlayer == NO_PLAYER)
+		return;
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	if (kPlayer.getNumCities() == 0)
+		return;
+
+	std::map<int, int> landmassCityCounts;
+	std::map<int, int> landmassSizes;
+	int iTotalCities = 0;
+	int iCoastalCities = 0;
+
+	int iCityLoop = 0;
+	for (CvCity* pCity = kPlayer.firstCity(&iCityLoop); pCity != NULL; pCity = kPlayer.nextCity(&iCityLoop))
+	{
+		++iTotalCities;
+		if (pCity->isCoastal())
+			++iCoastalCities;
+
+		CvPlot* pPlot = pCity->plot();
+		if (!pPlot)
+			continue;
+
+		int iAreaId = pPlot->getArea();
+		CvArea* pArea = GC.getMap().getAreaById(iAreaId);
+		if (!pArea || pArea->isWater())
+			continue;
+
+		std::map<int, int>::iterator itCount = landmassCityCounts.find(iAreaId);
+		if (itCount != landmassCityCounts.end())
+			itCount->second++;
+		else
+			landmassCityCounts[iAreaId] = 1;
+
+		landmassSizes[iAreaId] = pArea->getNumTiles();
+	}
+
+	if (iTotalCities == 0 || landmassCityCounts.empty())
+		return;
+
+	int iLargestLandmassSize = -1;
+	int iLargestLandmassId = -1;
+	int iCitiesOnLargest = 0;
+	int iNumLandmasses = landmassCityCounts.size();
+
+	for (std::map<int, int>::const_iterator it = landmassCityCounts.begin(); it != landmassCityCounts.end(); ++it)
+	{
+		int iAreaId = it->first;
+		int iCityCount = it->second;
+		int iAreaSize = landmassSizes[iAreaId];
+
+		if (iAreaSize > iLargestLandmassSize || (iAreaSize == iLargestLandmassSize && iCityCount > iCitiesOnLargest))
+		{
+			iLargestLandmassSize = iAreaSize;
+			iLargestLandmassId = iAreaId;
+			iCitiesOnLargest = iCityCount;
+		}
+	}
+
+	float fCoastalCityRatio = static_cast<float>(iCoastalCities) / static_cast<float>(iTotalCities);
+	float fCitiesOnLargestRatio = static_cast<float>(iCitiesOnLargest) / static_cast<float>(iTotalCities);
+
+	bool bPeninsula = false;
+	if (iLargestLandmassSize > 50 && iNumLandmasses == 1 && iLargestLandmassId != -1)
+	{
+		for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+		{
+			const StrategicCityAnalysis& analysis = it->second;
+			CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+			if (!pCity)
+				continue;
+
+			CvPlot* pPlot = pCity->plot();
+			if (!pPlot || pPlot->getArea() != iLargestLandmassId)
+				continue;
+
+			if (analysis.bIsChokepointCity && analysis.iApproachCorridors <= 2 && analysis.iDefensiveDepth <= 6)
+			{
+				bPeninsula = true;
+				break;
+			}
+		}
+	}
+
+	if (iLargestLandmassSize > 100 && fCitiesOnLargestRatio >= 0.8f)
+	{
+		m_eGeographicPosture = (fCoastalCityRatio > 0.6f) ? GEO_POSTURE_COASTAL : GEO_POSTURE_CONTINENTAL;
+		return;
+	}
+
+	if (bPeninsula)
+	{
+		m_eGeographicPosture = GEO_POSTURE_PENINSULAR;
+		return;
+	}
+
+	if (iNumLandmasses >= 3 && iLargestLandmassSize < 50)
+	{
+		m_eGeographicPosture = GEO_POSTURE_ARCHIPELAGO;
+		return;
+	}
+
+	if (iLargestLandmassSize < 50)
+	{
+		m_eGeographicPosture = GEO_POSTURE_ISLAND;
+		return;
+	}
+
+	m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
 }
 
 /// Compute minimum distance from a city to the nearest tile owned by a hostile or neutral major civ.

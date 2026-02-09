@@ -422,6 +422,10 @@ private:
 public:
 	CvStrategicGeographyMap* GetStrategicGeographyMap() { return m_pStrategyMap; }
 	const CvStrategicGeographyMap* GetStrategicGeographyMap() const { return m_pStrategyMap; }
+	eGeographicPosture GetGeographicPosture() const
+	{
+		return m_pStrategyMap ? m_pStrategyMap->GetGeographicPosture() : GEO_POSTURE_CONTINENTAL;
+	}
 };
 
 FDataStream& operator>>(FDataStream&, CvMilitaryAI&);
