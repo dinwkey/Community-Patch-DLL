@@ -348,6 +348,17 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 				iBonus += 10;
 			}
 		}
+
+		// Phase I-5: Island/archipelago civs value airports more — airlift avoids risky embarkation
+		CvStrategicGeographyMap* pStratGeo = kPlayer.GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratGeo)
+		{
+			eGeographicPosture ePosture = pStratGeo->GetGeographicPosture();
+			if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+				iBonus += 25;
+			else if (ePosture == GEO_POSTURE_ISLAND)
+				iBonus += 15;
+		}
 	}
 
 	//No Land trade connections?

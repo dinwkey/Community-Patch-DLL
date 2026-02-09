@@ -4445,6 +4445,59 @@ bool CvHomelandAI::ExecuteMoveToTarget(CvUnit* pUnit, CvPlot* pTarget, int iFlag
 	}
 	else
 	{
+		// Phase I-5 Airlift shortcut: for land units, check if airlifting to a city near
+		// the target is faster than walking/embarking.  This avoids dangerous embarkation
+		// when airports are available at both ends.
+		if (pUnit->getDomainType() == DOMAIN_LAND && !pUnit->hasMoved())
+		{
+			CvCity* pBestAirliftCity = NULL;
+			int iBestDist = MAX_INT;
+
+			int iCityLoop = 0;
+			for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
+			{
+				int iDist = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pTarget->getX(), pTarget->getY());
+				if (iDist > 3 || iDist >= iBestDist)
+					continue;
+
+				if (pUnit->canAirliftAt(pUnit->plot(), pLoopCity->getX(), pLoopCity->getY()))
+				{
+					pBestAirliftCity = pLoopCity;
+					iBestDist = iDist;
+				}
+			}
+
+			if (pBestAirliftCity != NULL)
+			{
+				// Only airlift if the normal path takes more than 1 turn
+				bool bShouldAirlift = true;
+				if (pUnit->GeneratePath(pTarget, iFlags))
+				{
+					CvPlot* pWayPoint = pUnit->GetPathEndFirstTurnPlot();
+					if (pWayPoint == pTarget)
+						bShouldAirlift = false; // can reach target this turn, no need to airlift
+				}
+
+				if (bShouldAirlift)
+				{
+					pUnit->airlift(pBestAirliftCity->getX(), pBestAirliftCity->getY());
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						CvString strTemp;
+						strTemp = pUnit->getUnitInfo().GetDescription();
+						strLogString.Format("Airlifting %s to %s near target (%d,%d)",
+							strTemp.GetCString(), pBestAirliftCity->getName().c_str(),
+							pTarget->getX(), pTarget->getY());
+						LogHomelandMessage(strLogString);
+					}
+					if (bEndTurn)
+						UnitProcessed(pUnit->GetID());
+					return true;
+				}
+			}
+		}
+
 		// Best units have already had a full path check to the target, so just add the move
 		bResult = MoveToTargetButDontEndTurn(pUnit, pTarget, iFlags);
 	}
