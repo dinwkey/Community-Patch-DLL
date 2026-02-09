@@ -26832,6 +26832,46 @@ void CvDiplomacyAI::SelectBestApproachTowardsMinorCiv(PlayerTypes ePlayer)
 // PEACE TREATY WILLINGNESS
 // ////////////////////////////////////
 
+static int GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent)
+{
+	if (!pCity || !pCity->isCoastal() || !pCity->IsBlockaded(DOMAIN_SEA))
+		return 0;
+
+	int iLandPlots = 0;
+	int iWaterPlots = 0;
+	int iTotalPlots = 0;
+
+	for (int iPlotLoop = 0; iPlotLoop < pCity->GetNumWorkablePlots(); iPlotLoop++)
+	{
+		CvPlot* pLoopPlot = pCity->GetCityCitizens()->GetCityPlotFromIndex(iPlotLoop);
+		if (!pLoopPlot)
+			continue;
+		if (pLoopPlot->getOwner() != pCity->getOwner() || pLoopPlot->isCity())
+			continue;
+
+		iTotalPlots++;
+		if (pLoopPlot->isWater() && !pLoopPlot->isLake())
+			iWaterPlots++;
+		else
+			iLandPlots++;
+	}
+
+	int iLandPercent = 100;
+	if (iTotalPlots > 0)
+		iLandPercent = (iLandPlots * 100) / iTotalPlots;
+
+	if (piLandPercent)
+		*piLandPercent = iLandPercent;
+
+	if (iTotalPlots == 0)
+		return 1;
+	if (iLandPercent <= 40)
+		return 3;
+	if (iLandPercent <= 60)
+		return 2;
+	return 1;
+}
+
 void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 {
 	// AI is never allowed to make peace with anyone under these circumstances, no need to log it either
@@ -26853,6 +26893,18 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 	vector<PlayerTypes> vPeacePossibleMinors;
 	vector<TeamTypes> vMajorTeamsAtWarWith;
 	int iLoop = 0;
+	int iMaxBlockadeSeverity = 0;
+	int iBlockadeLoop = 0;
+
+	for (CvCity* pLoopCity = GetPlayer()->firstCity(&iBlockadeLoop); pLoopCity != NULL; pLoopCity = GetPlayer()->nextCity(&iBlockadeLoop))
+	{
+		int iSeverity = GetBlockadedCitySeverity(pLoopCity, NULL);
+		if (iSeverity > 0)
+		{
+			if (iSeverity > iMaxBlockadeSeverity)
+				iMaxBlockadeSeverity = iSeverity;
+		}
+	}
 
 	//------------------------------------------------//
 	// [PART 1: CHECK CRITICAL STATE & PEACE BLOCKS]  //
@@ -27274,6 +27326,8 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 
 		// War duration for peace willingness resets when a city is captured.
 		int iWarDuration = min(GET_TEAM(GetTeam()).GetNumTurnsAtWar(*it), iLowestTurnsSinceCityCapture);
+		bool bModerateBlockade = iMaxBlockadeSeverity >= 2;
+		bool bSevereBlockade = iMaxBlockadeSeverity >= 3;
 
 		// Need at least 75 warscore with one civ on this team to be able to vassalize them
 		if (!bAnyCapitulationThresholdMet)
@@ -27295,6 +27349,36 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 				}
 				continue;
 			}
+		}
+		else if (bSevereBlockade && iWarDuration >= 10 && !bAnySeriousDangerThem)
+		{
+			vMakePeaceTeams.push_back(*it);
+			if (bLog)
+			{
+				CvString strLogMessage;
+				strLogMessage.Format("Automatic peace offer: Severe blockade pressure on coastal cities!");
+				for (size_t i=0; i<vEnemyTeamMembers.size(); i++)
+				{
+					if (GET_PLAYER(vEnemyTeamMembers[i]).isAlive())
+						LogPeaceWillingnessReason(vEnemyTeamMembers[i], strLogMessage);
+				}
+			}
+			continue;
+		}
+		else if (bModerateBlockade && iWarDuration >= 20 && bAnyBadWarState && !bAnySeriousDangerThem)
+		{
+			vMakePeaceTeams.push_back(*it);
+			if (bLog)
+			{
+				CvString strLogMessage;
+				strLogMessage.Format("Automatic peace offer: Extended blockade pressure in a poor war state.");
+				for (size_t i=0; i<vEnemyTeamMembers.size(); i++)
+				{
+					if (GET_PLAYER(vEnemyTeamMembers[i]).isAlive())
+						LogPeaceWillingnessReason(vEnemyTeamMembers[i], strLogMessage);
+				}
+			}
+			continue;
 		}
 		// If we're in serious danger, let's offer peace.
 		else if ((iLowestWarScore <= -90 && bWeAreInAnyDanger) || (iLowestWarScore <= -50 && (bInTerribleShape || bAnySeriousDangerUs)))

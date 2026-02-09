@@ -2563,6 +2563,46 @@ int CvMilitaryAI::GetTradeRouteEconomicValue(const TradeConnection& kConnection)
 	return iValue;
 }
 
+static int GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent)
+{
+	if (!pCity || !pCity->isCoastal() || !pCity->IsBlockaded(DOMAIN_SEA))
+		return 0;
+
+	int iLandPlots = 0;
+	int iWaterPlots = 0;
+	int iTotalPlots = 0;
+
+	for (int iPlotLoop = 0; iPlotLoop < pCity->GetNumWorkablePlots(); iPlotLoop++)
+	{
+		CvPlot* pLoopPlot = pCity->GetCityCitizens()->GetCityPlotFromIndex(iPlotLoop);
+		if (!pLoopPlot)
+			continue;
+		if (pLoopPlot->getOwner() != pCity->getOwner() || pLoopPlot->isCity())
+			continue;
+
+		iTotalPlots++;
+		if (pLoopPlot->isWater() && !pLoopPlot->isLake())
+			iWaterPlots++;
+		else
+			iLandPlots++;
+	}
+
+	int iLandPercent = 100;
+	if (iTotalPlots > 0)
+		iLandPercent = (iLandPlots * 100) / iTotalPlots;
+
+	if (piLandPercent)
+		*piLandPercent = iLandPercent;
+
+	if (iTotalPlots == 0)
+		return 1;
+	if (iLandPercent <= 40)
+		return 3;
+	if (iLandPercent <= 60)
+		return 2;
+	return 1;
+}
+
 /// Update how we're doing on defensive units (Issue 4.1 enhancement)
 void CvMilitaryAI::UpdateDefenseState()
 {
@@ -2748,6 +2788,26 @@ void CvMilitaryAI::UpdateDefenseState()
 			}
 			m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
 		}
+	}
+
+	int iMaxBlockadeSeverity = 0;
+	int iCityLoop = 0;
+	for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
+	{
+		int iSeverity = GetBlockadedCitySeverity(pLoopCity, NULL);
+		if (iSeverity > 0)
+		{
+			iMaxBlockadeSeverity = max(iMaxBlockadeSeverity, iSeverity);
+		}
+	}
+
+	if (iMaxBlockadeSeverity >= 3 && m_eNavalDefenseState < DEFENSE_STATE_CRITICAL)
+	{
+		m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
+	}
+	else if (iMaxBlockadeSeverity >= 2 && m_eNavalDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
 	}
 }
 
@@ -3234,12 +3294,15 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 	if (!pThreatenedCity->isCoastal())
 		return;
 
+	int iBlockadeSeverity = GetBlockadedCitySeverity(pThreatenedCity, NULL);
+	bool bSevereBlockade = iBlockadeSeverity >= 3;
+
 	CvPlot* pCoastalPlot = MilitaryAIHelpers::GetCoastalWaterNearPlot(pThreatenedCity->plot());
 	if(pCoastalPlot != NULL)
 	{
 		bool bIsEnemyZone = m_pPlayer->GetTacticalAI()->GetTacticalAnalysisMap()->IsInEnemyDominatedZone(pThreatenedCity->plot());
 		bool bHasOperationUnderway = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_NAVAL_SUPERIORITY, NO_PLAYER, pThreatenedCity->plot()) != NULL;
-		if (!bHasOperationUnderway || bIsEnemyZone)
+		if (!bHasOperationUnderway || bIsEnemyZone || bSevereBlockade)
 			m_pPlayer->addAIOperation(AI_OPERATION_NAVAL_SUPERIORITY, 1, ePlayer, pThreatenedCity);
 	}
 }
