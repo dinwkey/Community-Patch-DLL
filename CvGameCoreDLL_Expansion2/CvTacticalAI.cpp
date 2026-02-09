@@ -1107,6 +1107,9 @@ void CvTacticalAI::AssignGlobalLowPrioMoves()
 	// Position naval units defensively around threatened coastal cities
 	PlotCoastalDefenseMoves();
 
+	// Phase I-7: Station ships at identified strait chokepoints
+	PlotStraitDefenseMoves();
+
 	// Drift idle naval units toward patrol stations (island civ posture)
 	PlotNavalPatrolStationMoves();
 
@@ -2567,6 +2570,138 @@ void CvTacticalAI::PlotAntiInvasionMoves()
 			vInterceptors.erase(vInterceptors.begin() + iUnit);
 			// Don't increment iUnit since we erased the current element
 		}
+	}
+}
+
+/// Phase I-7: Station naval units at identified strait chokepoints.
+/// Width-1 straits get 1 ranged + 1 melee; wider straits up to 3 ships.
+/// Ships at strait positions enter sentry/alert mode to block passage.
+void CvTacticalAI::PlotStraitDefenseMoves()
+{
+	const CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (!pGeo)
+		return;
+
+	const std::vector<CvStrategicGeographyMap::StraitDefensePosition>& vPositions = pGeo->GetStraitDefensePositions();
+	if (vPositions.empty())
+		return;
+
+	// Cap strait defense fleet at 30% of total navy to avoid over-commitment
+	int iTotalNavy = 0;
+	int iStraitAssigned = 0;
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+	{
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (pUnit && pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit())
+			iTotalNavy++;
+	}
+	int iMaxStraitFleet = max(2, iTotalNavy * 30 / 100);
+
+	// Build available position list (skip already-occupied positions)
+	std::vector<const CvStrategicGeographyMap::StraitDefensePosition*> vOpenPositions;
+	for (size_t i = 0; i < vPositions.size(); i++)
+	{
+		CvPlot* pPlot = GC.getMap().plotByIndex(vPositions[i].iPlotIndex);
+		if (!pPlot || !pPlot->isWater())
+			continue;
+		if (!pPlot->isValidMovePlot(m_pPlayer->GetID()))
+			continue;
+
+		// Check if already garrisoned by our naval unit
+		CvUnit* pDefender = pPlot->getBestDefender(m_pPlayer->GetID());
+		if (pDefender && pDefender->getDomainType() == DOMAIN_SEA)
+		{
+			iStraitAssigned++; // Count as already assigned
+			continue;
+		}
+
+		vOpenPositions.push_back(&vPositions[i]);
+	}
+
+	if (vOpenPositions.empty())
+		return;
+
+	// Sort: narrower straits first (more critical)
+	for (size_t i = 1; i < vOpenPositions.size(); i++)
+	{
+		const CvStrategicGeographyMap::StraitDefensePosition* key = vOpenPositions[i];
+		int j = (int)i - 1;
+		while (j >= 0 && vOpenPositions[j]->iWidth > key->iWidth)
+		{
+			vOpenPositions[j + 1] = vOpenPositions[j];
+			j--;
+		}
+		vOpenPositions[j + 1] = key;
+	}
+
+	// Assign naval units to strait positions
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end() && !vOpenPositions.empty(); ++it)
+	{
+		if (iStraitAssigned >= iMaxStraitFleet)
+			break;
+
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (!pUnit || !pUnit->canUseForTacticalAI())
+			continue;
+		if (pUnit->getDomainType() != DOMAIN_SEA || !pUnit->IsCombatUnit())
+			continue;
+		if (pUnit->getArmyID() != -1)
+			continue;
+		if (pUnit->shouldHeal(false))
+			continue;
+		if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA || pUnit->getInvisibleType() != NO_INVISIBLE)
+			continue;
+
+		// Find closest open strait position within 4 turns
+		const CvStrategicGeographyMap::StraitDefensePosition* pBest = NULL;
+		int iBestTurns = INT_MAX;
+		size_t iBestIdx = 0;
+
+		for (size_t iPos = 0; iPos < vOpenPositions.size(); iPos++)
+		{
+			CvPlot* pTarget = GC.getMap().plotByIndex(vOpenPositions[iPos]->iPlotIndex);
+			if (!pTarget)
+				continue;
+
+			int iTurns = pUnit->TurnsToReachTarget(pTarget, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF, 4);
+			if (iTurns == MAX_INT || iTurns > 4)
+				continue;
+
+			if (iTurns < iBestTurns)
+			{
+				iBestTurns = iTurns;
+				pBest = vOpenPositions[iPos];
+				iBestIdx = iPos;
+			}
+		}
+
+		if (!pBest)
+			continue;
+
+		CvPlot* pTarget = GC.getMap().plotByIndex(pBest->iPlotIndex);
+		if (pUnit->plot() == pTarget)
+		{
+			if (pUnit->canSentry(pTarget))
+				pUnit->PushMission(CvTypes::getMISSION_ALERT());
+			else
+				pUnit->PushMission(CvTypes::getMISSION_SKIP());
+			UnitProcessed(pUnit->GetID());
+		}
+		else
+		{
+			ExecuteMoveToPlot(pUnit, pTarget, true, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+		}
+
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString strLogString;
+			strLogString.Format("Strait defense: Unit %d heading to strait at (%d,%d), width=%d, dist=%d",
+				pUnit->GetID(), pTarget->getX(), pTarget->getY(), pBest->iWidth, iBestTurns);
+			LogTacticalMessage(strLogString);
+		}
+
+		vOpenPositions.erase(vOpenPositions.begin() + iBestIdx);
+		iStraitAssigned++;
 	}
 }
 

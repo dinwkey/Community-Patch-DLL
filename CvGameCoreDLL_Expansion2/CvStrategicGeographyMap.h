@@ -333,6 +333,17 @@ public:
 	const std::vector<DetectedConvoy>& GetDetectedConvoys() const { return m_vDetectedConvoys; }
 	bool IsInvasionImminent() const { return !m_vDetectedConvoys.empty(); }
 
+	// Phase I-7: Strait defense positions
+	struct StraitDefensePosition
+	{
+		int iPlotIndex;    // Water plot on the strait
+		int iCityID;       // Owning city whose chokepoint this guards
+		int iWidth;        // Strait width at this point (1-3; narrower = more critical)
+
+		StraitDefensePosition() : iPlotIndex(-1), iCityID(-1), iWidth(0) {}
+	};
+	const std::vector<StraitDefensePosition>& GetStraitDefensePositions() const { return m_vStraitDefensePositions; }
+
 	// Phase 6: Logging
 	void LogStrategicGeography() const;
 
@@ -344,6 +355,7 @@ private:
 	std::vector<int> m_vPatrolStations;
 	std::vector<PendingTransit> m_vPendingTransits;
 	std::vector<DetectedConvoy> m_vDetectedConvoys;
+	std::vector<StraitDefensePosition> m_vStraitDefensePositions;
 
 	// Internal computation
 	void ClassifyAllCities();
@@ -382,6 +394,9 @@ private:
 
 	// Phase I-6: Enemy convoy detection
 	void DetectInvasionConvoys();
+
+	// Phase I-7: Strait defense position computation
+	void ComputeStraitDefensePositions();
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H

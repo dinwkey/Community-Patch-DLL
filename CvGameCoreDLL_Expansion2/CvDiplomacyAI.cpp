@@ -12947,6 +12947,49 @@ int CvDiplomacyAI::ComputeDynamicStrengthModifier(PlayerTypes ePlayer, PlayerTyp
 		}
 	}
 
+	// Phase I-7: Strait defense doctrine — if WE control naval chokepoints and the
+	// evaluated player's main approach to us requires crossing water, reduce their
+	// perceived strength.  Controlled straits act as a force multiplier for defense.
+	if (eAgainstPlayer == m_pPlayer->GetID())
+	{
+		CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratGeo)
+		{
+			const std::vector<CvStrategicGeographyMap::StraitDefensePosition>& vStraits = pStratGeo->GetStraitDefensePositions();
+			if (!vStraits.empty())
+			{
+				// Check if the evaluated enemy would need to cross water to reach us
+				// Simple heuristic: if they don't share a landmass with our capital, strait control matters
+				CvCity* pOurCapital = m_pPlayer->getCapitalCity();
+				CvCity* pTheirCapital = GET_PLAYER(ePlayer).getCapitalCity();
+				if (pOurCapital && pTheirCapital)
+				{
+					bool bShareLandmass = pOurCapital->HasSharedAreaWith(pTheirCapital, false, false);
+					if (!bShareLandmass)
+					{
+						// Discount based on narrowest controlled strait — narrower = more defensible
+						int iNarrowest = 99;
+						for (size_t i = 0; i < vStraits.size(); i++)
+						{
+							if (vStraits[i].iWidth < iNarrowest)
+								iNarrowest = vStraits[i].iWidth;
+						}
+						// Width 1: -15%, Width 2: -10%, Width 3: -5%
+						int iStraitDiscount = 0;
+						if (iNarrowest <= 1)
+							iStraitDiscount = -15;
+						else if (iNarrowest <= 2)
+							iStraitDiscount = -10;
+						else if (iNarrowest <= 3)
+							iStraitDiscount = -5;
+
+						iModifier += iStraitDiscount;
+					}
+				}
+			}
+		}
+	}
+
 	return ApplyPercentageModifier(iStrength, iModifier);
 }
 
@@ -29480,6 +29523,36 @@ void CvDiplomacyAI::MakeWar()
 								int iReduction = min(iDefenseCount * 10, 60); // Cap at 60% reduction
 								iWeight = (iWeight * (100 - iReduction)) / 100;
 								iWeight = max(iWeight, 1); // Never zero
+							}
+						}
+
+						// Phase I-7: If the TARGET has strait defense positions (they control
+						// naval chokepoints we'd need to cross), reduce war enthusiasm further.
+						// Attacking through a defended strait is extremely costly.
+						const std::vector<CvStrategicGeographyMap::StraitDefensePosition>& vTargetStraits = pTargetStratGeo->GetStraitDefensePositions();
+						if (!vTargetStraits.empty())
+						{
+							CvCity* pOurCapital = GetPlayer()->getCapitalCity();
+							CvCity* pTheirCapital = GET_PLAYER(eTarget).getCapitalCity();
+							if (pOurCapital && pTheirCapital && !pOurCapital->HasSharedAreaWith(pTheirCapital, false, false))
+							{
+								// Penalty scales with how narrow the straits are
+								int iNarrowest = 99;
+								for (size_t iS = 0; iS < vTargetStraits.size(); iS++)
+								{
+									if (vTargetStraits[iS].iWidth < iNarrowest)
+										iNarrowest = vTargetStraits[iS].iWidth;
+								}
+								int iStraitPenalty = 0;
+								if (iNarrowest <= 1)
+									iStraitPenalty = 40; // Width-1 strait is a fortress
+								else if (iNarrowest <= 2)
+									iStraitPenalty = 25;
+								else
+									iStraitPenalty = 15;
+
+								iWeight = (iWeight * (100 - iStraitPenalty)) / 100;
+								iWeight = max(iWeight, 1);
 							}
 						}
 					}

@@ -269,6 +269,7 @@ void CvStrategicGeographyMap::Update()
 	DeriveRoadPriorities();
 	AnalyzeCoastalExposure();
 	DetectNavalChokepoints();
+	ComputeStraitDefensePositions();
 	ComputePatrolStations();
 	BuildWaterConnectivityGraph();
 	AssessAmphibiousThreats();
@@ -1906,6 +1907,74 @@ void CvStrategicGeographyMap::DetectNavalChokepoints()
 		else
 		{
 			analysis.eNavalChoke = NAVAL_CHOKE_NONE;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  Phase I-7: Strait Defense Position Computation
+// ---------------------------------------------------------------------------
+/// For each city near a naval chokepoint, identify the specific water plots on
+/// the strait that should be permanently garrisoned by naval units.
+void CvStrategicGeographyMap::ComputeStraitDefensePositions()
+{
+	m_vStraitDefensePositions.clear();
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	std::set<int> usedPlots; // Avoid duplicate positions
+
+	for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		const StrategicCityAnalysis& analysis = it->second;
+		if (analysis.eNavalChoke == NAVAL_CHOKE_NONE)
+			continue;
+
+		CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+		if (!pCity)
+			continue;
+
+		CvPlot* pCityPlot = pCity->plot();
+		if (!pCityPlot)
+			continue;
+
+		// Scan RING1-RING3 for narrow water tiles that constitute the strait
+		for (int i = 0; i < RING3_PLOTS; i++)
+		{
+			CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+			if (!pLoopPlot || !pLoopPlot->isWater())
+				continue;
+
+			CvLandmass* pWaterBody = pLoopPlot->landmass();
+			if (pWaterBody && pWaterBody->isLake())
+				continue;
+
+			int iPlotIdx = pLoopPlot->GetPlotIndex();
+			if (usedPlots.find(iPlotIdx) != usedPlots.end())
+				continue;
+
+			int iWidth = ScanWaterCorridorWidth(pLoopPlot);
+			if (iWidth <= 0 || iWidth > 3)
+				continue; // Not a strait tile
+
+			// Valid strait defense position
+			StraitDefensePosition pos;
+			pos.iPlotIndex = iPlotIdx;
+			pos.iCityID = analysis.iCityID;
+			pos.iWidth = iWidth;
+			m_vStraitDefensePositions.push_back(pos);
+			usedPlots.insert(iPlotIdx);
+
+			// Limit positions per city to avoid over-dedicating fleet to one strait
+			// Width-1: 2 positions (ranged + melee), Width-2/3: up to 3
+			int iMaxPerCity = (analysis.iNavalChokeWidth <= 1) ? 2 : 3;
+			int iCountForCity = 0;
+			for (size_t j = 0; j < m_vStraitDefensePositions.size(); j++)
+			{
+				if (m_vStraitDefensePositions[j].iCityID == analysis.iCityID)
+					iCountForCity++;
+			}
+			if (iCountForCity >= iMaxPerCity)
+				break;
 		}
 	}
 }
