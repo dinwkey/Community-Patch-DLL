@@ -1866,6 +1866,28 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 	int iFlavorNaval = m_pPlayer->GetFlavorManager()->GetPersonalityIndividualFlavor((FlavorTypes)GC.getInfoTypeForString("FLAVOR_NAVAL"));
 	int iNavalPercent = (iNumCoastalCities * iFlavorNaval * 7) / max(1, m_pPlayer->getNumCities());
 
+	// Geographic posture floors for navy-first island/archipelago civs.
+	int iNavalFloor = 0;
+	switch (GetGeographicPosture())
+	{
+	case GEO_POSTURE_ARCHIPELAGO:
+		iNavalFloor = 65;
+		break;
+	case GEO_POSTURE_ISLAND:
+		iNavalFloor = 55;
+		break;
+	case GEO_POSTURE_PENINSULAR:
+		iNavalFloor = 30;
+		break;
+	case GEO_POSTURE_COASTAL:
+		iNavalFloor = 35;
+		break;
+	default:
+		break;
+	}
+	if (iNavalPercent < iNavalFloor)
+		iNavalPercent = iNavalFloor;
+
 	// Modifiers
 	int iFlavorDefense = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_DEFENSE"));
 	int iDefenseModifier = 100 + iFlavorDefense * 2;

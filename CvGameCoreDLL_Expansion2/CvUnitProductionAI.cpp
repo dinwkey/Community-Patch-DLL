@@ -347,13 +347,30 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 	if (!bFree && bCombat)
 	{
 		CvLandmass* pLM = GC.getMap().getLandmassById(m_pCity->plot()->getLandmass());
-		if(pLM != NULL && pLM->getNumTiles() <= 3)
+		if (pLM != NULL && !pLM->isWater())
 		{
 			if (eDomain == DOMAIN_LAND && m_pCity->HasGarrison() && !bForOperation)
 			{
 				CvUnit* pGarrison = m_pCity->GetGarrisonedUnit();
 				if (pGarrison->getDomainType() == DOMAIN_LAND)
-					return SR_USELESS;
+				{
+					if (pLM->getNumTiles() <= 3)
+					{
+						return SR_USELESS;
+					}
+					else
+					{
+						eGeographicPosture ePosture = kPlayer.GetMilitaryAI()->GetGeographicPosture();
+						if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+						{
+							int iCitiesOnLandmass = pLM->getCitiesPerPlayer(m_pCity->getOwner());
+							int iDesiredGarrison = iCitiesOnLandmass + (iCitiesOnLandmass / 3);
+							int iUnitsOnLandmass = pLM->getUnitsPerPlayer(m_pCity->getOwner());
+							if (iUnitsOnLandmass >= iDesiredGarrison)
+								return SR_USELESS;
+						}
+					}
+				}
 			}
 		}
 	}
