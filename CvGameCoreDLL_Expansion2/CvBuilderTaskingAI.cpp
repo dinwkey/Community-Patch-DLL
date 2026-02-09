@@ -4528,7 +4528,31 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 			//de-emphasize yields for forts if we're not close to the border (they look ugly when spammed)
 			bool bIsFort = strncmp(pkImprovementInfo->GetType(), "IMPROVEMENT_FORT", 64) == 0;
 			if (bIsFort)
-				iYieldScore /= 2;
+			{
+				// Phase I-8: Boost fort priority on strait/water-separator plots for island civs
+				bool bStraitBoost = false;
+				if (pPlot->IsWaterAreaSeparator())
+				{
+					CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+					if (pGeo)
+					{
+						eGeographicPosture ePosture = pGeo->GetGeographicPosture();
+						if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+						{
+							// Strait forts are very valuable for island civs — treat as high-value defensive positions
+							iSecondaryScore += 200;
+							bStraitBoost = true;
+						}
+						else if (ePosture == GEO_POSTURE_PENINSULAR)
+						{
+							iSecondaryScore += 100;
+							bStraitBoost = true;
+						}
+					}
+				}
+				if (!bStraitBoost)
+					iYieldScore /= 2;
+			}
 		}
 	}
 

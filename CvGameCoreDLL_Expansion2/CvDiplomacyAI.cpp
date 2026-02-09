@@ -29557,6 +29557,35 @@ void CvDiplomacyAI::MakeWar()
 						}
 					}
 
+					// Phase I-8: Island civs don't declare war on naval-superior enemies across water.
+					// If we are ISLAND/ARCHIPELAGO and target is across water, gate by relative naval power.
+					{
+						CvStrategicGeographyMap* pOurStratGeo = GetPlayer()->GetMilitaryAI()->GetStrategicGeographyMap();
+						if (pOurStratGeo)
+						{
+							eGeographicPosture ePosture = pOurStratGeo->GetGeographicPosture();
+							if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+							{
+								CvCity* pOurCap = GetPlayer()->getCapitalCity();
+								CvCity* pTheirCap = GET_PLAYER(eTarget).getCapitalCity();
+								if (pOurCap && pTheirCap && !pOurCap->HasSharedAreaWith(pTheirCap, false, false))
+								{
+									// Compare our sea military might vs theirs
+									int iOurNaval = max(1, GetPlayer()->GetMilitarySeaMight());
+									int iTheirNaval = max(1, GET_PLAYER(eTarget).GetMilitarySeaMight());
+									if (iTheirNaval > iOurNaval)
+									{
+										// They have naval superiority — heavy penalty (up to -70%)
+										int iNavalRatio = (iTheirNaval * 100) / iOurNaval;
+										int iNavalPenalty = min(70, (iNavalRatio - 100) / 2);
+										iWeight = (iWeight * (100 - iNavalPenalty)) / 100;
+										iWeight = max(iWeight, 1);
+									}
+								}
+							}
+						}
+					}
+
 					playerList.push_back(eTarget, iWeight);
 				}
 			}
@@ -44933,6 +44962,29 @@ int CvDiplomacyAI::GetCoopWarDesireScore(PlayerTypes eAllyPlayer, PlayerTypes eT
 
 	if (bBadness && !m_pPlayer->HasAnyOffensiveOperationsAgainstPlayer(eTargetPlayer) && !AvoidExchangesWithPlayer(eTargetPlayer, /*bWarOnly*/ true))
 		return 0;
+
+	// Phase I-8: Island civs value naval alliance partners significantly more.
+	// A partner with a strong navy is worth far more than a land-army partner
+	// when your own survival depends on naval control.
+	{
+		CvStrategicGeographyMap* pOurGeo = GetPlayer()->GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pOurGeo)
+		{
+			eGeographicPosture ePosture = pOurGeo->GetGeographicPosture();
+			if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+			{
+				int iAllyNaval = max(1, GET_PLAYER(eAllyPlayer).GetMilitarySeaMight());
+				int iAllyLand = max(1, GET_PLAYER(eAllyPlayer).GetMilitaryLandMight());
+				// Bonus if ally has strong navy relative to their land army
+				if (iAllyNaval > iAllyLand / 2)
+				{
+					// Up to +50% bonus scaled by ally naval strength ratio
+					int iNavalBonus = min(50, (iAllyNaval * 100) / max(1, iAllyLand));
+					iScore = (iScore * (100 + iNavalBonus)) / 100;
+				}
+			}
+		}
+	}
 
 	return iScore;
 }

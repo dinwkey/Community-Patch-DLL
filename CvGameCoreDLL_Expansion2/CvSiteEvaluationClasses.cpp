@@ -746,6 +746,22 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 		{
 			iValueModifier += (iTotalPlotValue * /*40*/ GD_INT_GET(SETTLER_BUILD_ON_COAST_PERCENT)) / 100;
 			if (pDebug) vQualifiersPositive.push_back("(V) coast but not too exposed");
+
+			// Phase I-8: Island/archipelago civs strongly prefer SHELTERED coastal sites
+			// (≤3 water plots = sheltered harbor, defensible position)
+			if (pPlayer)
+			{
+				CvStrategicGeographyMap* pIslandGeo = pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+				if (pIslandGeo)
+				{
+					eGeographicPosture ePosture = pIslandGeo->GetGeographicPosture();
+					if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+					{
+						iValueModifier += (iTotalPlotValue * 30) / 100;
+						if (pDebug) vQualifiersPositive.push_back("(V) island sheltered harbor");
+					}
+				}
+			}
 		}
 
 		if (pPlayer)

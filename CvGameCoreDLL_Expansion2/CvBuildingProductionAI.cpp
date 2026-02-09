@@ -411,6 +411,19 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 			iBonus += (iUnhappyConnection * 10);
 			bGoodforGPT = true;
 		}
+
+		// Phase I-8: Island/archipelago civs build water route buildings (harbor etc.) earlier
+		{
+			CvStrategicGeographyMap* pIslandGeo = kPlayer.GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pIslandGeo)
+			{
+				eGeographicPosture ePosture = pIslandGeo->GetGeographicPosture();
+				if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+					iBonus += 30;
+				else if (ePosture == GEO_POSTURE_ISLAND)
+					iBonus += 20;
+			}
+		}
 	}
 
 	if (pkBuildingInfo->AllowsIndustrialWaterRoutes())
