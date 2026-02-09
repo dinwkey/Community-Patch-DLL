@@ -657,6 +657,40 @@ void CvHomelandAI::FindHomelandTargets()
 		}
 	}
 
+	const CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (pGeo && !pGeo->GetPatrolStations().empty())
+	{
+		const std::vector<int>& vStations = pGeo->GetPatrolStations();
+		for (size_t i = 0; i < vStations.size(); i++)
+		{
+			CvPlot* pPlot = GC.getMap().plotByIndex(vStations[i]);
+			if (!pPlot || !pPlot->isWater() || pPlot->isLake())
+				continue;
+			if (!pPlot->isValidMovePlot(m_pPlayer->GetID()))
+				continue;
+
+			bool bDuplicate = false;
+			for (size_t j = 0; j < m_TargetedNavalSentryPoints.size(); j++)
+			{
+				if (m_TargetedNavalSentryPoints[j].GetTargetX() == pPlot->getX() &&
+					m_TargetedNavalSentryPoints[j].GetTargetY() == pPlot->getY())
+				{
+					bDuplicate = true;
+					break;
+				}
+			}
+
+			if (bDuplicate)
+				continue;
+
+			newTarget.SetTargetType(AI_HOMELAND_TARGET_SENTRY_POINT_NAVAL);
+			newTarget.SetTargetX(pPlot->getX());
+			newTarget.SetTargetY(pPlot->getY());
+			newTarget.SetAuxIntData(200);
+			m_TargetedNavalSentryPoints.push_back(newTarget);
+		}
+	}
+
 	//we also want to guard our workers!
 	int iUnitLoop = 0;
 	for (const CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = m_pPlayer->nextUnit(&iUnitLoop))

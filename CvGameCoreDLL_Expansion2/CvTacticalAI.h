@@ -397,6 +397,7 @@ private:
 	void PlotBlockadeMoves();
 	void PlotCounterBlockadeMoves();
 	void PlotCoastalDefenseMoves();
+	void PlotNavalPatrolStationMoves();
 	void PlotCivilianAttackMoves();
 	void ExecuteCivilianAttackMoves(AITacticalTargetType eTargetType);
 	void PlotHealMoves(bool bFirstPass);

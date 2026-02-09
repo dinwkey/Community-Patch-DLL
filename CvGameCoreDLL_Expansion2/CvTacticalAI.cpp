@@ -1101,6 +1101,9 @@ void CvTacticalAI::AssignGlobalLowPrioMoves()
 	// Position naval units defensively around threatened coastal cities
 	PlotCoastalDefenseMoves();
 
+	// Drift idle naval units toward patrol stations (island civ posture)
+	PlotNavalPatrolStationMoves();
+
 	//civilians move out of harms way last, when all potential defenders are set in place
 	PlotMovesToSafety(false);
 }
@@ -2216,6 +2219,91 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 					break;
 			}
 		}
+	}
+}
+
+void CvTacticalAI::PlotNavalPatrolStationMoves()
+{
+	const CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (!pGeo)
+		return;
+	if (pGeo->GetGeographicPosture() != GEO_POSTURE_ISLAND && pGeo->GetGeographicPosture() != GEO_POSTURE_ARCHIPELAGO)
+		return;
+
+	const std::vector<int>& vStations = pGeo->GetPatrolStations();
+	if (vStations.empty())
+		return;
+
+	ClearCurrentMoveUnits(AI_TACTICAL_ESCORT);
+
+	std::vector<CvPlot*> vTargets;
+	for (size_t i = 0; i < vStations.size(); i++)
+	{
+		CvPlot* pPlot = GC.getMap().plotByIndex(vStations[i]);
+		if (!pPlot || !pPlot->isWater() || pPlot->isLake())
+			continue;
+		if (!pPlot->isValidMovePlot(m_pPlayer->GetID()))
+			continue;
+
+		CvUnit* pDefender = pPlot->getBestDefender(m_pPlayer->GetID());
+		if (pDefender && pDefender->getDomainType() == DOMAIN_SEA)
+			continue;
+
+		vTargets.push_back(pPlot);
+	}
+
+	if (vTargets.empty())
+		return;
+
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+	{
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (!pUnit || !pUnit->canUseForTacticalAI())
+			continue;
+		if (pUnit->getDomainType() != DOMAIN_SEA || !pUnit->IsCombatUnit())
+			continue;
+		if (pUnit->getArmyID() != -1)
+			continue;
+		if (pUnit->shouldHeal(false))
+			continue;
+		if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA || pUnit->getInvisibleType() != NO_INVISIBLE)
+			continue;
+
+		CvPlot* pBestTarget = NULL;
+		int iBestTurns = INT_MAX;
+
+		for (size_t iTarget = 0; iTarget < vTargets.size(); iTarget++)
+		{
+			CvPlot* pTarget = vTargets[iTarget];
+			int iTurns = pUnit->TurnsToReachTarget(pTarget, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF, 4);
+			if (iTurns == MAX_INT || iTurns > 4)
+				continue;
+			if (iTurns < iBestTurns)
+			{
+				iBestTurns = iTurns;
+				pBestTarget = pTarget;
+			}
+		}
+
+		if (!pBestTarget)
+			continue;
+
+		if (pUnit->plot() == pBestTarget)
+		{
+			if (pUnit->canSentry(pBestTarget))
+				pUnit->PushMission(CvTypes::getMISSION_ALERT());
+			else
+				pUnit->PushMission(CvTypes::getMISSION_SKIP());
+			UnitProcessed(pUnit->GetID());
+		}
+		else
+		{
+			ExecuteMoveToPlot(pUnit, pBestTarget, true, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+		}
+
+		vTargets.erase(std::remove(vTargets.begin(), vTargets.end(), pBestTarget), vTargets.end());
+		if (vTargets.empty())
+			break;
 	}
 }
 

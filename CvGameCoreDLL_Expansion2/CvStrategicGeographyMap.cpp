@@ -217,6 +217,7 @@ void CvStrategicGeographyMap::Init(PlayerTypes ePlayer)
 	m_waterAreaGraph.clear();
 	m_iLargestOceanAreaID = -1;
 	m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
+	m_vPatrolStations.clear();
 }
 
 /// Should we recompute? Every 5 turns peacetime, every 3 turns wartime, or if never computed.
@@ -253,6 +254,7 @@ void CvStrategicGeographyMap::Update()
 	{
 		m_cityAnalysis.clear();
 		m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
+		m_vPatrolStations.clear();
 		return;
 	}
 
@@ -266,6 +268,7 @@ void CvStrategicGeographyMap::Update()
 	DeriveRoadPriorities();
 	AnalyzeCoastalExposure();
 	DetectNavalChokepoints();
+	ComputePatrolStations();
 	BuildWaterConnectivityGraph();
 	AssessAmphibiousThreats();
 	LogStrategicGeography();
@@ -1900,6 +1903,154 @@ void CvStrategicGeographyMap::DetectNavalChokepoints()
 		else
 		{
 			analysis.eNavalChoke = NAVAL_CHOKE_NONE;
+		}
+	}
+}
+
+static CvPlot* GetPlotInDirection(CvPlot* pStart, DirectionTypes eDirection, int iSteps)
+{
+	CvPlot* pPlot = pStart;
+	for (int i = 0; i < iSteps; i++)
+	{
+		if (!pPlot)
+			return NULL;
+		pPlot = plotDirection(pPlot->getX(), pPlot->getY(), eDirection);
+	}
+	return pPlot;
+}
+
+void CvStrategicGeographyMap::ComputePatrolStations()
+{
+	m_vPatrolStations.clear();
+
+	if (m_ePlayer == NO_PLAYER)
+		return;
+
+	if (m_eGeographicPosture != GEO_POSTURE_ISLAND && m_eGeographicPosture != GEO_POSTURE_ARCHIPELAGO)
+		return;
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+
+	for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
+	{
+		const StrategicCityAnalysis& analysis = it->second;
+		if (!analysis.bIsFrontLine || analysis.eExposure == COASTAL_EXPOSURE_NONE)
+			continue;
+
+		CvCity* pCity = kPlayer.getCity(analysis.iCityID);
+		if (!pCity)
+			continue;
+
+		CvPlot* pCityPlot = pCity->plot();
+		if (!pCityPlot)
+			continue;
+
+		CvPlot* pPrimaryStation = NULL;
+		DirectionTypes eBestDir = NO_DIRECTION;
+		DirectionTypes eSecondDir = NO_DIRECTION;
+		int iBestLen = 0;
+		int iSecondLen = 0;
+
+		if (analysis.eNavalChoke != NAVAL_CHOKE_NONE || analysis.iStraitTilesNearby > 0)
+		{
+			int iBestWidth = 99;
+			int iBestDist = 99;
+			for (int i = 1; i < RING3_PLOTS; i++)
+			{
+				CvPlot* pLoopPlot = iterateRingPlots(pCityPlot, i);
+				if (!pLoopPlot || !pLoopPlot->isWater() || pLoopPlot->isLake())
+					continue;
+				int iWidth = ScanWaterCorridorWidth(pLoopPlot);
+				if (iWidth <= 0)
+					continue;
+				int iDist = plotDistance(pCityPlot->getX(), pCityPlot->getY(), pLoopPlot->getX(), pLoopPlot->getY());
+				if (iWidth < iBestWidth || (iWidth == iBestWidth && iDist < iBestDist))
+				{
+					iBestWidth = iWidth;
+					iBestDist = iDist;
+					pPrimaryStation = pLoopPlot;
+				}
+			}
+		}
+
+		if (!pPrimaryStation)
+		{
+			for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+			{
+				int iLen = 0;
+				CvPlot* pStep = pCityPlot;
+				for (int iStep = 0; iStep < 3; iStep++)
+				{
+					pStep = plotDirection(pStep->getX(), pStep->getY(), (DirectionTypes)iDir);
+					if (!pStep || !pStep->isWater() || pStep->isLake())
+						break;
+					iLen++;
+				}
+				if (iLen > iBestLen)
+				{
+					iSecondLen = iBestLen;
+					eSecondDir = eBestDir;
+					iBestLen = iLen;
+					eBestDir = (DirectionTypes)iDir;
+				}
+				else if (iLen > iSecondLen)
+				{
+					iSecondLen = iLen;
+					eSecondDir = (DirectionTypes)iDir;
+				}
+			}
+
+			if (eBestDir != NO_DIRECTION && iBestLen > 0)
+			{
+				CvPlot* pStep2 = GetPlotInDirection(pCityPlot, eBestDir, 2);
+				CvPlot* pStep3 = GetPlotInDirection(pCityPlot, eBestDir, 3);
+				CvPlot* pStep1 = GetPlotInDirection(pCityPlot, eBestDir, 1);
+				if (pStep2 && pStep2->isWater() && !pStep2->isLake())
+					pPrimaryStation = pStep2;
+				else if (pStep3 && pStep3->isWater() && !pStep3->isLake())
+					pPrimaryStation = pStep3;
+				else if (pStep1 && pStep1->isWater() && !pStep1->isLake())
+					pPrimaryStation = pStep1;
+			}
+		}
+
+		if (pPrimaryStation && pPrimaryStation->isValidMovePlot(m_ePlayer))
+		{
+			bool bTooClose = false;
+			for (size_t i = 0; i < m_vPatrolStations.size(); i++)
+			{
+				CvPlot* pExisting = GC.getMap().plotByIndex(m_vPatrolStations[i]);
+				if (pExisting && plotDistance(*pExisting, *pPrimaryStation) <= 2)
+				{
+					bTooClose = true;
+					break;
+				}
+			}
+			if (!bTooClose)
+				m_vPatrolStations.push_back(pPrimaryStation->GetPlotIndex());
+		}
+
+		if (analysis.eExposure == COASTAL_EXPOSURE_EXPOSED && eSecondDir != NO_DIRECTION && iSecondLen >= 2)
+		{
+			CvPlot* pSecond = GetPlotInDirection(pCityPlot, eSecondDir, 2);
+			if (!pSecond || !pSecond->isWater() || pSecond->isLake())
+				pSecond = GetPlotInDirection(pCityPlot, eSecondDir, 1);
+
+			if (pSecond && pSecond->isValidMovePlot(m_ePlayer))
+			{
+				bool bTooClose = false;
+				for (size_t i = 0; i < m_vPatrolStations.size(); i++)
+				{
+					CvPlot* pExisting = GC.getMap().plotByIndex(m_vPatrolStations[i]);
+					if (pExisting && plotDistance(*pExisting, *pSecond) <= 2)
+					{
+						bTooClose = true;
+						break;
+					}
+				}
+				if (!bTooClose)
+					m_vPatrolStations.push_back(pSecond->GetPlotIndex());
+			}
 		}
 	}
 }

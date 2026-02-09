@@ -285,6 +285,7 @@ public:
 	bool HasAnyCityData() const { return !m_cityAnalysis.empty(); }
 	int GetLastUpdateTurn() const { return m_iLastFullUpdate; }
 	eGeographicPosture GetGeographicPosture() const { return m_eGeographicPosture; }
+	const std::vector<int>& GetPatrolStations() const { return m_vPatrolStations; }
 
 	// Phase 6: Logging
 	void LogStrategicGeography() const;
@@ -294,6 +295,7 @@ private:
 	int m_iLastFullUpdate;
 	std::map<int, StrategicCityAnalysis> m_cityAnalysis;
 	eGeographicPosture m_eGeographicPosture;
+	std::vector<int> m_vPatrolStations;
 
 	// Internal computation
 	void ClassifyAllCities();
@@ -303,6 +305,7 @@ private:
 	void BuildDependencyGraph();    // Phase 4: floodgate/dependency detection
 	void AnalyzeApproachCorridors();// Phase 5: per-enemy approach analysis
 	void DeriveRoadPriorities();    // Phase 5: road priority derivation
+	void ComputePatrolStations();   // Patrol station placement for island civs
 	int ComputeApproachDifficulty(CvCity* pOurCity, CvCity* pEnemyCity) const;
 	int ScanCorridorWidth(CvPlot* pStart, DirectionTypes eDirection) const;
 	int ComputeMinBorderDistance(CvCity* pCity) const;
