@@ -1101,6 +1101,9 @@ void CvTacticalAI::AssignGlobalLowPrioMoves()
 	// Convoy escort for high-risk inter-island transits
 	PlotConvoyEscortMoves();
 
+	// Phase I-6: Intercept enemy invasion convoys before they land
+	PlotAntiInvasionMoves();
+
 	// Position naval units defensively around threatened coastal cities
 	PlotCoastalDefenseMoves();
 
@@ -2416,6 +2419,153 @@ void CvTacticalAI::PlotConvoyEscortMoves()
 		{
 			CvUnit* pEscort = vAssigned[i];
 			ExecuteMoveToPlot(pEscort, pConvoyOrigin, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
+		}
+	}
+}
+
+/// Phase I-6: Intercept enemy invasion convoys detected by the strategic geography map.
+/// Assigns available naval combat units to attack clusters of enemy embarked units
+/// approaching our coast. Prioritizes clusters containing settlers.
+void CvTacticalAI::PlotAntiInvasionMoves()
+{
+	const CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (!pGeo || !pGeo->IsInvasionImminent())
+		return;
+
+	const std::vector<CvStrategicGeographyMap::DetectedConvoy>& vConvoys = pGeo->GetDetectedConvoys();
+
+	// Sort convoys: settler convoys first, then by proximity to our coast
+	std::vector<size_t> vSortOrder;
+	for (size_t i = 0; i < vConvoys.size(); i++)
+		vSortOrder.push_back(i);
+
+	// Simple insertion sort by priority (settler first, then closest)
+	for (size_t i = 1; i < vSortOrder.size(); i++)
+	{
+		size_t key = vSortOrder[i];
+		int j = (int)i - 1;
+		while (j >= 0)
+		{
+			size_t cmp = vSortOrder[j];
+			bool bKeyBetter = false;
+			if (vConvoys[key].bHasSettler && !vConvoys[cmp].bHasSettler)
+				bKeyBetter = true;
+			else if (vConvoys[key].bHasSettler == vConvoys[cmp].bHasSettler &&
+			         vConvoys[key].iNearestCoastDist < vConvoys[cmp].iNearestCoastDist)
+				bKeyBetter = true;
+
+			if (!bKeyBetter)
+				break;
+			vSortOrder[j + 1] = vSortOrder[j];
+			j--;
+		}
+		vSortOrder[j + 1] = key;
+	}
+
+	// Collect available naval combat units
+	std::vector<CvUnit*> vInterceptors;
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+	{
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (!pUnit || !pUnit->canUseForTacticalAI())
+			continue;
+		if (pUnit->getDomainType() != DOMAIN_SEA || !pUnit->IsCanAttack())
+			continue;
+		if (pUnit->getArmyID() != -1)
+			continue;
+		if (pUnit->shouldHeal(false))
+			continue;
+		if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA || pUnit->getInvisibleType() != NO_INVISIBLE)
+			continue;
+
+		vInterceptors.push_back(pUnit);
+	}
+
+	if (vInterceptors.empty())
+		return;
+
+	// Assign interceptors to convoys
+	for (size_t iConvoy = 0; iConvoy < vSortOrder.size() && !vInterceptors.empty(); iConvoy++)
+	{
+		const CvStrategicGeographyMap::DetectedConvoy& convoy = vConvoys[vSortOrder[iConvoy]];
+		CvPlot* pConvoyCenter = GC.getMap().plotByIndex(convoy.iCenterPlotIndex);
+		if (!pConvoyCenter)
+			continue;
+
+		// Try to find embarked enemy units near the center to attack directly
+		// Search the area around the convoy center for actual targets
+		CvPlot* pBestTarget = NULL;
+		int iBestTargetPriority = 0;
+
+		for (int iRing = 0; iRing <= 3; iRing++)
+		{
+			int iStart = (iRing == 0) ? 0 : RING_PLOTS[iRing - 1];
+			int iEnd = RING_PLOTS[iRing];
+			for (int iIdx = iStart; iIdx < iEnd; iIdx++)
+			{
+				CvPlot* pCheck = iterateRingPlots(pConvoyCenter, iIdx);
+				if (!pCheck || !pCheck->isWater())
+					continue;
+				if (!pCheck->isVisible(m_pPlayer->getTeam()))
+					continue;
+
+				// Look for enemy embarked units
+				for (int iUnitIdx = 0; iUnitIdx < pCheck->getNumUnits(); iUnitIdx++)
+				{
+					CvUnit* pEnemy = pCheck->getUnitByIndex(iUnitIdx);
+					if (!pEnemy || !pEnemy->isEmbarked())
+						continue;
+					if (!m_pPlayer->IsAtWarWith(pEnemy->getOwner()))
+						continue;
+
+					int iPriority = 10; // Base priority
+					if (pEnemy->AI_getUnitAIType() == UNITAI_SETTLE)
+						iPriority = 100; // Settlers are #1 target
+					else if (pEnemy->IsGreatPerson())
+						iPriority = 80;
+
+					if (iPriority > iBestTargetPriority)
+					{
+						iBestTargetPriority = iPriority;
+						pBestTarget = pCheck;
+					}
+				}
+			}
+		}
+
+		if (!pBestTarget)
+			pBestTarget = pConvoyCenter; // Fallback: move toward convoy center
+
+		// Assign up to 3 interceptors per convoy (proportional to convoy size)
+		int iMaxAssign = min(3, max(1, convoy.iEmbarkCount / 2));
+		int iAssigned = 0;
+
+		for (size_t iUnit = 0; iUnit < vInterceptors.size() && iAssigned < iMaxAssign; )
+		{
+			CvUnit* pUnit = vInterceptors[iUnit];
+			int iTurns = pUnit->TurnsToReachTarget(pBestTarget, CvUnit::MOVEFLAG_APPROX_TARGET_RING1, 5);
+			if (iTurns == MAX_INT || iTurns > 5)
+			{
+				iUnit++;
+				continue;
+			}
+
+			// Move toward target
+			ExecuteMoveToPlot(pUnit, pBestTarget, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLogString;
+				strLogString.Format("Anti-invasion: Unit %d intercepting convoy at (%d,%d), enemy=%d, count=%d%s, dist=%d",
+					pUnit->GetID(), pBestTarget->getX(), pBestTarget->getY(),
+					(int)convoy.eEnemy, convoy.iEmbarkCount,
+					convoy.bHasSettler ? " [SETTLER]" : "", iTurns);
+				LogTacticalMessage(strLogString);
+			}
+
+			iAssigned++;
+			vInterceptors.erase(vInterceptors.begin() + iUnit);
+			// Don't increment iUnit since we erased the current element
 		}
 	}
 }

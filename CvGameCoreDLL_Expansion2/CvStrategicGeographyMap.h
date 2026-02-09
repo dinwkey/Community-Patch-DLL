@@ -318,6 +318,21 @@ public:
 	const std::vector<PendingTransit>& GetPendingTransits() const { return m_vPendingTransits; }
 	void ClearCompletedTransits();
 
+	// Phase I-6: Invasion convoy detection
+	struct DetectedConvoy
+	{
+		PlayerTypes eEnemy;
+		int iCenterPlotIndex;     // Approximate centroid of the cluster
+		int iEmbarkCount;         // Number of embarked units in the cluster
+		bool bHasSettler;         // Cluster contains a settler (highest priority target)
+		int iNearestCoastDist;    // Distance from cluster center to our nearest coastal city
+
+		DetectedConvoy() : eEnemy(NO_PLAYER), iCenterPlotIndex(-1), iEmbarkCount(0),
+		                   bHasSettler(false), iNearestCoastDist(99) {}
+	};
+	const std::vector<DetectedConvoy>& GetDetectedConvoys() const { return m_vDetectedConvoys; }
+	bool IsInvasionImminent() const { return !m_vDetectedConvoys.empty(); }
+
 	// Phase 6: Logging
 	void LogStrategicGeography() const;
 
@@ -328,6 +343,7 @@ private:
 	eGeographicPosture m_eGeographicPosture;
 	std::vector<int> m_vPatrolStations;
 	std::vector<PendingTransit> m_vPendingTransits;
+	std::vector<DetectedConvoy> m_vDetectedConvoys;
 
 	// Internal computation
 	void ClassifyAllCities();
@@ -363,6 +379,9 @@ private:
 
 	// Naval Phase 4: Amphibious threat assessment
 	void AssessAmphibiousThreats();
+
+	// Phase I-6: Enemy convoy detection
+	void DetectInvasionConvoys();
 };
 
 #endif // CIV5_STRATEGIC_GEOGRAPHY_MAP_H

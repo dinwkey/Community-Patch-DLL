@@ -272,6 +272,7 @@ void CvStrategicGeographyMap::Update()
 	ComputePatrolStations();
 	BuildWaterConnectivityGraph();
 	AssessAmphibiousThreats();
+	DetectInvasionConvoys();
 	ClearCompletedTransits();
 	LogStrategicGeography();
 }
@@ -2656,6 +2657,157 @@ void CvStrategicGeographyMap::AssessAmphibiousThreats()
 
 		// Flag: vulnerable if score is significant AND enemies can actually reach us
 		analysis.bVulnerableToAmphibious = (iScore >= 40 && iReachableEnemies > 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  Phase I-6: Invasion Convoy Detection
+// ---------------------------------------------------------------------------
+/// Scan visible enemy embarked units. If ≥3 are within 3 tiles of each other
+/// AND within 8 tiles of one of our coastal cities, flag INVASION_IMMINENT.
+/// The detected convoys are stored for the tactical AI to intercept.
+void CvStrategicGeographyMap::DetectInvasionConvoys()
+{
+	m_vDetectedConvoys.clear();
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	TeamTypes eOurTeam = kPlayer.getTeam();
+
+	// Collect our coastal city positions for proximity check
+	std::vector<CvPlot*> vOurCoastalCities;
+	int iCityLoop = 0;
+	for (CvCity* pCity = kPlayer.firstCity(&iCityLoop); pCity != NULL; pCity = kPlayer.nextCity(&iCityLoop))
+	{
+		if (pCity->isCoastal())
+			vOurCoastalCities.push_back(pCity->plot());
+	}
+	if (vOurCoastalCities.empty())
+		return;
+
+	// Collect visible enemy embarked units, grouped by enemy player
+	// unitInfo: plot index, x, y, isSettler
+	struct EmbarkInfo { int iPlotIdx; int iX; int iY; bool bSettler; };
+	std::map<PlayerTypes, std::vector<EmbarkInfo> > enemyEmbarked;
+
+	for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS; iPlayer++)
+	{
+		PlayerTypes eEnemy = (PlayerTypes)iPlayer;
+		if (eEnemy == m_ePlayer)
+			continue;
+		CvPlayer& kEnemy = GET_PLAYER(eEnemy);
+		if (!kEnemy.isAlive() || !kPlayer.IsAtWarWith(eEnemy))
+			continue;
+
+		int iUnitLoop = 0;
+		for (CvUnit* pUnit = kEnemy.firstUnit(&iUnitLoop); pUnit != NULL; pUnit = kEnemy.nextUnit(&iUnitLoop))
+		{
+			if (!pUnit->isEmbarked())
+				continue;
+			CvPlot* pPlot = pUnit->plot();
+			if (!pPlot || !pPlot->isVisible(eOurTeam))
+				continue;
+
+			EmbarkInfo info;
+			info.iPlotIdx = pPlot->GetPlotIndex();
+			info.iX = pPlot->getX();
+			info.iY = pPlot->getY();
+			info.bSettler = (pUnit->AI_getUnitAIType() == UNITAI_SETTLE);
+			enemyEmbarked[eEnemy].push_back(info);
+		}
+	}
+
+	// For each enemy, cluster their embarked units with simple greedy grouping:
+	// pick a seed unit, collect all within 3 tiles, remove from pool, repeat.
+	for (std::map<PlayerTypes, std::vector<EmbarkInfo> >::iterator itEnemy = enemyEmbarked.begin();
+		itEnemy != enemyEmbarked.end(); ++itEnemy)
+	{
+		PlayerTypes eEnemy = itEnemy->first;
+		std::vector<EmbarkInfo>& vUnits = itEnemy->second;
+
+		std::vector<bool> vUsed(vUnits.size(), false);
+		for (size_t iSeed = 0; iSeed < vUnits.size(); iSeed++)
+		{
+			if (vUsed[iSeed])
+				continue;
+
+			// Cluster around this seed
+			std::vector<size_t> cluster;
+			cluster.push_back(iSeed);
+			vUsed[iSeed] = true;
+
+			for (size_t j = iSeed + 1; j < vUnits.size(); j++)
+			{
+				if (vUsed[j])
+					continue;
+				// Check distance from seed
+				int iDist = plotDistance(vUnits[iSeed].iX, vUnits[iSeed].iY, vUnits[j].iX, vUnits[j].iY);
+				if (iDist <= 3)
+				{
+					cluster.push_back(j);
+					vUsed[j] = true;
+				}
+			}
+
+			// Need at least 3 embarked units to qualify as invasion convoy
+			if ((int)cluster.size() < 3)
+				continue;
+
+			// Compute centroid and check for settlers
+			int iSumX = 0, iSumY = 0;
+			bool bHasSettler = false;
+			for (size_t k = 0; k < cluster.size(); k++)
+			{
+				iSumX += vUnits[cluster[k]].iX;
+				iSumY += vUnits[cluster[k]].iY;
+				if (vUnits[cluster[k]].bSettler)
+					bHasSettler = true;
+			}
+			int iCenterX = iSumX / (int)cluster.size();
+			int iCenterY = iSumY / (int)cluster.size();
+
+			// Check proximity to our coastal cities (within 8 tiles)
+			int iMinCoastDist = MAX_INT;
+			for (size_t c = 0; c < vOurCoastalCities.size(); c++)
+			{
+				int iDist = plotDistance(iCenterX, iCenterY,
+					vOurCoastalCities[c]->getX(), vOurCoastalCities[c]->getY());
+				if (iDist < iMinCoastDist)
+					iMinCoastDist = iDist;
+			}
+
+			if (iMinCoastDist > 8)
+				continue; // Too far to be an immediate threat
+
+			// Build DetectedConvoy
+			DetectedConvoy convoy;
+			convoy.eEnemy = eEnemy;
+			convoy.iCenterPlotIndex = GC.getMap().plotNum(iCenterX, iCenterY);
+			convoy.iEmbarkCount = (int)cluster.size();
+			convoy.bHasSettler = bHasSettler;
+			convoy.iNearestCoastDist = iMinCoastDist;
+			m_vDetectedConvoys.push_back(convoy);
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLogName;
+				CvString strPlayerName(kPlayer.getCivilizationShortDescription());
+				strPlayerName.Replace(' ', '_');
+				if (GC.getPlayerAndCityAILogSplit())
+					strLogName = "StrategicGeographyLog_" + strPlayerName + ".csv";
+				else
+					strLogName = "StrategicGeographyLog.csv";
+				FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
+				if (pLog)
+				{
+					CvString msg;
+					msg.Format("%03d, %s, INVASION_CONVOY: enemy=%d, center=(%d,%d), count=%d, settler=%d, coastDist=%d",
+						GC.getGame().getElapsedGameTurns(), strPlayerName.c_str(),
+						(int)eEnemy, iCenterX, iCenterY, (int)cluster.size(),
+						bHasSettler ? 1 : 0, iMinCoastDist);
+					pLog->Msg(msg.c_str());
+				}
+			}
+		}
 	}
 }
 

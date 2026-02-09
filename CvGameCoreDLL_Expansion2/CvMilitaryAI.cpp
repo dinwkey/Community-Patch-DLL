@@ -2809,6 +2809,27 @@ void CvMilitaryAI::UpdateDefenseState()
 	{
 		m_eNavalDefenseState = DEFENSE_STATE_NEEDED;
 	}
+
+	// Phase I-6: Invasion convoy proximity escalation — force CRITICAL when invasion is imminent
+	CvStrategicGeographyMap* pStratGeo = GetStrategicGeographyMap();
+	if (pStratGeo && pStratGeo->IsInvasionImminent())
+	{
+		if (m_eNavalDefenseState < DEFENSE_STATE_CRITICAL)
+		{
+			m_eNavalDefenseState = DEFENSE_STATE_CRITICAL;
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString playerName = GetPlayer()->getCivilizationShortDescription();
+				FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+				CvString msg;
+				msg.Format("%03d, %s, INVASION IMMINENT: %d convoys detected -> naval CRITICAL",
+					GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+					(int)pStratGeo->GetDetectedConvoys().size());
+				pLog->Msg(msg.c_str());
+			}
+		}
+	}
 }
 
 /// Count up barbarian camps and units visible to us
