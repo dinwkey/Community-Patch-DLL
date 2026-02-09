@@ -50,11 +50,38 @@ enum eNavalChokeType
 
 enum eGeographicPosture
 {
+	GEO_POSTURE_UNKNOWN,
 	GEO_POSTURE_CONTINENTAL,  // Core on large contiguous landmass
 	GEO_POSTURE_COASTAL,      // Large landmass core with heavy coastal exposure
 	GEO_POSTURE_PENINSULAR,   // Large landmass core with a narrow land connection
 	GEO_POSTURE_ISLAND,       // All/most cities on a small landmass
 	GEO_POSTURE_ARCHIPELAGO,  // Cities dispersed across multiple small landmasses
+};
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Convoy Transit Risk Assessment (Phase I-5)
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+enum eTransitRisk
+{
+	TRANSIT_RISK_UNKNOWN,
+	TRANSIT_RISK_LOW,      // Peacetime, no hostile naval nearby, short crossing
+	TRANSIT_RISK_MEDIUM,   // Hostile civ exists but no visible naval near route
+	TRANSIT_RISK_HIGH,     // At war, enemy naval within ~10 tiles, or barbarian threat
+};
+
+// Pending transit: unit waiting for escort or already en route
+struct PendingTransit
+{
+	int iUnitID;
+	int iOriginPlotIndex;    // Embarkation point
+	int iDestPlotIndex;      // Destination
+	eTransitRisk eRisk;
+	int iTurnQueued;         // Turn unit requested escort
+	bool bHighPriority;      // Settler/GP = true, combat unit = false
+
+	PendingTransit() : iUnitID(-1), iOriginPlotIndex(-1), iDestPlotIndex(-1), 
+	                   eRisk(TRANSIT_RISK_UNKNOWN), iTurnQueued(-1), bHighPriority(false) {}
 };
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -287,6 +314,10 @@ public:
 	eGeographicPosture GetGeographicPosture() const { return m_eGeographicPosture; }
 	const std::vector<int>& GetPatrolStations() const { return m_vPatrolStations; }
 
+	// Convoy transit queries (Phase I-5)
+	const std::vector<PendingTransit>& GetPendingTransits() const { return m_vPendingTransits; }
+	void ClearCompletedTransits();
+
 	// Phase 6: Logging
 	void LogStrategicGeography() const;
 
@@ -296,6 +327,7 @@ private:
 	std::map<int, StrategicCityAnalysis> m_cityAnalysis;
 	eGeographicPosture m_eGeographicPosture;
 	std::vector<int> m_vPatrolStations;
+	std::vector<PendingTransit> m_vPendingTransits;
 
 	// Internal computation
 	void ClassifyAllCities();

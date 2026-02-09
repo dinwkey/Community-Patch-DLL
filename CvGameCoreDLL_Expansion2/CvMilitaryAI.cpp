@@ -3307,6 +3307,79 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 	}
 }
 
+/// Phase I-5: Assess convoy transit risk from origin to destination
+eTransitRisk CvMilitaryAI::AssessTransitRisk(CvPlot* pOrigin, CvPlot* pDestination, bool bIsHighValue) const
+{
+	if (!pOrigin || !pDestination)
+		return TRANSIT_RISK_UNKNOWN;
+
+	// Check if we're at war with anyone
+	bool bAtWar = GET_TEAM(m_pPlayer->getTeam()).getAtWarCount(false) > 0;
+	if (!bAtWar)
+	{
+		// Peacetime: still check for barbarian naval threats
+		int iLoop = 0;
+		for (CvUnit* pLoopUnit = GET_PLAYER(BARBARIAN_PLAYER).firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = GET_PLAYER(BARBARIAN_PLAYER).nextUnit(&iLoop))
+		{
+			if (pLoopUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsCanAttack())
+			{
+				// Check if barbarian naval within ~8 tiles of route
+				int iDistToOrigin = plotDistance(*pLoopUnit->plot(), *pOrigin);
+				int iDistToDest = plotDistance(*pLoopUnit->plot(), *pDestination);
+				if (iDistToOrigin <= 8 || iDistToDest <= 8)
+					return TRANSIT_RISK_MEDIUM;
+			}
+		}
+		// No barbarian threat, peaceful = LOW RISK
+		return TRANSIT_RISK_LOW;
+	}
+
+	// At war: check for nearby hostile naval units
+	int iMinEnemyDist = INT_MAX;
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_PLAYERS; iPlayerLoop++)
+	{
+		PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
+		if (!IsPlayerValid(eLoopPlayer))
+			continue;
+
+		if (!GET_TEAM(m_pPlayer->getTeam()).isAtWar(GET_PLAYER(eLoopPlayer).getTeam()))
+			continue;
+
+		// Check enemy naval units near the transit route
+		int iLoopUnit = 0;
+		for (CvUnit* pEnemyUnit = GET_PLAYER(eLoopPlayer).firstUnit(&iLoopUnit); pEnemyUnit != NULL; pEnemyUnit = GET_PLAYER(eLoopPlayer).nextUnit(&iLoopUnit))
+		{
+			if (pEnemyUnit->getDomainType() != DOMAIN_SEA || !pEnemyUnit->IsCanAttack())
+				continue;
+
+			// Dist to route: min(distToOrigin, distToDest, distToMidpoint)
+			int iDistToOrigin = plotDistance(*pEnemyUnit->plot(), *pOrigin);
+			int iDistToDest = plotDistance(*pEnemyUnit->plot(), *pDestination);
+			
+			// Approximate midpoint
+			int iMidX = (pOrigin->getX() + pDestination->getX()) / 2;
+			int iMidY = (pOrigin->getY() + pDestination->getY()) / 2;
+			CvPlot* pMid = GC.getMap().plot(iMidX, iMidY);
+			int iDistToMid = pMid ? plotDistance(*pEnemyUnit->plot(), *pMid) : INT_MAX;
+
+			int iMinDist = min(iDistToOrigin, min(iDistToDest, iDistToMid));
+			if (iMinDist < iMinEnemyDist)
+				iMinEnemyDist = iMinDist;
+		}
+	}
+
+	// Risk classification:
+	// HIGH: enemy naval within 10 tiles and high-value unit (settler/GP)
+	// MEDIUM: enemy naval within 10 but not high-value, or within 15 for high-value
+	// LOW: no enemy naval within threat range
+	if (iMinEnemyDist <= 10)
+		return bIsHighValue ? TRANSIT_RISK_HIGH : TRANSIT_RISK_MEDIUM;
+	else if (bIsHighValue && iMinEnemyDist <= 15)
+		return TRANSIT_RISK_MEDIUM;
+
+	return TRANSIT_RISK_LOW;
+}
+
 void CvMilitaryAI::DoCityAttacks(PlayerTypes ePlayer)
 {
 	if (m_iMemoryThreatWeight >= 60 && (m_eLandDefenseState >= DEFENSE_STATE_NEEDED || m_eNavalDefenseState >= DEFENSE_STATE_NEEDED))

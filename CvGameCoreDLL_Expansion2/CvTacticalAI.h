@@ -398,6 +398,7 @@ private:
 	void PlotCounterBlockadeMoves();
 	void PlotCoastalDefenseMoves();
 	void PlotNavalPatrolStationMoves();
+	void PlotConvoyEscortMoves();     // Phase I-5: Convoy escort assignment
 	void PlotCivilianAttackMoves();
 	void ExecuteCivilianAttackMoves(AITacticalTargetType eTargetType);
 	void PlotHealMoves(bool bFirstPass);

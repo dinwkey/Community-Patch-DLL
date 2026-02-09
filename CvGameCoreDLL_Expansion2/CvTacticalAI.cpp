@@ -1098,6 +1098,9 @@ void CvTacticalAI::AssignGlobalLowPrioMoves()
 	//do this last after the units in need have already moved
 	PlotNavalEscortMoves();
 
+	// Convoy escort for high-risk inter-island transits
+	PlotConvoyEscortMoves();
+
 	// Position naval units defensively around threatened coastal cities
 	PlotCoastalDefenseMoves();
 
@@ -2307,6 +2310,116 @@ void CvTacticalAI::PlotNavalPatrolStationMoves()
 	}
 }
 
+/// Phase I-5: Convoy escort assignment for high-risk inter-island transits
+void CvTacticalAI::PlotConvoyEscortMoves()
+{
+	const CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (!pGeo)
+		return;
+
+	// Works for all postures, but most valuable for island/archipelago
+	const std::vector<PendingTransit>& vTransits = pGeo->GetPendingTransits();
+	if (vTransits.empty())
+		return;
+
+	// Group transits by destination & risk level
+	std::map<int, std::vector<const PendingTransit*>> convoyGroups; // Keyed by dest plot index
+	for (size_t i = 0; i < vTransits.size(); i++)
+	{
+		const PendingTransit& transit = vTransits[i];
+		if (transit.eRisk != TRANSIT_RISK_MEDIUM && transit.eRisk != TRANSIT_RISK_HIGH)
+			continue; // LOW RISK = no escort needed
+		convoyGroups[transit.iDestPlotIndex].push_back(&transit);
+	}
+
+	if (convoyGroups.empty())
+		return;
+
+	// Collect available naval combat units for escort duty
+	std::vector<CvUnit*> vEscorts;
+	for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+	{
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (!pUnit || !pUnit->canUseForTacticalAI())
+			continue;
+		if (pUnit->getDomainType() != DOMAIN_SEA || !pUnit->IsCanAttack())
+			continue;
+		if (pUnit->getArmyID() != -1)
+			continue;
+		if (pUnit->shouldHeal(false))
+			continue;
+		// Reserve carriers/subs for other duties
+		if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA || pUnit->getInvisibleType() != NO_INVISIBLE)
+			continue;
+
+		vEscorts.push_back(pUnit);
+	}
+
+	if (vEscorts.empty())
+		return;
+
+	// Assign escorts to convoys
+	for (std::map<int, std::vector<const PendingTransit*>>::iterator it = convoyGroups.begin(); it != convoyGroups.end(); ++it)
+	{
+		const std::vector<const PendingTransit*>& vConvoy = it->second;
+		if (vConvoy.empty())
+			continue;
+
+		// Determine required escorts based on risk and convoy size
+		eTransitRisk eMaxRisk = TRANSIT_RISK_LOW;
+		bool bHasHighValue = false;
+		for (size_t i = 0; i < vConvoy.size(); i++)
+		{
+			if (vConvoy[i]->eRisk > eMaxRisk)
+				eMaxRisk = vConvoy[i]->eRisk;
+			if (vConvoy[i]->bHighPriority)
+				bHasHighValue = true;
+		}
+
+		int iEscortsNeeded = (eMaxRisk == TRANSIT_RISK_HIGH && bHasHighValue) ? 2 : 1;
+		int iEscortsAssigned = 0;
+
+		// Find closest escorts to this convoy
+		CvPlot* pConvoyOrigin = GC.getMap().plotByIndex(vConvoy[0]->iOriginPlotIndex);
+		if (!pConvoyOrigin)
+			continue;
+
+		std::vector<CvUnit*> vAssigned;
+		for (int iPass = 0; iPass < iEscortsNeeded && !vEscorts.empty(); iPass++)
+		{
+			CvUnit* pBestEscort = NULL;
+			int iBestDist = INT_MAX;
+
+			for (size_t i = 0; i < vEscorts.size(); i++)
+			{
+				CvUnit* pEscort = vEscorts[i];
+				int iDist = plotDistance(*pEscort->plot(), *pConvoyOrigin);
+				if (iDist < iBestDist)
+				{
+					iBestDist = iDist;
+					pBestEscort = pEscort;
+				}
+			}
+
+			if (pBestEscort && iBestDist <= 6)
+			{
+				vAssigned.push_back(pBestEscort);
+				vEscorts.erase(std::remove(vEscorts.begin(), vEscorts.end(), pBestEscort), vEscorts.end());
+				iEscortsAssigned++;
+			}
+			else
+				break; // No more escorts in range
+		}
+
+		// Move assigned escorts to convoy staging area
+		for (size_t i = 0; i < vAssigned.size(); i++)
+		{
+			CvUnit* pEscort = vAssigned[i];
+			ExecuteMoveToPlot(pEscort, pConvoyOrigin, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
+		}
+	}
+}
+
 void CvTacticalAI::PlotCivilianAttackMoves()
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_CAPTURE);
@@ -3188,9 +3301,24 @@ void CvTacticalAI::PlotNavalEscortMoves()
 
 	std::vector<CvUnit*> vTargetUnits;
 	int iLoop = 0;
+
+	// Build set of units already in a pending convoy (skip those)
+	const CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	std::set<int> convoyUnits;
+	if (pGeo)
+	{
+		const std::vector<PendingTransit>& vTransits = pGeo->GetPendingTransits();
+		for (size_t i = 0; i < vTransits.size(); i++)
+		{
+			if (vTransits[i].eRisk == TRANSIT_RISK_MEDIUM || vTransits[i].eRisk == TRANSIT_RISK_HIGH)
+				convoyUnits.insert(vTransits[i].iUnitID);
+		}
+	}
+
+	// Collect embarked units NOT in a convoy
 	for(CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = m_pPlayer->nextUnit(&iLoop))
 	{
-		if (pLoopUnit->isEmbarked())
+		if (pLoopUnit->isEmbarked() && convoyUnits.find(pLoopUnit->GetID()) == convoyUnits.end())
 			vTargetUnits.push_back(pLoopUnit);
 	}
 

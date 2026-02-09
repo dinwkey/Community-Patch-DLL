@@ -218,6 +218,7 @@ void CvStrategicGeographyMap::Init(PlayerTypes ePlayer)
 	m_iLargestOceanAreaID = -1;
 	m_eGeographicPosture = GEO_POSTURE_CONTINENTAL;
 	m_vPatrolStations.clear();
+	m_vPendingTransits.clear();
 }
 
 /// Should we recompute? Every 5 turns peacetime, every 3 turns wartime, or if never computed.
@@ -271,6 +272,7 @@ void CvStrategicGeographyMap::Update()
 	ComputePatrolStations();
 	BuildWaterConnectivityGraph();
 	AssessAmphibiousThreats();
+	ClearCompletedTransits();
 	LogStrategicGeography();
 }
 
@@ -2053,6 +2055,39 @@ void CvStrategicGeographyMap::ComputePatrolStations()
 			}
 		}
 	}
+}
+
+/// Phase I-5: Clear completed or expired convoy transits
+void CvStrategicGeographyMap::ClearCompletedTransits()
+{
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	int iCurrentTurn = GC.getGame().getGameTurn();
+
+	// Remove transits where:
+	// - Unit no longer exists
+	// - Unit has disembarked
+	// - Unit has been queued >3 turns (timeout, proceed unescorted)
+	std::vector<PendingTransit> vCleaned;
+	for (size_t i = 0; i < m_vPendingTransits.size(); i++)
+	{
+		PendingTransit& transit = m_vPendingTransits[i];
+		CvUnit* pUnit = kPlayer.getUnit(transit.iUnitID);
+
+		if (!pUnit)
+			continue; // Unit dead or missing
+
+		if (!pUnit->isEmbarked())
+			continue; // Disembarked = transit complete or aborted
+
+		// 3-turn max wait for escort; after that proceed unescorted
+		if (iCurrentTurn - transit.iTurnQueued > 3)
+			continue;
+
+		// Still valid
+		vCleaned.push_back(transit);
+	}
+
+	m_vPendingTransits = vCleaned;
 }
 
 // ---------------------------------------------------------------------------

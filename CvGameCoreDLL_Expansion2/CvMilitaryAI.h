@@ -344,6 +344,9 @@ private:
 	void ApplyLossAdaptationFlavors();
 	void EvaluateTacticalRetreat();
 	int GetUnitCountByType() const;
+
+	// Phase I-5: Convoy risk assessment
+	eTransitRisk AssessTransitRisk(CvPlot* pOrigin, CvPlot* pDestination, bool bIsHighValue) const;
 	
 	void DoNuke(PlayerTypes ePlayer);
 	void CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity);
