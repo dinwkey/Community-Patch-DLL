@@ -316,6 +316,8 @@ public:
 
 	// Convoy transit queries (Phase I-5)
 	const std::vector<PendingTransit>& GetPendingTransits() const { return m_vPendingTransits; }
+	void AddPendingTransit(const PendingTransit& transit);
+	void RefreshPendingTransits();  // Called every turn: clean expired transits, scan for new embarked units
 	void ClearCompletedTransits();
 
 	// Phase I-6: Invasion convoy detection

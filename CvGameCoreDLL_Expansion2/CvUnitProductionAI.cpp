@@ -365,8 +365,18 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						{
 							int iCitiesOnLandmass = pLM->getCitiesPerPlayer(m_pCity->getOwner());
 							int iDesiredGarrison = iCitiesOnLandmass + (iCitiesOnLandmass / 3);
-							int iUnitsOnLandmass = pLM->getUnitsPerPlayer(m_pCity->getOwner());
-							if (iUnitsOnLandmass >= iDesiredGarrison)
+							// I1 fix: count only military land units, not civilians
+							int iMilitaryOnLandmass = 0;
+							int iUnitLoop = 0;
+							for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iUnitLoop))
+							{
+								if (pLoopUnit->IsCombatUnit() && pLoopUnit->getDomainType() == DOMAIN_LAND
+									&& pLoopUnit->plot() && pLoopUnit->plot()->getLandmass() == pLM->GetID())
+								{
+									iMilitaryOnLandmass++;
+								}
+							}
+							if (iMilitaryOnLandmass >= iDesiredGarrison)
 								return SR_USELESS;
 						}
 					}

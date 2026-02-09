@@ -345,9 +345,6 @@ private:
 	void EvaluateTacticalRetreat();
 	int GetUnitCountByType() const;
 
-	// Phase I-5: Convoy risk assessment
-	eTransitRisk AssessTransitRisk(CvPlot* pOrigin, CvPlot* pDestination, bool bIsHighValue) const;
-	
 	void DoNuke(PlayerTypes ePlayer);
 	void CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity);
 	void CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity);
@@ -429,6 +426,9 @@ public:
 	{
 		return m_pStrategyMap ? m_pStrategyMap->GetGeographicPosture() : GEO_POSTURE_CONTINENTAL;
 	}
+
+	// Phase I-5: Convoy risk assessment (public so CvStrategicGeographyMap can call it)
+	eTransitRisk AssessTransitRisk(CvPlot* pOrigin, CvPlot* pDestination, bool bIsHighValue) const;
 };
 
 FDataStream& operator>>(FDataStream&, CvMilitaryAI&);
@@ -492,6 +492,7 @@ MultiunitFormationTypes GetCurrentBestFormationTypeForLandAttack();
 MultiunitFormationTypes GetCurrentBestFormationTypeForCombinedAttack();
 MultiunitFormationTypes GetCurrentBestFormationTypeForPureNavalAttack();
 CvPlot* GetCoastalWaterNearPlot(CvPlot *pTarget, bool bCheckTeam = false);
+int GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent);
 bool NeedShipInArea(PlayerTypes ePlayer, CvLandmass* pWaterBody);
 
 bool ArmyPathIsGood(const SPath& path, PlayerTypes eAttacker, PlayerTypes eIntendedEnemy, int iThresholdForDiscard);

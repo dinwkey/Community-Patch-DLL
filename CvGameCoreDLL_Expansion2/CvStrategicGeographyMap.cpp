@@ -21,6 +21,7 @@
 #include "CvDiplomacyAI.h"
 #include "CvMilitaryAI.h"
 #include "CvUnit.h"
+#include "CvTypes.h"
 #include "CvCityCitizens.h"
 #include "CvGameCoreUtils.h"
 #include "LintFree.h"
@@ -693,8 +694,10 @@ void CvStrategicGeographyMap::ComputeGeographicPosture()
 	float fCoastalCityRatio = static_cast<float>(iCoastalCities) / static_cast<float>(iTotalCities);
 	float fCitiesOnLargestRatio = static_cast<float>(iCitiesOnLargest) / static_cast<float>(iTotalCities);
 
+	// I2+I3 fix: check peninsula on the largest landmass regardless of number of landmasses,
+	// and check peninsula BEFORE continental/coastal so it takes priority
 	bool bPeninsula = false;
-	if (iLargestLandmassSize > 50 && iNumLandmasses == 1 && iLargestLandmassId != -1)
+	if (iLargestLandmassSize > 50 && fCitiesOnLargestRatio >= 0.7f && iLargestLandmassId != -1)
 	{
 		for (std::map<int, StrategicCityAnalysis>::const_iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
 		{
@@ -715,19 +718,21 @@ void CvStrategicGeographyMap::ComputeGeographicPosture()
 		}
 	}
 
-	if (iLargestLandmassSize > 100 && fCitiesOnLargestRatio >= 0.8f)
-	{
-		m_eGeographicPosture = (fCoastalCityRatio > 0.6f) ? GEO_POSTURE_COASTAL : GEO_POSTURE_CONTINENTAL;
-		return;
-	}
-
+	// Check peninsula first — it takes priority over continental/coastal
 	if (bPeninsula)
 	{
 		m_eGeographicPosture = GEO_POSTURE_PENINSULAR;
 		return;
 	}
 
-	if (iNumLandmasses >= 3 && iLargestLandmassSize < 50)
+	if (iLargestLandmassSize > 100 && fCitiesOnLargestRatio >= 0.8f)
+	{
+		m_eGeographicPosture = (fCoastalCityRatio > 0.6f) ? GEO_POSTURE_COASTAL : GEO_POSTURE_CONTINENTAL;
+		return;
+	}
+
+	// M5: 2+ small landmasses = archipelago (lowered from 3)
+	if (iNumLandmasses >= 2 && iLargestLandmassSize < 50)
 	{
 		m_eGeographicPosture = GEO_POSTURE_ARCHIPELAGO;
 		return;
@@ -2133,10 +2138,13 @@ void CvStrategicGeographyMap::ClearCompletedTransits()
 	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
 	int iCurrentTurn = GC.getGame().getGameTurn();
 
+	// M4: Scale timeout with map size (3 on small, 5 on huge, etc.)
+	int iTimeoutTurns = 3 + GC.getMap().getWorldSize();
+
 	// Remove transits where:
 	// - Unit no longer exists
-	// - Unit has disembarked
-	// - Unit has been queued >3 turns (timeout, proceed unescorted)
+	// - Unit has disembarked AND is near its destination (M3: avoid false removal at canal cities)
+	// - Unit has been queued > timeout turns (proceed unescorted)
 	std::vector<PendingTransit> vCleaned;
 	for (size_t i = 0; i < m_vPendingTransits.size(); i++)
 	{
@@ -2146,11 +2154,24 @@ void CvStrategicGeographyMap::ClearCompletedTransits()
 		if (!pUnit)
 			continue; // Unit dead or missing
 
+		// M3 fix: Only remove disembarked units if they are near destination
+		// (canal cities cause brief disembarkation mid-transit)
 		if (!pUnit->isEmbarked())
-			continue; // Disembarked = transit complete or aborted
+		{
+			CvPlot* pDest = GC.getMap().plotByIndex(transit.iDestPlotIndex);
+			if (pDest && plotDistance(*pUnit->plot(), *pDest) <= 3)
+				continue; // Arrived at destination — remove
+			// If far from destination but disembarked, might be a canal city — keep for 1 more turn
+			if (iCurrentTurn - transit.iTurnQueued <= 1)
+			{
+				vCleaned.push_back(transit);
+				continue;
+			}
+			continue; // Disembarked and waited — remove
+		}
 
-		// 3-turn max wait for escort; after that proceed unescorted
-		if (iCurrentTurn - transit.iTurnQueued > 3)
+		// Timeout: proceed unescorted after scaled timeout
+		if (iCurrentTurn - transit.iTurnQueued > iTimeoutTurns)
 			continue;
 
 		// Still valid
@@ -2158,6 +2179,108 @@ void CvStrategicGeographyMap::ClearCompletedTransits()
 	}
 
 	m_vPendingTransits = vCleaned;
+}
+
+/// Phase I-5: Add a new pending transit entry
+void CvStrategicGeographyMap::AddPendingTransit(const PendingTransit& transit)
+{
+	// Avoid duplicate registration for the same unit
+	for (size_t i = 0; i < m_vPendingTransits.size(); i++)
+	{
+		if (m_vPendingTransits[i].iUnitID == transit.iUnitID)
+			return;
+	}
+	m_vPendingTransits.push_back(transit);
+}
+
+/// Phase I-5 (C1 fix): Scan all embarked units and register them as pending transits.
+/// Called every turn from the tactical AI before convoy escort assignment.
+void CvStrategicGeographyMap::RefreshPendingTransits()
+{
+	if (m_ePlayer == NO_PLAYER)
+		return;
+
+	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
+	CvMilitaryAI* pMilAI = kPlayer.GetMilitaryAI();
+	if (!pMilAI)
+		return;
+
+	// First, clean up expired/completed transits
+	ClearCompletedTransits();
+
+	// Build set of units already registered
+	std::set<int> existingUnits;
+	for (size_t i = 0; i < m_vPendingTransits.size(); i++)
+		existingUnits.insert(m_vPendingTransits[i].iUnitID);
+
+	// Scan all embarked units and register new ones
+	int iCurrentTurn = GC.getGame().getGameTurn();
+	int iLoop = 0;
+	for (CvUnit* pUnit = kPlayer.firstUnit(&iLoop); pUnit != NULL; pUnit = kPlayer.nextUnit(&iLoop))
+	{
+		if (!pUnit->isEmbarked())
+			continue;
+
+		// Already registered?
+		if (existingUnits.find(pUnit->GetID()) != existingUnits.end())
+			continue;
+
+		// Determine destination: use the unit's mission target if available
+		CvPlot* pDestPlot = NULL;
+		const MissionData* pMission = pUnit->GetHeadMissionData();
+		if (pMission && (pMission->eMissionType == CvTypes::getMISSION_MOVE_TO() ||
+		                 pMission->eMissionType == CvTypes::getMISSION_ROUTE_TO()))
+		{
+			pDestPlot = GC.getMap().plot(pMission->iData1, pMission->iData2);
+		}
+
+		// If no mission destination, try to find the nearest friendly coast as the assumed destination
+		if (!pDestPlot)
+		{
+			int iBestDist = INT_MAX;
+			int iCityLoop = 0;
+			for (CvCity* pCity = kPlayer.firstCity(&iCityLoop); pCity != NULL; pCity = kPlayer.nextCity(&iCityLoop))
+			{
+				if (!pCity->isCoastal())
+					continue;
+				// Skip cities on the same landmass area as the unit's embarkation origin
+				int iDist = plotDistance(*pUnit->plot(), *pCity->plot());
+				if (iDist > 3 && iDist < iBestDist)
+				{
+					iBestDist = iDist;
+					pDestPlot = pCity->plot();
+				}
+			}
+		}
+
+		if (!pDestPlot)
+			continue;
+
+		// Determine if high-value
+		bool bHighValue = pUnit->AI_getUnitAIType() == UNITAI_SETTLE ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_PROPHET ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_ARTIST ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_MUSICIAN ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_WRITER ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_ENGINEER ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_MERCHANT ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_SCIENTIST ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_GENERAL ||
+		                  pUnit->AI_getUnitAIType() == UNITAI_ADMIRAL;
+
+		// Assess risk
+		eTransitRisk eRisk = pMilAI->AssessTransitRisk(pUnit->plot(), pDestPlot, bHighValue);
+
+		PendingTransit transit;
+		transit.iUnitID = pUnit->GetID();
+		transit.iOriginPlotIndex = pUnit->plot()->GetPlotIndex();
+		transit.iDestPlotIndex = pDestPlot->GetPlotIndex();
+		transit.eRisk = eRisk;
+		transit.iTurnQueued = iCurrentTurn;
+		transit.bHighPriority = bHighValue;
+
+		m_vPendingTransits.push_back(transit);
+	}
 }
 
 // ---------------------------------------------------------------------------

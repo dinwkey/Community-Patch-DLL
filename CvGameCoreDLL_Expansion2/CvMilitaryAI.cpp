@@ -1877,10 +1877,10 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 		iNavalFloor = 55;
 		break;
 	case GEO_POSTURE_PENINSULAR:
-		iNavalFloor = 30;
+		iNavalFloor = 35;
 		break;
 	case GEO_POSTURE_COASTAL:
-		iNavalFloor = 35;
+		iNavalFloor = 30;
 		break;
 	default:
 		break;
@@ -2563,7 +2563,7 @@ int CvMilitaryAI::GetTradeRouteEconomicValue(const TradeConnection& kConnection)
 	return iValue;
 }
 
-static int GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent)
+int MilitaryAIHelpers::GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent)
 {
 	if (!pCity || !pCity->isCoastal() || !pCity->IsBlockaded(DOMAIN_SEA))
 		return 0;
@@ -2620,11 +2620,11 @@ void CvMilitaryAI::UpdateDefenseState()
 	
 	DefenseState ePreviousLandDefenseState = m_eLandDefenseState;
 	
-	if(m_iNumLandUnits < m_iRecLandUnits)
+	if(m_iNumLandUnits < m_iRecLandUnits * 3 / 4)
 	{
 		m_eLandDefenseState = DEFENSE_STATE_CRITICAL;
 	}
-	else if(m_iNumLandUnits < m_iRecLandUnits * 3 / 4)
+	else if(m_iNumLandUnits < m_iRecLandUnits)
 	{
 		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 	}
@@ -2794,7 +2794,7 @@ void CvMilitaryAI::UpdateDefenseState()
 	int iCityLoop = 0;
 	for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
 	{
-		int iSeverity = GetBlockadedCitySeverity(pLoopCity, NULL);
+		int iSeverity = MilitaryAIHelpers::GetBlockadedCitySeverity(pLoopCity, NULL);
 		if (iSeverity > 0)
 		{
 			iMaxBlockadeSeverity = max(iMaxBlockadeSeverity, iSeverity);
@@ -3315,7 +3315,7 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 	if (!pThreatenedCity->isCoastal())
 		return;
 
-	int iBlockadeSeverity = GetBlockadedCitySeverity(pThreatenedCity, NULL);
+	int iBlockadeSeverity = MilitaryAIHelpers::GetBlockadedCitySeverity(pThreatenedCity, NULL);
 	bool bSevereBlockade = iBlockadeSeverity >= 3;
 
 	CvPlot* pCoastalPlot = MilitaryAIHelpers::GetCoastalWaterNearPlot(pThreatenedCity->plot());
@@ -3377,9 +3377,28 @@ eTransitRisk CvMilitaryAI::AssessTransitRisk(CvPlot* pOrigin, CvPlot* pDestinati
 			int iDistToOrigin = plotDistance(*pEnemyUnit->plot(), *pOrigin);
 			int iDistToDest = plotDistance(*pEnemyUnit->plot(), *pDestination);
 			
-			// Approximate midpoint
-			int iMidX = (pOrigin->getX() + pDestination->getX()) / 2;
-			int iMidY = (pOrigin->getY() + pDestination->getY()) / 2;
+			// Approximate midpoint (handle map wrapping)
+			int iMidX, iMidY;
+			if (GC.getMap().isWrapX())
+			{
+				int iMapW = GC.getMap().getGridWidth();
+				int dx = ((pDestination->getX() - pOrigin->getX()) + iMapW + iMapW / 2) % iMapW - iMapW / 2;
+				iMidX = (pOrigin->getX() + dx / 2 + iMapW) % iMapW;
+			}
+			else
+			{
+				iMidX = (pOrigin->getX() + pDestination->getX()) / 2;
+			}
+			if (GC.getMap().isWrapY())
+			{
+				int iMapH = GC.getMap().getGridHeight();
+				int dy = ((pDestination->getY() - pOrigin->getY()) + iMapH + iMapH / 2) % iMapH - iMapH / 2;
+				iMidY = (pOrigin->getY() + dy / 2 + iMapH) % iMapH;
+			}
+			else
+			{
+				iMidY = (pOrigin->getY() + pDestination->getY()) / 2;
+			}
 			CvPlot* pMid = GC.getMap().plot(iMidX, iMidY);
 			int iDistToMid = pMid ? plotDistance(*pEnemyUnit->plot(), *pMid) : INT_MAX;
 

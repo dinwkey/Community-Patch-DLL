@@ -1098,6 +1098,11 @@ void CvTacticalAI::AssignGlobalLowPrioMoves()
 	//do this last after the units in need have already moved
 	PlotNavalEscortMoves();
 
+	// C1 fix: Refresh pending transits (scan embarked units, assess risk) before convoy escort
+	CvStrategicGeographyMap* pGeoMut = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (pGeoMut)
+		pGeoMut->RefreshPendingTransits();
+
 	// Convoy escort for high-risk inter-island transits
 	PlotConvoyEscortMoves();
 
@@ -2243,8 +2248,6 @@ void CvTacticalAI::PlotNavalPatrolStationMoves()
 	if (vStations.empty())
 		return;
 
-	ClearCurrentMoveUnits(AI_TACTICAL_ESCORT);
-
 	std::vector<CvPlot*> vTargets;
 	for (size_t i = 0; i < vStations.size(); i++)
 	{
@@ -2399,15 +2402,16 @@ void CvTacticalAI::PlotConvoyEscortMoves()
 			for (size_t i = 0; i < vEscorts.size(); i++)
 			{
 				CvUnit* pEscort = vEscorts[i];
-				int iDist = plotDistance(*pEscort->plot(), *pConvoyOrigin);
-				if (iDist < iBestDist)
+				// M7 fix: use TurnsToReachTarget for actual reachability, not straight-line distance
+				int iTurns = pEscort->TurnsToReachTarget(pConvoyOrigin, CvUnit::MOVEFLAG_APPROX_TARGET_RING1, 5);
+				if (iTurns < iBestDist)
 				{
-					iBestDist = iDist;
+					iBestDist = iTurns;
 					pBestEscort = pEscort;
 				}
 			}
 
-			if (pBestEscort && iBestDist <= 6)
+			if (pBestEscort && iBestDist <= 5)
 			{
 				vAssigned.push_back(pBestEscort);
 				vEscorts.erase(std::remove(vEscorts.begin(), vEscorts.end(), pBestEscort), vEscorts.end());

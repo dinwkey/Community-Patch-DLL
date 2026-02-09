@@ -26875,46 +26875,6 @@ void CvDiplomacyAI::SelectBestApproachTowardsMinorCiv(PlayerTypes ePlayer)
 // PEACE TREATY WILLINGNESS
 // ////////////////////////////////////
 
-static int GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent)
-{
-	if (!pCity || !pCity->isCoastal() || !pCity->IsBlockaded(DOMAIN_SEA))
-		return 0;
-
-	int iLandPlots = 0;
-	int iWaterPlots = 0;
-	int iTotalPlots = 0;
-
-	for (int iPlotLoop = 0; iPlotLoop < pCity->GetNumWorkablePlots(); iPlotLoop++)
-	{
-		CvPlot* pLoopPlot = pCity->GetCityCitizens()->GetCityPlotFromIndex(iPlotLoop);
-		if (!pLoopPlot)
-			continue;
-		if (pLoopPlot->getOwner() != pCity->getOwner() || pLoopPlot->isCity())
-			continue;
-
-		iTotalPlots++;
-		if (pLoopPlot->isWater() && !pLoopPlot->isLake())
-			iWaterPlots++;
-		else
-			iLandPlots++;
-	}
-
-	int iLandPercent = 100;
-	if (iTotalPlots > 0)
-		iLandPercent = (iLandPlots * 100) / iTotalPlots;
-
-	if (piLandPercent)
-		*piLandPercent = iLandPercent;
-
-	if (iTotalPlots == 0)
-		return 1;
-	if (iLandPercent <= 40)
-		return 3;
-	if (iLandPercent <= 60)
-		return 2;
-	return 1;
-}
-
 void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 {
 	// AI is never allowed to make peace with anyone under these circumstances, no need to log it either
@@ -26941,7 +26901,7 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 
 	for (CvCity* pLoopCity = GetPlayer()->firstCity(&iBlockadeLoop); pLoopCity != NULL; pLoopCity = GetPlayer()->nextCity(&iBlockadeLoop))
 	{
-		int iSeverity = GetBlockadedCitySeverity(pLoopCity, NULL);
+		int iSeverity = MilitaryAIHelpers::GetBlockadedCitySeverity(pLoopCity, NULL);
 		if (iSeverity > 0)
 		{
 			if (iSeverity > iMaxBlockadeSeverity)
@@ -27369,8 +27329,19 @@ void CvDiplomacyAI::DoUpdatePeaceTreatyWillingness(bool bMyTurn)
 
 		// War duration for peace willingness resets when a city is captured.
 		int iWarDuration = min(GET_TEAM(GetTeam()).GetNumTurnsAtWar(*it), iLowestTurnsSinceCityCapture);
-		bool bModerateBlockade = iMaxBlockadeSeverity >= 2;
-		bool bSevereBlockade = iMaxBlockadeSeverity >= 3;
+
+		// I4 fix: only attribute blockade pressure to enemies with actual naval capability
+		bool bEnemyHasNavy = false;
+		for (size_t i = 0; i < vEnemyTeamMembers.size(); i++)
+		{
+			if (GET_PLAYER(vEnemyTeamMembers[i]).isAlive() && GET_PLAYER(vEnemyTeamMembers[i]).GetMilitarySeaMight() > 0)
+			{
+				bEnemyHasNavy = true;
+				break;
+			}
+		}
+		bool bModerateBlockade = bEnemyHasNavy && iMaxBlockadeSeverity >= 2;
+		bool bSevereBlockade = bEnemyHasNavy && iMaxBlockadeSeverity >= 3;
 
 		// Need at least 75 warscore with one civ on this team to be able to vassalize them
 		if (!bAnyCapitulationThresholdMet)
