@@ -216,7 +216,7 @@ public:
 	const UnitSighting* GetSighting(PlayerTypes eOwner, int iUnitId) const;
 	int  GetHostileSightingsNearPlot(CvPlot* pPlot, int iRadius, std::vector<UnitSighting*>& results);
 	int  GetGhostsInSearchCone(int centerX, int centerY, int dirX, int dirY, int maxDist, std::vector<UnitSighting*>& results);
-	int  CountSiegeUnitsNearCity(const CvCity* pCity, int iRadius) const;
+	int  CountSiegeUnitsNearCity(const CvCity* pCity, int iRadius, bool bAllowImminentCheck = true) const;
 	bool IsPlotInSearchCone(const UnitSighting* pGhost, int plotX, int plotY, int currentTurn) const;
 	bool CouldGhostThreatenCity(const UnitSighting* pGhost, CvCity* pCity, int currentTurn) const;
 
@@ -2203,6 +2203,7 @@ private:
 	bool m_bSkipForTeammates; // Not serialized!
 	bool m_bIgnoreWarmonger; // Not serialized!
 	PlayerTypes m_eVassalPlayerToLiberate; // Not serialized!
+	mutable bool m_bEvaluatingAttackLikelyImminent; // Not serialized!
 	bool m_bWasHumanLastUpdate;
 	bool m_bEndedFriendshipThisTurn;
 	bool m_bUpdatedWarProgressThisTurn;

@@ -113,6 +113,7 @@ void CvDiplomacyAI::Init(CvPlayer* pPlayer)
 	m_bWasHumanLastUpdate = false;
 	m_bEndedFriendshipThisTurn = false;
 	m_bUpdatedWarProgressThisTurn = false;
+	m_bEvaluatingAttackLikelyImminent = false;
 	m_iNumReevaluations = 0;
 	m_bBackstabber = false;
 	m_bCompetingForVictory = false;
@@ -1210,7 +1211,7 @@ int CvUnitSightingManager::GetGhostsInSearchCone(int centerX, int centerY,
 }
 
 /// Count siege sightings (confirmed or ghost) near a city.
-int CvUnitSightingManager::CountSiegeUnitsNearCity(const CvCity* pCity, int iRadius) const
+int CvUnitSightingManager::CountSiegeUnitsNearCity(const CvCity* pCity, int iRadius, bool bAllowImminentCheck) const
 {
 	if (!pCity)
 		return 0;
@@ -1244,7 +1245,7 @@ int CvUnitSightingManager::CountSiegeUnitsNearCity(const CvCity* pCity, int iRad
 				bHostileOrAtWar = true;
 			else if (!GET_PLAYER(eOwner).isMinorCiv() && pDiploAI->GetCivApproach(eOwner) == CIV_APPROACH_HOSTILE)
 				bHostileOrAtWar = true;
-			else if (!GET_PLAYER(eOwner).isMinorCiv() && pDiploAI->IsAttackLikelyImminent(eOwner))
+			else if (bAllowImminentCheck && !GET_PLAYER(eOwner).isMinorCiv() && pDiploAI->IsAttackLikelyImminent(eOwner))
 				bHostileOrAtWar = true;
 		}
 
@@ -1458,7 +1459,7 @@ bool CvUnitSightingManager::IsCoordinatedAttackOnCity(const CvCity* pCity, Playe
 	if (iConverging >= 4)
 		return true;
 
-	if (iConverging >= 2 && CountSiegeUnitsNearCity(pCity, 6) >= 1)
+	if (iConverging >= 2 && CountSiegeUnitsNearCity(pCity, 6, false) >= 1)
 		return true;
 
 	return false;
@@ -1943,6 +1944,16 @@ int CvDiplomacyAI::GetCoalitionThreatScore() const
 /// Composite attack prediction: 4+ warning signals = high confidence.
 bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer) const
 {
+	if (m_bEvaluatingAttackLikelyImminent)
+		return false;
+
+	struct ReentrancyGuard
+	{
+		bool& flag;
+		ReentrancyGuard(bool& f) : flag(f) { flag = true; }
+		~ReentrancyGuard() { flag = false; }
+	} guard(m_bEvaluatingAttackLikelyImminent);
+
 	if (!IsLikelyIntentAgainstUs(ePlayer))
 		return false;
 
