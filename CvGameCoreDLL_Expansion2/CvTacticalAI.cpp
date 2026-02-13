@@ -9117,15 +9117,15 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 					// Falls back to lightweight heuristic if sighting data is unavailable.
 					bool bLikelyRetreating = false;
 					bool bConfirmedAttacking = false;
-					CvDiplomacyAI* pGarrisonOwnerDiplo = GET_PLAYER(pUnit->getOwner()).GetDiplomacyAI();
-					if (pGarrisonOwnerDiplo && pCity)
+					if (pCity)
 					{
-						const UnitSighting* pSighting = pGarrisonOwnerDiplo->GetSightingManager().GetSighting(
+						const CvUnitSightingManager& sightMgr = GET_PLAYER(pUnit->getOwner()).GetUnitSightingManager();
+						const UnitSighting* pSighting = sightMgr.GetSighting(
 							pOtherUnit->getOwner(), pOtherUnit->GetID());
 						if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
 						{
-							UnitPredictedIntent eIntent = pGarrisonOwnerDiplo->GetSightingManager()
-								.InferUnitIntentNearCity(pSighting, pCity->getX(), pCity->getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
+							UnitPredictedIntent eIntent = sightMgr.InferUnitIntentNearCity(
+								pSighting, pCity->getX(), pCity->getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
 							bLikelyRetreating = (eIntent == UNIT_INTENT_RETREAT);
 							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY);
 						}

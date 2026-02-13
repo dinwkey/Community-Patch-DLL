@@ -23,6 +23,7 @@
 #include "TContainer.h"
 #include "CvMinorCivAI.h"
 #include "CvSerialize.h"
+#include "CvUnitSightingManager.h"
 
 class CvPlayerPolicies;
 class CvEconomicAI;
@@ -201,6 +202,8 @@ public:
 	int GetNumUnitsInProduction(DomainTypes eDomain, bool bMilitaryOnly);
 	void UpdateDangerPlots();
 	void SetDangerPlotsDirty();
+	CvUnitSightingManager& GetUnitSightingManager() { return m_UnitSightingManager; }
+	const CvUnitSightingManager& GetUnitSightingManager() const { return m_UnitSightingManager; }
 
 	bool isHuman(IsHumanReason eIsHumanReason = OTHER_ISHUMAN_REASON) const;
 	bool isObserver() const;
@@ -3630,6 +3633,7 @@ protected:
 
 	// Danger plots!
 	CvDangerPlots* m_pDangerPlots;
+	CvUnitSightingManager m_UnitSightingManager;
 	// to track whether somebody stole our plot
 	int m_iPreviousBestSettlePlot;
 

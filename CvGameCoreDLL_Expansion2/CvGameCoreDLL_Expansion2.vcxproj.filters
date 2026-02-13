@@ -101,6 +101,9 @@
     <ClCompile Include="CvDiplomacyAI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CvUnitSightingManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="CvDiplomacyRequests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -611,6 +614,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="CvDiplomacyAI.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CvUnitSightingManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="CvDiplomacyAIEnums.h">

@@ -16572,16 +16572,12 @@ bool CvCity::NeedsGarrison() const
 	// Extended Memory: garrison if siege units spotted OR coordinated attack detected
 	if (kPlayer.isMajorCiv())
 	{
-		CvDiplomacyAI* pDiploAI = kPlayer.GetDiplomacyAI();
-		if (pDiploAI)
-		{
-			const CvUnitSightingManager& sightMgr = pDiploAI->GetSightingManager();
-			if (sightMgr.CountSiegeUnitsNearCity(this, 6) >= 2)
-				return true;
-			// Multi-unit convergence: 4+ units heading toward us, or 2+ with siege
-			if (sightMgr.IsCoordinatedAttackOnCity(this))
-				return true;
-		}
+		const CvUnitSightingManager& sightMgr = kPlayer.GetUnitSightingManager();
+		if (sightMgr.CountSiegeUnitsNearCity(this, 6) >= 2)
+			return true;
+		// Multi-unit convergence: 4+ units heading toward us, or 2+ with siege
+		if (sightMgr.IsCoordinatedAttackOnCity(this))
+			return true;
 	}
 
 	//this allows the player to use the garrison for settler escorts
@@ -33136,20 +33132,13 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					// RETREAT DETECTION via Extended Memory System (Phase 3)
 					bool bRetreating = false;
 					bool bConfirmedAttacking = false;
-					CvDiplomacyAI* pOwnerDiploAI = kOwner.GetDiplomacyAI();
-					if (pOwnerDiploAI)
+					const CvUnitSightingManager& sightMgr = kOwner.GetUnitSightingManager();
+					const UnitSighting* pSighting = sightMgr.GetSighting(pTarget->getOwner(), pTarget->GetID());
+					if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
 					{
-						const UnitSighting* pSighting = pOwnerDiploAI->GetSightingManager().GetSighting(pTarget->getOwner(), pTarget->GetID());
-						if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
-						{
-							UnitPredictedIntent eIntent = pOwnerDiploAI->GetSightingManager().InferUnitIntentNearCity(pSighting, getX(), getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
-							bRetreating = (eIntent == UNIT_INTENT_RETREAT);
-							bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY);
-						}
-						else
-						{
-							bRetreating = (bMovedThisTurn && iTargetHP <= pTarget->GetMaxHitPoints() / 2);
-						}
+						UnitPredictedIntent eIntent = sightMgr.InferUnitIntentNearCity(pSighting, getX(), getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
+						bRetreating = (eIntent == UNIT_INTENT_RETREAT);
+						bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY);
 					}
 					else
 					{

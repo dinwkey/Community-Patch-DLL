@@ -2054,6 +2054,7 @@ void CvPlayer::reset(PlayerTypes eID, bool bConstructorCall)
 		m_pWonderProductionAI->Init(GC.GetGameBuildings(), this, false);
 		m_pGrandStrategyAI->Init(GC.GetGameAIGrandStrategies(), this);
 		m_pDiplomacyAI->Init(this);
+		m_UnitSightingManager.Init(this);
 		m_pReligions->Init(this);
 		m_pReligionAI->Init(GC.GetGameBeliefs(), this);
 		m_pCorporations->Init(this);
@@ -45170,6 +45171,8 @@ void CvPlayer::Read(FDataStream& kStream)
 	// Perform shared serialize
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+	m_UnitSightingManager.Init(this);
+	m_UnitSightingManager.Read(kStream);
 
 	if (MOD_WH_MILITARY_LOG && isHuman()) //Not serialized so shouldn't have any effect on savegames
 	{
@@ -45212,6 +45215,7 @@ void CvPlayer::Write(FDataStream& kStream) const
 	// Perform shared serialize
 	CvStreamSaveVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+	m_UnitSightingManager.Write(kStream);
 }
 
 void CvPlayer::createGreatGeneral(UnitTypes eGreatPersonUnit, int iX, int iY, bool bIsFree)

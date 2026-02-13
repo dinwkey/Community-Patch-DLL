@@ -95,6 +95,7 @@
     <ClCompile Include="CvDealAI.cpp" />
     <ClCompile Include="CvDealClasses.cpp" />
     <ClCompile Include="CvDiplomacyAI.cpp" />
+    <ClCompile Include="CvUnitSightingManager.cpp" />
     <ClCompile Include="CvDiplomacyRequests.cpp" />
     <ClCompile Include="CvDistanceMap.cpp" />
     <ClCompile Include="CvEconomicAI.cpp" />
@@ -267,6 +268,7 @@
     <ClInclude Include="CvDealClasses.h" />
     <ClInclude Include="CvDefines.h" />
     <ClInclude Include="CvDiplomacyAI.h" />
+    <ClInclude Include="CvUnitSightingManager.h" />
     <ClInclude Include="CvDiplomacyAIEnums.h" />
     <ClInclude Include="CvDiplomacyRequests.h" />
     <ClInclude Include="CvDistanceMap.h" />

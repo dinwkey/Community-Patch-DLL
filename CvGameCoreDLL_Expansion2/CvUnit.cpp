@@ -2183,9 +2183,7 @@ void CvUnit::kill(bool bDelay, PlayerTypes ePlayer /*= NO_PLAYER*/)
 			if (!kLoopPlayer.isAlive() || !kLoopPlayer.isMajorCiv())
 				continue;
 
-			CvDiplomacyAI* pDiploAI = kLoopPlayer.GetDiplomacyAI();
-			if (pDiploAI)
-				pDiploAI->GetSightingManager().OnUnitDestroyed(eUnitOwner, GetID());
+			kLoopPlayer.GetUnitSightingManager().OnUnitDestroyed(eUnitOwner, GetID());
 		}
 	}
 
@@ -21156,12 +21154,8 @@ void CvUnit::setXY(int iX, int iY, bool bGroup, bool bUpdate, bool bShow, bool b
 				if (eLoopTeam == eOurTeam || isInvisible(eLoopTeam, false))
 					continue;
 
-				CvDiplomacyAI* pDiploAI = kLoopPlayer.GetDiplomacyAI();
-				if (!pDiploAI)
-					continue;
-
 				// OnUnitMoved will check visibility of pOldPlot/pNewPlot from the observer's perspective
-				pDiploAI->GetSightingManager().OnUnitMoved(this, pOldPlot, pNewPlot);
+				kLoopPlayer.GetUnitSightingManager().OnUnitMoved(this, pOldPlot, pNewPlot);
 			}
 		}
 

@@ -301,16 +301,13 @@ void CvDangerPlots::UpdateDangerInternal(const PlotIndexContainer& plotsToIgnore
 	// These are units that moved into fog-of-war in previous turns and may still be nearby.
 	if (bTurnChange && thisPlayer.isMajorCiv())
 	{
-		CvDiplomacyAI* pDiploAI = thisPlayer.GetDiplomacyAI();
-		if (pDiploAI)
-		{
-			const CvUnitSightingManager& sightMgr = pDiploAI->GetSightingManager();
-			const std::vector<UnitSighting>& sightings = sightMgr.GetSightings();
-			int currentTurn = GC.getGame().getGameTurn();
+		const CvUnitSightingManager& sightMgr = thisPlayer.GetUnitSightingManager();
+		const std::vector<UnitSighting>& sightings = sightMgr.GetSightings();
+		int currentTurn = GC.getGame().getGameTurn();
 
-			for (int i = 0; i < (int)sightings.size(); i++)
-			{
-				const UnitSighting& s = sightings[i];
+		for (int i = 0; i < (int)sightings.size(); i++)
+		{
+			const UnitSighting& s = sightings[i];
 
 				// Only process fog ghosts (not currently visible, not expired)
 				if (s.IsConfirmed(currentTurn) || s.IsExpired(currentTurn))
@@ -344,7 +341,6 @@ void CvDangerPlots::UpdateDangerInternal(const PlotIndexContainer& plotsToIgnore
 					if (pTargetPlot && !pTargetPlot->isImpassable(GET_PLAYER((PlayerTypes)s.owner).getTeam()))
 						m_DangerPlots[pTargetPlot->GetPlotIndex()].m_iFogCount++;
 				}
-			}
 		}
 	}
 

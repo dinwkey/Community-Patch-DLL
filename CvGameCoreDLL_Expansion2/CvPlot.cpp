@@ -11702,9 +11702,7 @@ PlotVisibilityChangeResult CvPlot::changeVisibilityCount(TeamTypes eTeam, int iC
 						if (kObserver.isAlive() && kObserver.isMajorCiv()
 							&& kObserver.getTeam() != loopUnit->getTeam())
 						{
-							CvDiplomacyAI* pDiploAI = kObserver.GetDiplomacyAI();
-							if (pDiploAI)
-								pDiploAI->GetSightingManager().OnUnitSeen(loopUnit);
+							kObserver.GetUnitSightingManager().OnUnitSeen(loopUnit);
 						}
 					}
 				}
