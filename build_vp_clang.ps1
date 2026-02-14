@@ -129,6 +129,7 @@ $CPP = @(
     'CvGameCoreDLL_Expansion2\CvDealClasses.cpp',
     'CvGameCoreDLL_Expansion2\CvDiplomacyAI.cpp',
     'CvGameCoreDLL_Expansion2\CvDiplomacyMemory.cpp',
+    'CvGameCoreDLL_Expansion2\CvUnitSightingManager.cpp',
     'CvGameCoreDLL_Expansion2\CvDiplomacyRequests.cpp',
     'CvGameCoreDLL_Expansion2\CvDistanceMap.cpp',
     'CvGameCoreDLL_Expansion2\CvDllBuildInfo.cpp',
