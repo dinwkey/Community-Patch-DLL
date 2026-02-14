@@ -43113,6 +43113,19 @@ bool CvDiplomacyAI::DoTestCoopWarDesire(PlayerTypes eAllyPlayer, PlayerTypes& eC
 		if (!CanRequestCoopWar(eAllyPlayer, eTarget))
 			continue;
 
+		// Don't ask distant humans for coop war unless they have direct trade ties with the target.
+		// This avoids low-value offers when the human is unlikely to contribute militarily or economically.
+		if (GET_PLAYER(eAllyPlayer).isHuman(ISHUMAN_AI_DIPLOMACY))
+		{
+			PlayerProximityTypes eAllyProximityToTarget = GET_PLAYER(eAllyPlayer).GetProximityToPlayer(eTarget);
+			if (eAllyProximityToTarget < PLAYER_PROXIMITY_CLOSE)
+			{
+				const int iDirectTradeRoutes = GC.getGame().GetGameTrade()->CountNumPlayerConnectionsToPlayer(eAllyPlayer, eTarget, false);
+				if (iDirectTradeRoutes <= 0)
+					continue;
+			}
+		}
+
 		// Only ask if we're sufficiently upset with the target
 		if (GetBiggestCompetitor() != eTarget && GetCivApproach(eTarget) > CIV_APPROACH_DECEPTIVE)
 			continue;
