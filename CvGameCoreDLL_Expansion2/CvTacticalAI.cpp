@@ -8970,12 +8970,9 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 
 		int iRange = max(1,min(5,pUnit->GetRange()));
 		CvCity* pDefenseCity = pUnit->IsGarrisoned() ? pUnit->plot()->getPlotCity() : NULL;
-		int iDefenseCityHPPct = 100;
 		bool bHasPriorityRangedThreat = false;
 		if (pDefenseCity)
 		{
-			iDefenseCityHPPct = ((pDefenseCity->GetMaxHitPoints() - pDefenseCity->getDamage()) * 100) / pDefenseCity->GetMaxHitPoints();
-
 			for (int i = RING0_PLOTS; i < RING_PLOTS[iRange]; i++)
 			{
 				CvPlot* pScanPlot = iterateRingPlots(pBasePlot, i);
@@ -9245,12 +9242,20 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 					}
 
 					// If ranged/siege threats to the city are present, avoid shooting melee screens
-					// unless city HP is low and this is an adjacent capture threat.
+					// unless an adjacent melee can actually one-shot capture the city now.
 					if (bHasPriorityRangedThreat && !pOtherUnit->IsCanAttackRanged() &&
 						pOtherUnit->AI_getUnitAIType() != UNITAI_CITY_BOMBARD)
 					{
-						int iCityRing = pDefenseCity ? plotDistance(*pLoopPlot, *pDefenseCity->plot()) : 0;
-						bool bImmediateCaptureThreat = (pDefenseCity && iCityRing == 1 && iDefenseCityHPPct <= 35);
+						bool bImmediateCaptureThreat = false;
+						if (pDefenseCity && plotDistance(*pLoopPlot, *pDefenseCity->plot()) == 1 &&
+							pOtherUnit->IsCanAttackWithMove() && pOtherUnit->canMoveOrAttackInto(*pDefenseCity->plot()))
+						{
+							int iDefenseCityHP = pDefenseCity->GetMaxHitPoints() - pDefenseCity->getDamage();
+							int iAttackerDamage = 0;
+							int iProjectedCityDamage = TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(
+								pDefenseCity, pOtherUnit, pLoopPlot, iAttackerDamage, true, 0, true);
+							bImmediateCaptureThreat = (iProjectedCityDamage >= iDefenseCityHP);
+						}
 						if (!bImmediateCaptureThreat)
 							iDamage -= 120;
 					}

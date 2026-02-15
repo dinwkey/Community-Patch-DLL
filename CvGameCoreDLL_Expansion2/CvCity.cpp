@@ -23,6 +23,7 @@
 #include "CvCitySpecializationAI.h"
 #include "CvEconomicAI.h"
 #include "CvMilitaryAI.h"
+#include "CvTacticalAI.h"
 #include "CvNotifications.h"
 #include "CvUnitCombat.h"
 #include "CvTypes.h"
@@ -33242,10 +33243,16 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 					}
 
 					// Strongly deprioritize melee while ranged/siege threats are available,
-					// unless city HP is low enough that adjacent melee is a true capture threat.
+					// unless an adjacent melee can actually one-shot capture the city now.
 					if (bHasSiegeOrRangedThreat && eUnitAI != UNITAI_CITY_BOMBARD && !pTarget->IsCanAttackRanged())
 					{
-						bool bImmediateCaptureThreat = (iRing == 1 && iCityHPPercent <= 35);
+						bool bImmediateCaptureThreat = false;
+						if (iRing == 1 && pTarget->IsCanAttackWithMove() && pTarget->canMoveOrAttackInto(*plot()))
+						{
+							int iAttackerDamage = 0;
+							int iProjectedCityDamage = TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(this, pTarget, pTargetPlot, iAttackerDamage, true, 0, true);
+							bImmediateCaptureThreat = (iProjectedCityDamage >= iCityHP);
+						}
 						if (!bImmediateCaptureThreat)
 							iScore -= bHasSiegeThreat ? 180 : 140;
 					}
