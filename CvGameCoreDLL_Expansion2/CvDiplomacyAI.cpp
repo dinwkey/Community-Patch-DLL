@@ -44696,6 +44696,20 @@ bool CvDiplomacyAI::IsEndDoFAcceptable(PlayerTypes ePlayer, bool bIgnoreCurrentD
 
 	int iChance = 10 + GetLoyalty();
 
+	// Already overextended (fighting multiple wars)? Don't create more enemies by breaking friendships.
+	if (AmIOverextended())
+		iChance += 15;
+
+	// General coalition threat: if multiple hostile civs are building up or likely to attack,
+	// the strategic environment is dangerous and breaking any friendship is risky.
+	int iCoalitionThreat = GetCoalitionThreatScore();
+	if (iCoalitionThreat >= 60)
+		iChance += 15;
+	else if (iCoalitionThreat >= 30)
+		iChance += 8;
+	else if (iCoalitionThreat >= 10)
+		iChance += 3;
+
 	// Liberator?
 	if (WasResurrectedBy(ePlayer))
 	{
@@ -44724,6 +44738,48 @@ bool CvDiplomacyAI::IsEndDoFAcceptable(PlayerTypes ePlayer, bool bIgnoreCurrentD
 	if (GetGlobalCoopWarWithState(ePlayer) >= COOP_WAR_STATE_PREPARING)
 	{
 		iChance += 5;
+	}
+
+	// Strategic self-preservation: if hostile or threatening civs are friends with this player,
+	// breaking DoF could enable them to request coop war against us. Currently our DoF with
+	// this player blocks such requests. Don't create new enemies when already surrounded.
+	{
+		int iCoalitionRisk = 0;
+		for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+		{
+			PlayerTypes eThirdParty = (PlayerTypes)i;
+			if (eThirdParty == GetID() || eThirdParty == ePlayer || !GET_PLAYER(eThirdParty).isAlive())
+				continue;
+
+			// Is this third party hostile toward us or already at war?
+			bool bThreat = IsAtWar(eThirdParty);
+			if (!bThreat && GetCivApproach(eThirdParty) <= CIV_APPROACH_HOSTILE)
+				bThreat = true;
+			if (!bThreat && IsDenouncedByPlayer(eThirdParty))
+				bThreat = true;
+			if (!bThreat && GetMilitaryAggressivePosture(eThirdParty) >= AGGRESSIVE_POSTURE_HIGH)
+				bThreat = true;
+
+			if (!bThreat)
+				continue;
+
+			// Is this threatening civ friends with the player we're considering breaking DoF with?
+			// If yes, breaking DoF removes a barrier to coop war requests against us.
+			if (GET_PLAYER(eThirdParty).GetDiplomacyAI()->IsDoFAccepted(ePlayer))
+			{
+				iCoalitionRisk += 10;
+
+				// More dangerous if this hostile civ is a neighbor who can actually attack us
+				if (GetPlayer()->GetProximityToPlayer(eThirdParty) >= PLAYER_PROXIMITY_NEIGHBORS)
+					iCoalitionRisk += 5;
+
+				// Even more dangerous if we're already at war with them - partner could join existing war
+				if (IsAtWar(eThirdParty))
+					iCoalitionRisk += 5;
+			}
+		}
+
+		iChance += iCoalitionRisk;
 	}
 
 	// Warmonger?
