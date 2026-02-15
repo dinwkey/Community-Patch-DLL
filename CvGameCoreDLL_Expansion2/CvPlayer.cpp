@@ -36647,7 +36647,19 @@ void CvPlayer::DoUpdateWarDamageAndWeariness(bool bDamageOnly)
 		{
 			if (iCurrentValue > 0)
 			{
-				iValueLostRatio = (iWarValueLost * 200) / iCurrentValue; // 2x the value so that odd values in GetWarScore() are possible
+				// Capital loss denominator floor: when high-value cities are lost (especially
+				// the capital with its 2x multiplier), iCurrentValue drops sharply, which
+				// cascades the ratio upward for ALL losses. To prevent this, use a floor
+				// for the denominator based on the per-opponent losses (not total losses
+				// across all wars, which would double-correct with the multi-war fix below).
+				// This prevents losing 2/7 cities from producing a 53% damage ratio.
+				int iEstimatedPreWarValue = iCurrentValue + (iWarValueLost * 2 / 3);
+				// The denominator floor is 60% of estimated pre-war value
+				// This means even catastrophic losses can't inflate the ratio beyond reason
+				int iDenominatorFloor = (iEstimatedPreWarValue * 60) / 100;
+				int iEffectiveDenominator = max(iCurrentValue, iDenominatorFloor);
+
+				iValueLostRatio = (iWarValueLost * 200) / iEffectiveDenominator; // 2x the value so that odd values in GetWarScore() are possible
 
 				// Multi-war cascading fix: when fighting multiple wars, the global iCurrentValue
 				// has been reduced by losses to ALL enemies, which inflates the damage ratio
@@ -36901,8 +36913,96 @@ int CvPlayer::GetWarScore(PlayerTypes ePlayer) const
 
 	int iWarDamageWeInflicted = GET_PLAYER(ePlayer).GetWarDamageValue(GetID());
 	int iWarDamageTheyInflicted = GetWarDamageValue(ePlayer);
+	int iWarScore = iWarDamageWeInflicted - iWarDamageTheyInflicted;
 
-	return range(iWarDamageWeInflicted - iWarDamageTheyInflicted, -100, 100);
+	if (iWarScore < -50)
+	{
+		int iOurCities = getNumCities();
+		int iTheirCities = GET_PLAYER(ePlayer).getNumCities();
+
+		if (iOurCities >= 3 && iTheirCities > 0)
+		{
+			StrengthTypes eMilStrength = GetDiplomacyAI()->GetRawMilitaryStrengthComparedToUs(ePlayer);
+			int iDampening = 0;
+
+			if (iOurCities >= iTheirCities)
+				iDampening += 15;
+			else if (iOurCities * 2 >= iTheirCities)
+				iDampening += 8;
+
+			if (eMilStrength <= STRENGTH_AVERAGE)
+				iDampening += 15;
+			else if (eMilStrength <= STRENGTH_STRONG)
+				iDampening += 8;
+			else if (eMilStrength <= STRENGTH_POWERFUL)
+				iDampening += 3;
+
+			const CvStrategicGeographyMap* pGeoMap = GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pGeoMap)
+			{
+				int iDefensibilityScore = 0;
+				int iCityLoop = 0;
+				int iCitiesEvaluated = 0;
+				for (const CvCity* pCity = firstCity(&iCityLoop); pCity != NULL; pCity = nextCity(&iCityLoop))
+				{
+					const StrategicCityAnalysis* pAnalysis = pGeoMap->GetCityAnalysis(pCity->GetID());
+					if (!pAnalysis)
+						continue;
+
+					iCitiesEvaluated++;
+
+					if (pAnalysis->bIsChokepointCity)
+					{
+						iDefensibilityScore += 12;
+						if (pAnalysis->iApproachCorridors <= 1)
+							iDefensibilityScore += 8;
+					}
+
+					if (pAnalysis->bIsFloodgate)
+						iDefensibilityScore += 10;
+
+					if (pAnalysis->iTerrainDefenseScore >= 40)
+						iDefensibilityScore += 8;
+					else if (pAnalysis->iTerrainDefenseScore >= 25)
+						iDefensibilityScore += 5;
+					else if (pAnalysis->iTerrainDefenseScore >= 15)
+						iDefensibilityScore += 2;
+
+					if (pAnalysis->iApproachCorridors <= 2 && !pAnalysis->bIsChokepointCity)
+						iDefensibilityScore += 4;
+
+					if (pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire)
+						iDefensibilityScore += 6;
+
+					if (pAnalysis->eLayer == STRATEGIC_LAYER_CORE || pAnalysis->eLayer == STRATEGIC_LAYER_REAR_AREA)
+						iDefensibilityScore += 3;
+				}
+
+				if (iCitiesEvaluated > 0)
+				{
+					int iAvgDefensibility = iDefensibilityScore / iCitiesEvaluated;
+					if (iAvgDefensibility >= 25)
+						iDampening += 15;
+					else if (iAvgDefensibility >= 15)
+						iDampening += 10;
+					else if (iAvgDefensibility >= 10)
+						iDampening += 6;
+					else if (iAvgDefensibility >= 5)
+						iDampening += 3;
+				}
+			}
+
+			iDampening = min(iDampening, 35);
+			if (iDampening > 0)
+			{
+				int iExcess = -iWarScore - 50;
+				int iReduction = (iExcess * iDampening * 2) / 100;
+				iWarScore += iReduction;
+			}
+		}
+	}
+
+	return range(iWarScore, -100, 100);
 }
 
 /// What was the war score the most recent time we made peace, modified by game speed?
