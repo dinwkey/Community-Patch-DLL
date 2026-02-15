@@ -33065,6 +33065,42 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 	iTotalFriendlyFirepower += iFriendlyNavalRanged;
 	if (bAirSupportAvailable) iTotalFriendlyFirepower++;
 
+	// Prefer ranged threats over melee unless city HP is in immediate capture danger.
+	// This avoids wasting city shots on front melee screens while archers/siege keep firing.
+	bool bHasSiegeOrRangedThreat = false;
+	bool bHasSiegeThreat = false;
+	CvPlot* pScanCenter = plot();
+	for (int iRing = 1; iRing <= min(5, iRange); iRing++)
+	{
+		for (int i = RING_PLOTS[iRing - 1]; i < RING_PLOTS[iRing]; i++)
+		{
+			CvPlot* pTargetPlot = iterateRingPlots(pScanCenter, i);
+			if (!pTargetPlot)
+				continue;
+
+			if (!canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+				continue;
+
+			CvUnit* pTarget = rangedStrikeTarget(pTargetPlot);
+			if (!pTarget)
+				continue;
+
+			UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
+			bool bCanReachCity = false;
+			if (pTarget->IsCanAttackRanged() || eUnitAI == UNITAI_CITY_BOMBARD)
+				bCanReachCity = (iRing <= pTarget->GetRange() + pTarget->baseMoves(false));
+			else
+				bCanReachCity = (iRing <= 1 + pTarget->baseMoves(false));
+
+			if ((eUnitAI == UNITAI_CITY_BOMBARD || pTarget->IsCanAttackRanged()) && bCanReachCity)
+			{
+				bHasSiegeOrRangedThreat = true;
+				if (eUnitAI == UNITAI_CITY_BOMBARD)
+					bHasSiegeThreat = true;
+			}
+		}
+	}
+
 	CvPlot* pPlot = plot();
 	for (int iRing=1; iRing<=min(5,iRange); iRing++)
 	{
@@ -33207,6 +33243,15 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						{
 							iScore += 90;
 						}
+					}
+
+					// Strongly deprioritize melee while ranged/siege threats are available,
+					// unless city HP is low enough that adjacent melee is a true capture threat.
+					if (bHasSiegeOrRangedThreat && eUnitAI != UNITAI_CITY_BOMBARD && !pTarget->IsCanAttackRanged())
+					{
+						bool bImmediateCaptureThreat = (iRing == 1 && iCityHPPercent <= 35);
+						if (!bImmediateCaptureThreat)
+							iScore -= bHasSiegeThreat ? 180 : 140;
 					}
 
 					if (!pTarget->isEmbarked() && !bCanReachCity && iDamage < iTargetHP)

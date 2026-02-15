@@ -8969,6 +8969,44 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 		CvPlot* pBestTarget = NULL;
 
 		int iRange = max(1,min(5,pUnit->GetRange()));
+		CvCity* pDefenseCity = pUnit->IsGarrisoned() ? pUnit->plot()->getPlotCity() : NULL;
+		int iDefenseCityHPPct = 100;
+		bool bHasPriorityRangedThreat = false;
+		if (pDefenseCity)
+		{
+			iDefenseCityHPPct = ((pDefenseCity->GetMaxHitPoints() - pDefenseCity->getDamage()) * 100) / pDefenseCity->GetMaxHitPoints();
+
+			for (int i = RING0_PLOTS; i < RING_PLOTS[iRange]; i++)
+			{
+				CvPlot* pScanPlot = iterateRingPlots(pBasePlot, i);
+				if (!pScanPlot || pScanPlot->isCity())
+					continue;
+
+				if (!pUnit->canRangeStrikeAt(pScanPlot->getX(), pScanPlot->getY()))
+					continue;
+
+				CvUnit* pScanUnit = pScanPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), pUnit, true /*testWar*/);
+				if (!pScanUnit || pScanUnit->isDelayedDeath())
+					continue;
+
+				UnitAITypes eScanAI = pScanUnit->AI_getUnitAIType();
+				if (eScanAI != UNITAI_CITY_BOMBARD && !pScanUnit->IsCanAttackRanged())
+					continue;
+
+				int iTargetRing = plotDistance(*pScanPlot, *pDefenseCity->plot());
+				bool bCanReachCity = false;
+				if (pScanUnit->IsCanAttackRanged() || eScanAI == UNITAI_CITY_BOMBARD)
+					bCanReachCity = (iTargetRing <= pScanUnit->GetRange() + pScanUnit->baseMoves(false));
+				else
+					bCanReachCity = (iTargetRing <= 1 + pScanUnit->baseMoves(false));
+
+				if (bCanReachCity)
+				{
+					bHasPriorityRangedThreat = true;
+					break;
+				}
+			}
+		}
 		for (int i=RING0_PLOTS; i<RING_PLOTS[iRange]; i++)
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pBasePlot, i);
@@ -9208,6 +9246,17 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 							if (iDamage >= pOtherUnit->GetCurrHitPoints())
 								iDamage += 30;
 						}
+					}
+
+					// If ranged/siege threats to the city are present, avoid shooting melee screens
+					// unless city HP is low and this is an adjacent capture threat.
+					if (bHasPriorityRangedThreat && !pOtherUnit->IsCanAttackRanged() &&
+						pOtherUnit->AI_getUnitAIType() != UNITAI_CITY_BOMBARD)
+					{
+						int iCityRing = pDefenseCity ? plotDistance(*pLoopPlot, *pDefenseCity->plot()) : 0;
+						bool bImmediateCaptureThreat = (pDefenseCity && iCityRing == 1 && iDefenseCityHPPct <= 35);
+						if (!bImmediateCaptureThreat)
+							iDamage -= 120;
 					}
 				}
 
