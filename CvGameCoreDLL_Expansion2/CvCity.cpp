@@ -16570,6 +16570,17 @@ bool CvCity::NeedsGarrison() const
 
 	CvPlayer& kPlayer = GET_PLAYER(getOwner());
 
+	// Hard capital garrison rule: the capital needs a garrison when at war AND
+	// bordered by or exposed to an enemy. If the capital is deep inland with no
+	// enemy border contact, skip this — the homeland AI handles interior cities.
+	// Losing the capital is catastrophic (2x war value, +40 capitulation score).
+	if (isCapital() && kPlayer.IsAtWarAnyMajor())
+	{
+		// Check if capital borders any unfriendly civ or is on an enemy army path
+		if (isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(this, NO_PLAYER))
+			return true;
+	}
+
 	// Extended Memory: garrison if siege units spotted OR coordinated attack detected
 	if (kPlayer.isMajorCiv())
 	{

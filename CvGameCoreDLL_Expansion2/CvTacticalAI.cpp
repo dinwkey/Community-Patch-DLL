@@ -2985,7 +2985,19 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		// BUT proactively garrison if we detect emerging threat!
 		bool bProactiveThreat = bHighThreat || bAggressiveNeighbor || bEnemyBuildupNearby || bCoastalThreat ||
 			bMemoryImminent || bMemorySiege || bMemoryBuildup;
-		if (!pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && 
+
+		// Hard capital garrison rule: the capital should not be skipped when it borders
+		// or is exposed to an enemy at war. If the capital is deep inland with no enemy
+		// border contact, the homeland AI can handle it normally.
+		// Losing the capital is catastrophic (2x war value, +40 capitulation score).
+		bool bIsCapitalAtWar = false;
+		if (pCity->isCapital() && m_pPlayer->IsAtWarAnyMajor())
+		{
+			// Check if the capital borders or is exposed to any enemy we're at war with
+			bIsCapitalAtWar = pCity->isBorderCity() || m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, NO_PLAYER);
+		}
+
+		if (!bIsCapitalAtWar && !pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && 
 		    !m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity,NO_PLAYER) && !bProactiveThreat)
 			continue;
 
@@ -3165,8 +3177,12 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		// PROACTIVE: Also want garrison if we detect emerging threat even if current garrison is OK
 		if (!bWantGarrison && bProactiveThreat && pGarrison == NULL)
 			bWantGarrison = true;
+
+		// Capital at war ALWAYS wants a ranged garrison — a melee garrison can't counter enemy siege
+		if (!bWantGarrison && bIsCapitalAtWar)
+			bWantGarrison = true;
 		
-		if ( bWantGarrison && (pCity->NeedsGarrison() || bProactiveThreat) )
+		if ( bWantGarrison && (pCity->NeedsGarrison() || bProactiveThreat || bIsCapitalAtWar) )
 		{
 			// Use longer search range for cities with detected threat
 			// This allows reinforcing a city before the attack arrives
@@ -3207,7 +3223,11 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				}
 
 				//if the old garrison did not move out this will fail (possibly also for other reasons)
-				int iTurnsLeft = ExecuteMoveToPlot(pUnit, pPlot);
+				// Use danger-aware pathing: prefer safe routes (roads) over short ones through
+				// enemy-adjacent terrain. This prevents reinforcements from walking through
+				// dangerous forest/hill tiles near enemy forces when a longer road exists.
+				int iGarrisonMoveFlags = CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER;
+				int iTurnsLeft = ExecuteMoveToPlot(pUnit, pPlot, true, iGarrisonMoveFlags);
 
 				//if everything went according to plan ...
 				if (iTurnsLeft != INT_MAX)
@@ -7290,6 +7310,17 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				else if (iThreat >= 25)
 					iExtraScore += 10; // Moderate threat - slight bonus
 			}
+
+				// Strategic geography: use terrain and chokepoint data to adjust garrison type preference.
+				// Cities at chokepoints with narrow corridors benefit from high-strength melee (blocking);
+				// cities with open terrain or high terrain defense score benefit more from ranged.
+				const CvStrategicGeographyMap* pGeoMap = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+				const StrategicCityAnalysis* pAnalysis = pGeoMap ? pGeoMap->GetCityAnalysis(pCity->GetID()) : NULL;
+				bool bChokepointCity = pAnalysis && pAnalysis->bIsChokepointCity;
+				bool bNarrowApproach = pAnalysis && pAnalysis->iApproachCorridors <= 2;
+				int iTerrainDefense = pAnalysis ? pAnalysis->iTerrainDefenseScore : 0;
+				bool bIsCapital = pCity->isCapital();
+
 				// Want to put ranged units in cities to give them a ranged attack
 				// Siege units can also attack but are better used for offense
 				// Melee units can't attack from inside - only their combat strength helps city defense
@@ -7300,7 +7331,14 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				case UNITAI_RANGED:
 					// Best garrison type - can attack freely without taking damage
 					if (pLoopUnit->GetRange() > 1)
+					{
 						iExtraScore += 80 + pCity->getGarrisonRangedAttackModifier();
+						// Terrain bonus: high terrain defense means ranged can exploit cover better
+						iExtraScore += iTerrainDefense / 8;
+						// Capital bonus: extra incentive to put ranged in capital
+						if (bIsCapital)
+							iExtraScore += 30;
+					}
 					else
 						iExtraScore += 50; // range 1 ranged still much better than melee
 					break;
@@ -7318,11 +7356,22 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				case UNITAI_COUNTER:
 					// All melee units can't attack from inside cities
 					// They provide defense bonus but cannot counter enemy siege without taking damage
-					// Only use as garrison if no ranged/siege available
-					if (bCityInDanger)
+					// EXCEPTION: at chokepoint cities with narrow approaches, a high-strength melee
+					// garrison is more valuable because it blocks the corridor and can counterattack
+					// adjacent melee units that try to take the city.
+					if (bChokepointCity && bNarrowApproach && !bIsCapital)
+					{
+						// Chokepoint city: melee is acceptable — strength matters for blocking
+						iExtraScore += pLoopUnit->GetBaseCombatStrength() / 3 - 20;
+					}
+					else if (bCityInDanger)
 						iExtraScore += pLoopUnit->GetBaseCombatStrength() / 5 - 40; // slight bonus for strength, but still prefer ranged
 					else
 						iExtraScore -= 60; // strongly discourage melee garrison when ranged available
+					
+					// Capital should never settle for melee when ranged exists — extra penalty
+					if (bIsCapital && !bCityInDanger)
+						iExtraScore -= 20;
 					break;
 				default:
 					//nothing
