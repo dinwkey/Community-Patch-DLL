@@ -33086,11 +33086,7 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 				continue;
 
 			UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
-			bool bCanReachCity = false;
-			if (pTarget->IsCanAttackRanged() || eUnitAI == UNITAI_CITY_BOMBARD)
-				bCanReachCity = (iRing <= pTarget->GetRange() + pTarget->baseMoves(false));
-			else
-				bCanReachCity = (iRing <= 1 + pTarget->baseMoves(false));
+			bool bCanReachCity = (iRing <= pTarget->GetRange() + pTarget->baseMoves(false));
 
 			if ((eUnitAI == UNITAI_CITY_BOMBARD || pTarget->IsCanAttackRanged()) && bCanReachCity)
 			{

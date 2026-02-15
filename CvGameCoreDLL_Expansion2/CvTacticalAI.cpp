@@ -8994,11 +8994,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 					continue;
 
 				int iTargetRing = plotDistance(*pScanPlot, *pDefenseCity->plot());
-				bool bCanReachCity = false;
-				if (pScanUnit->IsCanAttackRanged() || eScanAI == UNITAI_CITY_BOMBARD)
-					bCanReachCity = (iTargetRing <= pScanUnit->GetRange() + pScanUnit->baseMoves(false));
-				else
-					bCanReachCity = (iTargetRing <= 1 + pScanUnit->baseMoves(false));
+				bool bCanReachCity = (iTargetRing <= pScanUnit->GetRange() + pScanUnit->baseMoves(false));
 
 				if (bCanReachCity)
 				{
