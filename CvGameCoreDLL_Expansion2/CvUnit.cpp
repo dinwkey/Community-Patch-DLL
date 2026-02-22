@@ -25744,8 +25744,11 @@ void CvUnit::setPromotionReady(bool bNewValue)
 		if(m_bPromotionReady)
 		{
 			SetAutomateType(NO_AUTOMATE);
-			ClearMissionQueue();
-			SetActivityType(ACTIVITY_AWAKE);
+			if (GetLengthMissionQueue() == 0 && !IsBusy())
+			{
+				ClearMissionQueue();
+				SetActivityType(ACTIVITY_AWAKE);
+			}
 		}
 
 		if(bNewValue)
