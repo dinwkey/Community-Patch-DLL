@@ -8,6 +8,17 @@ File creation safety
 - When updating files programmatically, use the repository's `apply_patch` mechanism or other workspace-aware APIs so changes land inside the workspace. After writing, verify the file appears in the workspace listing.
 - If a path looks unexpectedly absolute or contains doubled roots like `C:\c\Users`, stop and ask for confirmation before writing.
 
+## Skills for VS Code use
+
+Use `.github/copilot-instructions.md` for always-on repository constraints (toolchain, safety, ABI, path rules).
+Use task-focused Skills for procedural workflows:
+
+- `.github/skills/save-serialization-compat.md` — adding/removing/changing serialized fields with backward compatibility.
+- `.github/skills/tactical-ai-debugging.md` — tactical/homeland AI movement/combat debugging workflow.
+- `.github/skills/build-and-log-triage.md` — choosing build mode, running builds, and triaging logs.
+
+Start with the relevant skill and return here for global constraints.
+
 - **Big picture:** This repo builds a modified Civ V game core DLL (C++), plus a set of mods (Lua/SQL/XML). The C++ game core lives in `CvGameCoreDLL_Expansion2` and is linked with helper projects (`CvGameCoreDLLUtil`, `CvGameDatabase`, `CvLocalization`, `FirePlace`, `ThirdPartyLibs`). The playable mods and content live in the top-level mod folders (e.g. `(1) Community Patch/`, `(2) Vox Populi/`) — most gameplay changes are in those files and do not require rebuilding the DLL.
 
  - **Primary build paths (MANDATORY VC9 compilation):**
