@@ -52,7 +52,7 @@ File creation safety
   - FirePlace, CvGameDatabase, CvLocalization projects — they build as libs/objects and are linked into the DLL (see `build_vp_clang.py` `LIBS`).
   - FireTuner (SDK tool) can be used for autoplay when debugging AI.
 
- -- **Common pitfalls to avoid:**
+- **Common pitfalls to avoid:**
   - Opening the solution and accepting automatic upgrade may break the historic VC9 configuration — choose **No Upgrade**.
   - Whole Program Optimization (WPO) causes long stalls in Release builds; it can be disabled per-project in VS for faster iteration.
   - If build/link errors mention missing VC9 headers, ensure VC++ 2008 SP1 toolset is installed.
@@ -106,8 +106,6 @@ File creation safety
      Run the command interactively and wait for it to finish; **do not** run background log-watchers that read the log while the build is active because they can interfere with or interrupt the build.
   - **Check logs after completion:** once the build finishes, inspect the last lines of the log to confirm success or capture errors:
     - `Get-Content clang-output/Debug/build.log | Select-Object -Last 200`
-  - **Automated wait/poll:** if automation is required, use `tools/wait_for_clang_build.ps1` (it safely polls the log and exits when the build finishes) or write a poller that checks for the output DLL path `clang-output/Debug/CvGameCore_Expansion2.dll`. Run it with ExecutionPolicy bypass if needed:
-  - `build_vp_clang.ps1` — exact compiler/linker flags, include paths, and build flow used by the clang-based build.
   - **Success checks:** verify either the DLL exists or the log contains a success marker such as `clang-build: debug successful`, `BUILD SUCCEEDED`, `Finished`, or `SUCCESS`.
   - **Failure triage:** if errors are suspected, search the log for `error`, `FAILED`, or `Traceback` and include the last ~200 lines when reporting back. Use `Select-String` to filter recurring patterns.
 
@@ -124,67 +122,215 @@ File creation safety
 
 If anything here is unclear or you want more detail about a particular area (build flags, a subsystem, or common refactoring locations), tell me which piece to expand and I will update this file.
 
+## Save Game Compatibility
+
+When adding, removing, or changing serialized fields, you **must** maintain backward compatibility with older save files. Breaking serialization will crash the game on save load.
+
+### Architecture overview
+
+- **Global save version**: `CvGlobals::SaveVersionTags` enum in `CvGlobals.h` (~line 164). Current tags:
+  ```cpp
+  enum SaveVersionTags
+  {
+      SAVE_VERSION_PLOT_FREE_MOVE_ACROSS = 1,
+      SAVE_VERSION_ATTACK_TARGET_FIELDS = 2,
+      SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL = 3,
+      SAVE_VERSION_LATEST = SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL,
+  };
+  ```
+  `SAVE_VERSION_LATEST` is always aliased to the highest tag.
+
+- **Legacy per-class version**: Many classes also have an internal `uiDllSaveVersion` (written via `MOD_SERIALIZE_INIT_WRITE`, currently `MOD_DLL_VERSION_NUMBER = 148` in `CustomMods.h`). This is the older Whoward-era system. Both systems coexist; use the global `SaveVersionTags` for new changes.
+
+- **Read/write location**: `CvGame::Read()` reads the save version as the very first thing (`kStream >> saveVersion; GC.setSaveVersion(saveVersion);`). `CvGame::Write()` sets it to `SAVE_VERSION_LATEST` before writing.
+
+- **Stream is forward-only**: `FDataStream::GetPosition()` and `SetPosition()` are **no-ops** in the Civ5 engine (the implementation is in a pre-compiled Firaxis binary `FireWorksWin32.lib`). You **cannot** seek, rewind, or backpatch. All version gating must be done at the point of reading/writing.
+
+### How to add a new serialized field
+
+1. **Add a new tag** to `SaveVersionTags` in `CvGlobals.h`:
+   ```cpp
+   SAVE_VERSION_MY_NEW_FIELD = 4,
+   SAVE_VERSION_LATEST = SAVE_VERSION_MY_NEW_FIELD,
+   ```
+
+2. **Gate the read/write** in the class's `Serialize()` (or `operator>>` / `operator<<`):
+
+   **Visitor-based pattern** (modern, used in CvPlot etc.):
+   ```cpp
+   if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_MY_NEW_FIELD)
+       visitor(obj.m_iNewField);
+   else if (bLoading)
+       mutObj.m_iNewField = 0;  // explicit default for old saves
+   ```
+
+   **Operator-based pattern** (legacy, used in CvEspionageClasses etc.):
+   ```cpp
+   // Read side:
+   if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_MY_NEW_FIELD)
+       loadFrom >> writeTo.m_iNewField;
+   else
+       writeTo.m_iNewField = 0;  // explicit default
+
+   // Write side (version is always LATEST, so always writes):
+   if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_MY_NEW_FIELD)
+       saveTo << readFrom.m_iNewField;
+   ```
+
+3. **Always provide explicit defaults** in the `else if (bLoading)` / `else` branch — never leave the field uninitialized.
+
+### How to remove/skip a serialized field
+
+When a field is removed from the code but old saves still contain it, you must **consume the bytes** on load to keep the stream in sync:
+
+```cpp
+// Old saves wrote m_iLegacyField; consume it but discard
+if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_FIELD_REMOVAL)
+{
+    int iLegacy = 0;
+    loadFrom >> iLegacy;  // consume bytes, discard value
+}
+```
+
+For vectors/arrays:
+```cpp
+if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_FIELD_REMOVAL)
+{
+    std::vector<int> vLegacy;
+    loadFrom >> vLegacy;  // consume entire vector from stream
+}
+```
+
+### Key rules and pitfalls
+
+- **Never add a field to serialization without a version gate.** Even one extra byte will misalign every subsequent read for the rest of the save, causing cascading corruption and crashes.
+- **Order matters**: fields must be read in the exact same order they were written. If you insert a new field between existing fields, gate it so old saves skip it.
+- **On write, version is always `SAVE_VERSION_LATEST`**, so `>= SAVE_VERSION_FOO` always evaluates true during save. The gate only matters during load.
+- **`MOD_SERIALIZE_READ` macro** (legacy system): `MOD_SERIALIZE_READ(version, stream, member, default)` expands to version-gated read with a default. Use this when working with classes that already use the `MOD_SERIALIZE_*` pattern.
+- **Sentinel validation**: `MOD_SERIALIZE_INIT_WRITE` writes `0xDEADBEEF` after the class version; `MOD_SERIALIZE_INIT_READ` validates it. A mismatch means the stream is desynchronized — check your field ordering.
+- **When bumping internal class versions** (e.g., `uiVersion` in `CvEspionageSpy`), bump the number in the write path and gate new fields with `if (uiVersion >= N)` in the read path.
+- **Test with an old save**: always test loading a save created before your change to verify compatibility.
+
+### Serialization patterns reference
+
+| Pattern | Where used | Example |
+|---|---|---|
+| `visitor(field)` template | `CvPlot::Serialize`, `CvCity::Serialize`, etc. | `visitor(plot.m_iArea);` |
+| `operator>> / operator<<` | `CvEspionageSpy`, `CvAttackTarget`, etc. | `loadFrom >> writeTo.m_iField;` |
+| `MOD_SERIALIZE_READ(ver, stream, member, default)` | Classes using DLL version macros | `MOD_SERIALIZE_READ(23, loadFrom, writeTo.m_bPassive, false);` |
+| `visitor.as<Type>()` | Type-casting during serialize | `visitor.template as<BuildTypes>(plot.m_eBuildProgress[i].first);` |
+
+---
+
 ## AI/Tactical Bug Debugging Guidelines
 
-When debugging AI movement or tactical bugs:
+### System architecture
 
-1. **Domain mismatch bugs are common**: When land units consider water plots (or vice versa), danger calculations often fail because:
-   - `CvUnit::GetDanger(pPlot)` evaluates danger from the unit's CURRENT domain perspective
-   - A trebuchet on land won't see naval threats because naval units can't attack land units on land
-   - The danger system doesn't simulate "what if this unit changed domain"
-   - Always check for `bWouldEmbark`, `needsEmbarkation()`, or domain transitions
+- **CvTacticalAI** handles **combat/military moves**: target identification, zone control, tactical combat simulations. Runs for AI players only.
+- **CvHomelandAI** handles **non-combat/peacetime moves**: exploration, worker improvements, healing, upgrading, sentry duty, etc. Runs for both AI and human players (for automated units).
+- **Per-turn flow** (in `CvPlayerAI::AI_unitUpdate()`):
+  1. AI players: `GetTacticalAI()->Update()` → `GetHomelandAI()->Update()` → `GetTacticalAI()->CleanUp()`
+  2. Human players: only `GetHomelandAI()->Update()` (for automated units)
+- **CvTacticalAI::Update()** flow: `UpdateVisibility()` → `DropOldFocusAreas()` → `FindTacticalTargets()` → `RecruitUnits()` → `ProcessDominanceZones()`
+- **CvHomelandAI::Update()** flow: `RecruitUnits()` → `PlanImprovements()` / `PlanWorkerDistribution()` → `FindHomelandTargets()` → `AssignHomelandMoves()`
 
-2. **Logging is essential**: The first step for AI bugs should be adding logging to identify WHICH code path is executing. Key log files:
-   - `PlayerTacticalAILog.csv` - tactical AI decisions
-   - `PlayerHomelandAILog.csv` - homeland AI decisions  
-   - Use `LogTacticalMessage()` or `LogHomelandMessage()` to add custom logging
+### Danger plots system
 
-3. **Verify the DLL is actually being used**: After building, check:
+- **`CvDangerPlots`** (defined in `CvDangerPlots.h`) computes per-tile danger values for a player. Owned by `CvPlayer` as `m_pDangerPlots`.
+- **No direct accessor** — `CvPlayer` exposes danger via three `GetPlotDanger()` overloads which lazy-update the danger data if dirty.
+- **`CvUnit::GetDanger(pPlot)`** delegates to `GET_PLAYER(getOwner()).GetPlotDanger(...)`.
+- **Update flow**: `CvPlayer::UpdateDangerPlots()` → `CvDangerPlots::UpdateDanger()` → `UpdateDangerInternal()`. Optionally uses `MOD_COMBATAI_TWO_PASS_DANGER` (units likely to be killed are excluded from ZOC in a second pass).
+
+### Debugging steps
+
+1. **Logging is essential**: The first step for AI bugs should be adding logging to identify WHICH code path is executing. Key log files:
+   - `PlayerTacticalAILog.csv` — tactical AI decisions (use `LogTacticalMessage()`)
+   - `PlayerHomelandAILog.csv` — homeland AI decisions (use `LogHomelandMessage()`)
+   - Enable logging in `config.ini` per `DEVELOPMENT.md`
+
+2. **Verify the DLL is actually being used**: After building, check:
    - The DLL timestamp in the mod folder matches your build
    - The file size is reasonable (release ~13MB, debug ~25MB)
    - Civ5 must be closed before copying the DLL
 
-4. **Common functions to check for retreat/safety bugs**:
-   - `FindSafestPlotInReach()` - evaluates safe retreat plots
-   - `ExecuteMovesToSafestPlot()` - executes retreat moves
-   - `ExecuteWithdrawMoves()` - withdrawal from zones
-   - `MoveToEmptySpaceNearTarget()` - moving toward targets
+3. **Domain mismatch bugs are common**: When land units consider water plots (or vice versa), danger calculations often fail because:
+   - `CvUnit::GetDanger(pPlot)` evaluates danger from the unit's CURRENT domain perspective
+   - A trebuchet on land won't see naval threats because naval units can't attack land units on land
+   - The danger system doesn't simulate "what if this unit changed domain"
+   - Always check for `bWouldEmbark`, `needsEmbarkation()` (a `CvPlot` method), or domain transitions
 
-5. **When checking for enemy units, consider**:
-   - `GetNumEnemyUnitsAdjacent()` only checks adjacent plots
-   - For ranged threats, scan RING2_PLOTS or RING3_PLOTS manually
-   - Use `getUnitByIndex()` loop to find ALL units, not `getBestDefender()` which may miss some
-   - Always specify the correct domain filter (or NO_DOMAIN for all)
-
-6. **Zero-danger classification pitfalls**:
+4. **Zero-danger classification pitfalls**:
    - `bIsZeroDanger = (iDanger <= 0)` can be wrong for domain transitions
    - Water plots may appear zero-danger to land units because naval units can't attack them YET
    - Always add explicit checks for domain transitions with nearby threats
 
-7. **FindSafestPlotInReach() specifics**:
-   - This is a **static helper** in `TacticalAIHelpers::`, NOT a member of `CvTacticalAI` — `m_pPlayer` is unavailable; use `GET_PLAYER(pUnit->getOwner())` instead
-   - Scoring system: **lower score = better plot**; lists are sorted ascending and `.back()` picks the lowest/best
-   - Plot categories by priority: `aCityList` > `aCoverList` > `aZeroDangerList` > `aDangerList` > `aEmbarkList`
-   - `aEmbarkList` is separate and used only as absolute last resort when no land plots are available
+### Key functions reference
 
-8. **AI "memory" system for vanished units**:
-   - `CvDangerPlots::m_vanishedUnits` stores `(PlayerID, UnitID)` pairs of units seen last turn but no longer visible
-   - Cleared every turn — AI remembers for exactly ONE turn (like a human would)
-   - Access via `CvPlayer::GetVanishedUnits()` or `CvPlayer::IsVanishedUnit(IDInfo)`
-   - When queried, the **live unit** is looked up — so current stats (including promotions) are used
-   - Use this to detect threats that moved into fog-of-war
+**Retreat/safety:**
+| Function | Location | Purpose |
+|---|---|---|
+| `TacticalAIHelpers::FindSafestPlotInReach()` | `CvTacticalAI.cpp` | Evaluates safe retreat plots (static helper, not a member) |
+| `CvTacticalAI::ExecuteMovesToSafestPlot()` | `CvTacticalAI.cpp` | Executes retreat moves |
+| `CvTacticalAI::ExecuteWithdrawMoves()` | `CvTacticalAI.cpp` | Withdrawal from zones |
+| `CvTacticalAI::MoveToEmptySpaceNearTarget()` | `CvTacticalAI.cpp` | Moving toward targets |
 
-9. **UnitSet typedef location**:
-   - Defined in `CvDangerPlots.h` as `typedef std::set<std::pair<PlayerTypes,int>> UnitSet`
-   - If needed in another header, either include `CvDangerPlots.h` or duplicate the typedef with a comment
-   - `CvPlayer.h` now has its own copy with `#include <set>` for self-containment
+**Combat simulation & scoring:**
+| Function | Location | Purpose |
+|---|---|---|
+| `TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit()` | `CvTacticalAI.cpp` | Simulate unit-vs-unit damage |
+| `TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity()` | `CvTacticalAI.cpp` | Simulate unit-vs-city damage |
+| `TacticalAIHelpers::IsAttackNetPositive()` | `CvTacticalAI.cpp` | Whether attacking is worth it |
+| `TacticalAIHelpers::FindBestUnitAssignments()` | `CvTacticalAI.cpp` | Core combinatorial assignment solver |
+| `TacticalAIHelpers::EstimateLocalUnitPower()` | `CvTacticalAI.cpp` | Local force comparison |
 
-10. **Naval threat scanning for embarkation**:
-    - Use `RING5_PLOTS` (91 plots, 5 tiles) as maximum scan area
-    - Calculate per-unit threat range: `maxMoves() / GD_INT_GET(MOVE_DENOMINATOR)` + `GetRange()` if ranged
-    - Era-based fallback ranges: Ancient/Classical=5, Medieval/Renaissance=7, Industrial+=8
-    - Check both visible units AND vanished units for comprehensive threat detection
+**Plot queries:**
+| Function | Location | Purpose |
+|---|---|---|
+| `TacticalAIHelpers::GetAllPlotsInReachThisTurn()` | `CvTacticalAI.cpp` | All plots a unit can reach this turn |
+| `TacticalAIHelpers::GetPlotsUnderRangedAttackFrom()` | `CvTacticalAI.cpp` | Plots attackable from a position |
+| `TacticalAIHelpers::GetTargetsInRange()` | `CvTacticalAI.cpp` | Enemies reachable for attack |
+| `CvPlot::GetNumEnemyUnitsAdjacent()` | `CvPlot.cpp` | Adjacent enemy count (also on `CvUnit` as convenience wrapper) |
 
+**Constants** (defined in `CvDefines.h`):
+- `RING0_PLOTS (1)`, `RING1_PLOTS (7)`, `RING2_PLOTS (19)`, `RING3_PLOTS (37)`, `RING4_PLOTS (61)`, `RING5_PLOTS (91)`
+- Movement cost: `GD_INT_GET(MOVE_DENOMINATOR)`
 
+### FindSafestPlotInReach() specifics
 
+- **Static helper** in `TacticalAIHelpers::`, NOT a member of `CvTacticalAI` — `m_pPlayer` is unavailable; use `GET_PLAYER(pUnit->getOwner())` instead
+- **Scoring**: lower score = better plot. Lists are sorted **descending** via `OptionWithScore::operator<` (which uses `score > rhs.score`), so `.back()` picks the **lowest/best** score
+- **Plot categories by priority**: `aCityList` > `aCoverList` > `aZeroDangerList` > `aDangerList` > `aEmbarkList`
+- `aEmbarkList` is a separate last-resort bucket used only when no land plots are available
+
+### Tactical targets
+
+- **`AITacticalTargetType`** enum in `CvEnums.h` (`CvGameCoreDLLUtil/include/CvEnums.h`): `AI_TACTICAL_TARGET_NONE`, `_ENEMY_CITY`, `_BARBARIAN_CAMP`, `_IMPROVEMENT`, `_BLOCKADE_POINT`, `_ENEMY_COMBAT_UNIT`, `_FRIENDLY_CITY`, `_IMPROVEMENT_TO_DEFEND`, `_DEFENSIVE_BASTION`, `_HIGH_PRIORITY_CIVILIAN`, `_LOW_PRIORITY_CIVILIAN`, `_TRADE_UNIT_SEA`, `_TRADE_UNIT_LAND`, `_ENEMY_CITADEL`, `_IMPROVEMENT_RESOURCE`, `_GOODY`
+- **`CvTacticalTarget`** class in `CvTacticalAI.h` wraps target type, position, and scoring
+
+### AI "memory" system for vanished units
+
+- `CvDangerPlots::m_vanishedUnits` stores `(PlayerID, UnitID)` pairs of units seen last turn but no longer visible
+- Cleared every turn — AI remembers for exactly ONE turn (like a human would)
+- Access via `CvPlayer::GetVanishedUnits()` or `CvPlayer::IsVanishedUnit(const IDInfo& id)`
+- When queried, the **live unit** is looked up — so current stats (including promotions) are used
+- Use this to detect threats that moved into fog-of-war
+
+### Checking for enemy units
+
+- `CvPlot::GetNumEnemyUnitsAdjacent()` only checks adjacent plots. `CvUnit` has a convenience wrapper.
+- For ranged threats, scan `RING2_PLOTS` or `RING3_PLOTS` manually
+- Use `CvPlot::getUnitByIndex()` loop to find ALL units, not `getBestDefender()` which may miss some
+- Always specify the correct domain filter (or `NO_DOMAIN` for all)
+
+### Naval threat scanning for embarkation
+
+- Use `RING5_PLOTS` (91 plots, 5 tiles) as maximum scan area
+- Calculate per-unit threat range: `maxMoves() / GD_INT_GET(MOVE_DENOMINATOR)` + `GetRange()` if ranged
+- Era-based fallback ranges: Ancient/Classical=5, Medieval/Renaissance=7, Industrial+=8
+- Check both visible units AND vanished units for comprehensive threat detection
+
+### UnitSet typedef
+
+- Defined in `CvDangerPlots.h` as `typedef std::set<std::pair<PlayerTypes,int>> UnitSet`
+- Duplicated in `CvPlayer.h` (with `#include <set>`) for self-containment
 
