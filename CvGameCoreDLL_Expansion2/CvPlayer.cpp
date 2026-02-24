@@ -18561,8 +18561,9 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 		int iGreatWorkID;
 		CvCity* pCity;
 		BuildingClassTypes eBuildingClass;
+		int iSlotIndex;
 
-		GreatWorkInfo(int id, CvCity* c, BuildingClassTypes bc) : iGreatWorkID(id), pCity(c), eBuildingClass(bc) {}
+		GreatWorkInfo(int id, CvCity* c, BuildingClassTypes bc, int iSlot) : iGreatWorkID(id), pCity(c), eBuildingClass(bc), iSlotIndex(iSlot) {}
 	};
 
 	CvWeightedVector<GreatWorkInfo> artChoices;
@@ -18602,7 +18603,7 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 						if (GetCulture()->ControlsGreatWork(iGreatWorkIndex))
 							continue;
 
-						artChoices.push_back(GreatWorkInfo(iGreatWorkIndex, pPlayerCity, eBuildingClass), iDistance);
+						artChoices.push_back(GreatWorkInfo(iGreatWorkIndex, pPlayerCity, eBuildingClass, iI), iDistance);
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvGameCulture* pCulture = GC.getGame().GetGameCulture();
@@ -18641,10 +18642,15 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 		const int iGWIndex = greatWork.iGreatWorkID;
 		const CvCity* pGWCity = greatWork.pCity;
 		const BuildingClassTypes eBuildingClass = greatWork.eBuildingClass;
+		const int iOldSlotIndex = greatWork.iSlotIndex;
+
+		if (pGWCity == NULL)
+			continue;
 
 		BuildingTypes eBuilding = pGWCity->GetBuildingTypeFromClass(eBuildingClass);
 		CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
-		ASSERT(pkBuildingInfo);
+		if (!pkBuildingInfo)
+			continue;
 
 		// Create the GW at the best slot
 		BuildingClassTypes eNewBuildingClass = NO_BUILDINGCLASS;
@@ -18657,8 +18663,9 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 
 		// Now perform the steal
 		kPlayer.GetCulture()->ClearSwappableGreatWorkIfMatches(iGWIndex);
-		pGWCity->GetCityBuildings()->SetBuildingGreatWork(eBuildingClass, iI, -1);
+		pGWCity->GetCityBuildings()->SetBuildingGreatWork(eBuildingClass, iOldSlotIndex, -1);
 		pNewGWCity->GetCityBuildings()->SetBuildingGreatWork(eNewBuildingClass, iNewSlotIndex, iGWIndex);
+		iStuffStolen++;
 		iPlundered++;
 		iNotificationArtwork = iGWIndex;
 		if (GC.getLogging() && GC.getAILogging())
