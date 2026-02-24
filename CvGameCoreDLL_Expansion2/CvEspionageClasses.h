@@ -301,6 +301,7 @@ public:
 	void Init(CvPlayer* pPlayer);
 	void Uninit(void);
 	void Reset(void);
+	CvPlayer* GetPlayer() const;
 
 	// Functions invoked each player turn
 	void DoTurn(void);

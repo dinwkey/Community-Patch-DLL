@@ -7564,7 +7564,6 @@ void CvPlayerTraits::Serialize(PlayerTraits& playerTraits, Visitor& visitor)
 	visitor(playerTraits.m_iPopulationUnhappinessModifier);
 	visitor(playerTraits.m_iCityStateBonusModifier);
 	visitor(playerTraits.m_iCityStateFriendshipModifier);
-	visitor(playerTraits.m_iCityStateRecoveryModifier);
 	visitor(playerTraits.m_iCityStateCombatModifier);
 	visitor(playerTraits.m_iLandBarbarianConversionPercent);
 	visitor(playerTraits.m_iLandBarbarianConversionExtraUnits);

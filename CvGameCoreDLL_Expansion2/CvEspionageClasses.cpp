@@ -311,6 +311,13 @@ FDataStream& operator>>(FDataStream& loadFrom, CvEspionageSpy& writeTo)
 	loadFrom >> uiVersion;
 	MOD_SERIALIZE_INIT_READ(loadFrom);
 
+	// Old saves (before SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL) wrote m_iName int before m_sName
+	if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL)
+	{
+		int iLegacySpyNameIndex = -1;
+		loadFrom >> iLegacySpyNameIndex;
+	}
+
 	MOD_SERIALIZE_READ(53, loadFrom, writeTo.m_sName, NULL);
 	int iSpyRank = 0;
 	loadFrom >> iSpyRank;
@@ -343,7 +350,7 @@ FDataStream& operator>>(FDataStream& loadFrom, CvEspionageSpy& writeTo)
 /// Serialization write
 FDataStream& operator<<(FDataStream& saveTo, const CvEspionageSpy& readFrom)
 {
-	uint uiVersion = 1;
+	uint uiVersion = 2;
 	saveTo << uiVersion;
 	MOD_SERIALIZE_INIT_WRITE(saveTo);
 
@@ -423,6 +430,11 @@ void CvPlayerEspionage::Reset()
 	m_aiNumSpyActionsDone.clear();
 	m_aIntrigueNotificationMessages.clear();
 	m_aaPlayerStealableTechList.clear();
+}
+
+CvPlayer* CvPlayerEspionage::GetPlayer() const
+{
+	return m_pPlayer;
 }
 
 
@@ -6551,7 +6563,23 @@ FDataStream& operator>>(FDataStream& loadFrom, CvPlayerEspionage& writeTo)
 	}
 
 	uint uiNumCivs = 0;
+	if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL)
+	{
+		// Old saves wrote m_aiSpyListNameOrder vector + m_iSpyListNameOrderIndex after spy list
+		int iLegacySpyNameCount = 0;
+		loadFrom >> iLegacySpyNameCount;
+		for (int i = 0; i < iLegacySpyNameCount; i++)
+		{
+			int iLegacySpyNameIndex = 0;
+			loadFrom >> iLegacySpyNameIndex;
+		}
+
+		int iLegacySpyNameOrderIndex = -1;
+		loadFrom >> iLegacySpyNameOrderIndex;
+	}
+
 	loadFrom >> uiNumCivs;
+
 	for(uint uiCiv = 0; uiCiv < uiNumCivs; uiCiv++)
 	{
 		TechList aTechList;
@@ -6629,7 +6657,7 @@ FDataStream& operator>>(FDataStream& loadFrom, CvPlayerEspionage& writeTo)
 /// Serialization write
 FDataStream& operator<<(FDataStream& saveTo, const CvPlayerEspionage& readFrom)
 {
-	uint uiVersion = 0;
+	uint uiVersion = 1;
 	saveTo << uiVersion;
 	MOD_SERIALIZE_INIT_WRITE(saveTo);
 
