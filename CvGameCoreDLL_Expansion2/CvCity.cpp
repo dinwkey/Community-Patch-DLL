@@ -24765,6 +24765,10 @@ void CvCity::ChangeYieldPerAllyTimes100(YieldTypes eIndex, int iChange)
 	if (iChange != 0)
 	{
 		m_aiYieldPerAllyTimes100[eIndex] = m_aiYieldPerAllyTimes100[eIndex] + iChange;
+		if (m_aiYieldPerAllyTimes100[eIndex] < 0)
+		{
+			m_aiYieldPerAllyTimes100[eIndex] = 0;
+		}
 		ASSERT(GetYieldPerAllyTimes100(eIndex) >= 0);
 	}
 }
@@ -24789,6 +24793,10 @@ void CvCity::ChangeYieldPerFriendTimes100(YieldTypes eIndex, int iChange)
 	if (iChange != 0)
 	{
 		m_aiYieldPerFriendTimes100[eIndex] = m_aiYieldPerFriendTimes100[eIndex] + iChange;
+		if (m_aiYieldPerFriendTimes100[eIndex] < 0)
+		{
+			m_aiYieldPerFriendTimes100[eIndex] = 0;
+		}
 		ASSERT(GetYieldPerFriendTimes100(eIndex) >= 0);
 	}
 }
@@ -32503,6 +32511,18 @@ void CvCity::read(FDataStream& kStream)
 	// Perform shared serialize
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+
+	for (int i = 0; i < NUM_YIELD_TYPES; i++)
+	{
+		if (m_aiYieldPerAllyTimes100[i] < 0)
+		{
+			m_aiYieldPerAllyTimes100[i] = 0;
+		}
+		if (m_aiYieldPerFriendTimes100[i] < 0)
+		{
+			m_aiYieldPerFriendTimes100[i] = 0;
+		}
+	}
 
 	GetCityStrategyAI()->PrecalcYieldStats();
 

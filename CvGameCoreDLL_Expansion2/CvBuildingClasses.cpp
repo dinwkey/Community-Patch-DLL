@@ -4592,14 +4592,14 @@ int CvBuildingEntry::GetYieldPerFriendTimes100(int i) const
 {
 	PRECONDITION(i < NUM_YIELD_TYPES, "Index out of bounds");
 	PRECONDITION(i > -1, "Index out of bounds");
-	return m_piYieldPerFriendTimes100 ? m_piYieldPerFriendTimes100[i] : -1;
+	return m_piYieldPerFriendTimes100 ? m_piYieldPerFriendTimes100[i] : 0;
 }
 
 int CvBuildingEntry::GetYieldPerAllyTimes100(int i) const
 {
 	PRECONDITION(i < NUM_YIELD_TYPES, "Index out of bounds");
 	PRECONDITION(i > -1, "Index out of bounds");
-	return m_piYieldPerAllyTimes100 ? m_piYieldPerAllyTimes100[i] : -1;
+	return m_piYieldPerAllyTimes100 ? m_piYieldPerAllyTimes100[i] : 0;
 }
 
 int CvBuildingEntry::GetYieldChangeWorldWonder(int i) const
