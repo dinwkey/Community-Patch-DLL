@@ -223,6 +223,8 @@ void CvStrategicGeographyMap::Init(PlayerTypes ePlayer)
 }
 
 /// Should we recompute? Every 5 turns peacetime, every 3 turns wartime, or if never computed.
+/// Turbo-update: every turn for the first 3 turns after a new war starts, so the AI can
+/// immediately reassess city defense priorities when surprised by a coop war or backstab.
 bool CvStrategicGeographyMap::NeedsUpdate() const
 {
 	if (m_ePlayer == NO_PLAYER)
@@ -239,7 +241,35 @@ bool CvStrategicGeographyMap::NeedsUpdate() const
 	int iTurnsSinceUpdate = iCurrentTurn - m_iLastFullUpdate;
 
 	// At war? Update more frequently.
-	bool bAtWar = (kPlayer.CountNumDangerousMajorsAtWarWith(true, false) > 0);
+	bool bAtWar = false;
+	bool bNewWar = false;
+	CvTeam& kTeam = GET_TEAM(kPlayer.getTeam());
+	for (int iTeamLoop = 0; iTeamLoop < MAX_CIV_TEAMS; iTeamLoop++)
+	{
+		TeamTypes eLoopTeam = (TeamTypes)iTeamLoop;
+		if (eLoopTeam == kPlayer.getTeam())
+			continue;
+		if (!kTeam.isAtWar(eLoopTeam))
+			continue;
+		if (!GET_TEAM(eLoopTeam).isAlive() || GET_TEAM(eLoopTeam).isMinorCiv())
+			continue;
+
+		bAtWar = true;
+
+		// If any war is very recent (started within 3 turns), force turbo-update
+		int iWarTurns = kTeam.GetNumTurnsAtWar(eLoopTeam);
+		if (iWarTurns <= 3)
+		{
+			bNewWar = true;
+			break;
+		}
+	}
+
+	// Turbo-update: every turn for the first 3 turns after a new war declaration.
+	// This ensures the AI immediately reassesses defense priorities when surprised.
+	if (bNewWar)
+		return (iTurnsSinceUpdate >= 1);
+
 	int iUpdateInterval = bAtWar ? 3 : 5;
 
 	return (iTurnsSinceUpdate >= iUpdateInterval);

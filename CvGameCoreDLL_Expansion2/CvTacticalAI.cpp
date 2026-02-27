@@ -2876,6 +2876,8 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_GARRISON);
 	bool bImminentAttack = m_bImminentAttack;
+	int iMajorWars = m_pPlayer->CountNumDangerousMajorsAtWarWith(true, false);
+	bool bMultiFrontWar = (iMajorWars >= 2);
 
 	for (CvTacticalTarget* pTarget = GetFirstZoneTarget(AI_TACTICAL_TARGET_FRIENDLY_CITY); pTarget!=NULL; pTarget = GetNextZoneTarget())
 	{
@@ -2997,8 +2999,25 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			bIsCapitalAtWar = pCity->isBorderCity() || m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, NO_PLAYER);
 		}
 
-		if (!bIsCapitalAtWar && !pCity->isBorderCity() && !pCity->GetCityCitizens()->AnyPlotBlockaded() && 
-		    !m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity,NO_PLAYER) && !bProactiveThreat)
+		bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+		bool bExposedToEnemy = m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, NO_PLAYER);
+		bool bSkipAsCoreCity = !bIsCapitalAtWar && !pCity->isBorderCity() && !bBlockaded && !bExposedToEnemy && !bProactiveThreat;
+
+		// Multi-front wars are brittle: don't skip strategic interior cities as aggressively.
+		// Keep tactical garrison coverage for floodgates/chokepoints/second-line cities even
+		// when they are not currently border or exposed by the path model.
+		if (bSkipAsCoreCity && bMultiFrontWar)
+		{
+			const CvStrategicGeographyMap* pGeoMap = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+			const StrategicCityAnalysis* pAnalysis = pGeoMap ? pGeoMap->GetCityAnalysis(pCity->GetID()) : NULL;
+			bool bStrategicInterior = pAnalysis && (pAnalysis->bIsSecondLine || pAnalysis->bIsFloodgate || pAnalysis->bIsChokepointCity);
+
+			// Slightly lower threshold in multi-front wars to react earlier to pressure shifts.
+			if (bStrategicInterior || iThreatLevel >= 35 || bMemoryImminent || bMemorySiege || bMemoryBuildup)
+				bSkipAsCoreCity = false;
+		}
+
+		if (bSkipAsCoreCity)
 			continue;
 
 		for (int iI = 0; iI < pPlot->getNumUnits(); iI++)

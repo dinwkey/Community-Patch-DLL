@@ -3594,15 +3594,18 @@ void CvMilitaryAI::UpdateOperations()
 				if (iNumEnemies >= 3 && pThreatenedCityC && pThreatenedCityC != pEnemyLandCity)
 					CheckLandDefenses(eLoopPlayer, pThreatenedCityC);
 
-				// Phase 3: Ensure chokepoint cities always have defense operations.
+				// Phase 3+4: Ensure chokepoint and floodgate cities always have defense operations.
 				// Chokepoint cities are strategically critical — losing them opens wide fronts.
-				// If a chokepoint city facing this enemy doesn't already have defense, set one up.
+				// Floodgate cities shield multiple interior cities — losing them exposes the core.
+				// If such a city facing this enemy doesn't already have defense, set one up.
 				if (m_pStrategyMap)
 				{
 					int iCityLoop = 0;
 					for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
 					{
-						if (!m_pStrategyMap->IsCityChokepoint(pCity->GetID()))
+						bool bIsChokepoint = m_pStrategyMap->IsCityChokepoint(pCity->GetID());
+						bool bIsFloodgate = m_pStrategyMap->IsCityFloodgate(pCity->GetID());
+						if (!bIsChokepoint && !bIsFloodgate)
 							continue;
 
 						// Only assign defense if this enemy is relevant to this city
@@ -3616,6 +3619,22 @@ void CvMilitaryAI::UpdateOperations()
 							continue;
 
 						CheckLandDefenses(eLoopPlayer, pCity);
+
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString playerName = GetPlayer()->getCivilizationShortDescription();
+							FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+							if (pLog)
+							{
+								CvString msg;
+								msg.Format("%03d, %s, STRATEGIC DEFENSE: %s city %s vs %s",
+									GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+									bIsChokepoint ? "chokepoint" : "floodgate",
+									pCity->getNameNoSpace().c_str(),
+									GET_PLAYER(eLoopPlayer).getCivilizationShortDescription());
+								pLog->Msg(msg.c_str());
+							}
+						}
 					}
 				}
 
