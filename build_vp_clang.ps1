@@ -260,12 +260,12 @@ $CPP = @(
 
 # Build compiler argument list
 function Build-ClangArgs {
-    $args = @('-m32', '-msse3', '/c', '/MD', '/GS', '/EHsc', '/fp:precise', '/Zc:wchar_t', '/Z7')
+    $args = @('-m32', '-msse3', '/c', '/MD', '/GS', '/EHsc', '/fp:precise', '/Zc:wchar_t', '/Zi', '/FS')
     
     if ($Config -eq 'release') {
-        $args += '/Ox', '/Ob2', '-flto'
+        $args += '/Ox', '/Ob2', '/Zo', '-flto'
     } else {
-        $args += '/Od', '-g'
+        $args += '/Od', '/Oy-'
     }
     
     foreach ($predef in $PREDEFS) {
