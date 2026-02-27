@@ -33523,6 +33523,16 @@ void CvPlayer::setTurnActive(bool bNewValue, bool bDoTurn) // R: bDoTurn default
 					}
 				}
 				const char* szResName = GC.getResourceInfo((ResourceTypes)iJ)->GetText();
+				if (m_paiNumResourceFromTiles[iJ] != iCntImproved)
+				{
+					CUSTOMLOG("Resource counter mismatch (improved) for %s. Stored: %d, counted: %d. Auto-correcting.", szResName, m_paiNumResourceFromTiles[iJ], iCntImproved);
+					m_paiNumResourceFromTiles[iJ] = iCntImproved;
+				}
+				if (m_paiNumResourceUnimproved[iJ] != iCntUnimproved)
+				{
+					CUSTOMLOG("Resource counter mismatch (unimproved) for %s. Stored: %d, counted: %d. Auto-correcting.", szResName, m_paiNumResourceUnimproved[iJ], iCntUnimproved);
+					m_paiNumResourceUnimproved[iJ] = iCntUnimproved;
+				}
 				ASSERT(m_paiNumResourceFromTiles[iJ] == iCntImproved, "Mismatch m_paiNumResourceFromTiles for Player %d (%s), Resource %s. Stored: %d, counted: %d.", GetID(), getCivilizationShortDescription(), szResName, m_paiNumResourceFromTiles[iJ], iCntImproved);
 				ASSERT(m_paiNumResourceUnimproved[iJ] == iCntUnimproved, "Mismatch m_paiNumResourceUnimproved for Player %d (%s), Resource %s. Stored: %d, counted: %d.", GetID(), getCivilizationShortDescription(), szResName, m_paiNumResourceUnimproved[iJ], iCntUnimproved);
 			}

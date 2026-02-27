@@ -8233,6 +8233,22 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 		// If old improvement was a gift, it ignored our tech limits, so be sure to remove resources properly
 		bool bOldImprovementConnectedResource = IsResourceImprovedForOwner(IsImprovedByGiftFromMajor());
 
+		// Save per-resource amounts computed with the old improvement's extraction modifiers. We need these
+		// for the removal at the end of this function, because m_eImprovementType will have changed by then
+		// and removeResourcesOnPlotFromTotal would incorrectly use the new improvement's modifiers.
+		int iOldImprovedResourceForTiles = 0;
+		int iOldImprovedResourceExtra = 0;
+		ResourceTypes eOldConnectedResource = NO_RESOURCE;
+		if (bOldImprovementConnectedResource)
+		{
+			eOldConnectedResource = getResourceType(getTeam());
+			if (eOldConnectedResource != NO_RESOURCE)
+			{
+				iOldImprovedResourceForTiles = getNumResourceForPlayer(getOwner(), /*bExtraResources*/ false);
+				iOldImprovedResourceExtra = getNumResourceForPlayer(getOwner(), /*bExtraResources*/ true);
+			}
+		}
+
 		CvCity* pOwningCity = getEffectiveOwningCity();
 		if (pOwningCity != NULL)
 		{
@@ -9005,6 +9021,79 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 			}
 		}
 
+		// If we're removing an Improvement that hooked up a resource then we need to take away the bonus
+		if(eOldImprovement != NO_IMPROVEMENT && !isCity())
+		{
+			if(isOwned())
+			{
+				CvPlayer& owningPlayer = GET_PLAYER(owningPlayerID);
+				// Remove Resource Quantity from total
+				if(getResourceType(getTeam()) != NO_RESOURCE)
+				{
+					if (bOldImprovementConnectedResource)
+					{
+						// Use saved amounts from before the improvement type changed, so the old improvement's
+						// extraction modifiers are applied. Without this, both the add (for new imp) and remove
+						// (for old imp) use the new improvement's modifiers, causing them to cancel out and
+						// leave m_paiNumResourceFromTiles stuck at the old value.
+						if (eOldConnectedResource != NO_RESOURCE && getResourceType(getTeam()) == eOldConnectedResource)
+						{
+							owningPlayer.changeNumResourceTotal(eOldConnectedResource, -iOldImprovedResourceExtra, /*bFromBuilding*/ true);
+							owningPlayer.changeNumResourceTotal(eOldConnectedResource, -iOldImprovedResourceForTiles, /*bFromBuilding*/ false);
+							SetResourceLinkedCityActive(false);
+
+							CvCity* pResourceCity = getOwningCity();
+							if (pResourceCity)
+							{
+								pResourceCity->ChangeNumResourceLocal(eOldConnectedResource, -iOldImprovedResourceExtra, /*bUnimproved*/ false);
+								pResourceCity->ChangeNumResourceLocal(eOldConnectedResource, -iOldImprovedResourceForTiles, /*bUnimproved*/ false);
+							}
+						}
+						else
+						{
+							// Resource type changed during improvement swap (setResourceType was called).
+							// Fall back to recalculation-based removal.
+							owningPlayer.removeResourcesOnPlotFromTotal(this);
+						}
+						owningPlayer.addResourcesOnPlotToUnimproved(this);
+					}
+				}
+
+				ResourceTypes eResource = getResourceType(getTeam());
+
+				if(eResource != NO_RESOURCE)
+				{
+					if(GC.getImprovementInfo(eOldImprovement)->IsConnectsResource(eResource))
+					{
+						if(GC.getResourceInfo(eResource)->getResourceUsage() == RESOURCEUSAGE_LUXURY)
+						{
+							owningPlayer.CalculateNetHappiness();
+						}
+					}
+				}
+				
+				ResourceTypes eResourceFromImprovement = (ResourceTypes)GC.getImprovementInfo(eOldImprovement)->GetResourceFromImprovement();
+				if (eResourceFromImprovement != NO_RESOURCE)
+				{
+					if (getResourceType() != NO_RESOURCE && getResourceType() == eResourceFromImprovement)
+					{
+						setResourceType(NO_RESOURCE, 0);
+					}
+				}
+
+				if (GC.getImprovementInfo(eOldImprovement)->IsExoticResourceFromImprovement())
+				{
+					// if for some reason this doesnt place resources, then dont remove resources. unlikely to fire, but we do allow it to be zero = inactive
+					int iQuantity = GC.getImprovementInfo(eOldImprovement)->GetResourceQuantityFromImprovement() + GET_PLAYER(eBuilder).GetAdmiralLuxuryBonus();
+					if (getResourceType() != NO_RESOURCE && iQuantity > 0)
+					{
+						setResourceType(NO_RESOURCE, 0);
+					}
+				}
+			}
+		}
+
+>>>>>>> 04cf0802c (Fix resource counter desync when replacing improvements)
 		updateYield();
 		if(eBuilder != NO_PLAYER && getOwner() == eBuilder)
 		{
@@ -9786,8 +9875,6 @@ void CvPlot::SetResourceLinkedCity(const CvCity* pCity)
 }
 */
 
-//	--------------------------------------------------------------------------------
-/// Is the Resource connection with the linked city active? (e.g. pillaging)
 bool CvPlot::IsResourceLinkedCityActive() const
 {
 	return m_bResourceLinkedCityActive;
