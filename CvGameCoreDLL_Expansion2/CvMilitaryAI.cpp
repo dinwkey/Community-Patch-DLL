@@ -353,6 +353,8 @@ void CvMilitaryAI::Reset()
 	m_iNumMissileUnits = 0;
 	m_iNumActiveUniqueUnits = 0;
 	m_iMemoryThreatWeight = 0;
+	m_iCoopWarRiskScore = 0;
+	m_strategicReserveCities.clear();
 
 	for(int iI = 0; iI < m_pAIStrategies->GetNumMilitaryAIStrategies(); iI++)
 	{
@@ -507,11 +509,17 @@ void CvMilitaryAI::DoTurn()
 	m_iMemoryThreatWeight = CalculateMemoryThreatWeight();
 	ScanForBarbarians();
 	UpdateBaseData();
-	UpdateDefenseState();
 
 	// Update strategic geography map if it's time (every 3-5 turns depending on war state)
 	if (m_pStrategyMap && m_pStrategyMap->NeedsUpdate())
 		m_pStrategyMap->Update();
+
+	// Coop-war risk must be computed before UpdateDefenseState (which reads the score)
+	// and before strategic reserves (which also use the score).
+	m_iCoopWarRiskScore = ComputeCoopWarRiskScore();
+	ComputeStrategicReserveCities();
+
+	UpdateDefenseState();
 
 	// Issue 7.2: Evaluate escort needs for returning trade units
 	if(!m_pPlayer->isHuman(ISHUMAN_AI_UNITS))
@@ -2128,6 +2136,322 @@ int CvMilitaryAI::CalculateMemoryThreatWeight() const
 	return min(100, iThreat);
 }
 
+/// Identify second-line and strategic interior cities that should maintain a garrison
+/// even when not directly on the front line.  Called once per turn from DoTurn().
+void CvMilitaryAI::ComputeStrategicReserveCities()
+{
+	m_strategicReserveCities.clear();
+
+	if (!m_pStrategyMap || !m_pPlayer->isMajorCiv())
+		return;
+
+	// Only maintain strategic reserves when at war or under high coop-war risk
+	bool bAtWar = (m_pPlayer->CountNumDangerousMajorsAtWarWith(true, false) > 0);
+	if (!bAtWar && m_iCoopWarRiskScore < 40)
+		return;
+
+	// Collect candidate cities with strategic scores
+	struct ReserveCandidate
+	{
+		int iCityID;
+		int iScore;
+	};
+	vector<ReserveCandidate> vCandidates;
+
+	int iCityLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
+	{
+		const StrategicCityAnalysis* pAnalysis = m_pStrategyMap->GetCityAnalysis(pCity->GetID());
+		if (!pAnalysis)
+			continue;
+
+		// Front-line cities are handled by normal garrison/defense ops — skip them
+		if (pAnalysis->bIsFrontLine)
+			continue;
+
+		// Score the city for reserve importance
+		int iScore = 0;
+
+		// Floodgates are highest priority — losing them exposes multiple interior cities
+		if (pAnalysis->bIsFloodgate)
+			iScore += 50 + pAnalysis->iDependentCityCount * 10;
+
+		// Chokepoints control approach corridors
+		if (pAnalysis->bIsChokepointCity)
+			iScore += 40;
+
+		// Second-line cities are the first fallback position
+		if (pAnalysis->bIsSecondLine)
+			iScore += 25;
+
+		// Salients are exposed and need special attention
+		if (pAnalysis->bIsSalient)
+			iScore += 15;
+
+		// Capital always gets a small baseline reserve score
+		if (pCity->isCapital())
+			iScore += 20;
+
+		// Skip cities that have no strategic value for reserves
+		if (iScore <= 0)
+			continue;
+
+		// Bonus from threat level and shallow defensive depth
+		iScore += pCity->getThreatValue() / 5;
+		if (pAnalysis->iDefensiveDepth <= 2)
+			iScore += 20;
+
+		// Amphibious vulnerability boosts reserve priority
+		if (pAnalysis->bVulnerableToAmphibious)
+			iScore += 15;
+
+		// Coop-war risk boosts all reserve scores
+		if (m_iCoopWarRiskScore >= 60)
+			iScore = iScore * 130 / 100;
+
+		ReserveCandidate c;
+		c.iCityID = pCity->GetID();
+		c.iScore = iScore;
+		vCandidates.push_back(c);
+	}
+
+	if (vCandidates.empty())
+		return;
+
+	// Sort by score descending
+	for (size_t i = 0; i < vCandidates.size(); i++)
+	{
+		for (size_t j = i + 1; j < vCandidates.size(); j++)
+		{
+			if (vCandidates[j].iScore > vCandidates[i].iScore)
+			{
+				ReserveCandidate temp = vCandidates[i];
+				vCandidates[i] = vCandidates[j];
+				vCandidates[j] = temp;
+			}
+		}
+	}
+
+	// Scale reserve count with empire size: 1 city per 4 cities owned, min 1, max 3
+	int iNumCities = m_pPlayer->getNumCities();
+	int iMaxReserves = max(1, min(3, iNumCities / 4));
+
+	// Under high coop-war risk, allow one extra reserve
+	if (m_iCoopWarRiskScore >= 60)
+		iMaxReserves = min(iMaxReserves + 1, (int)vCandidates.size());
+
+	for (int i = 0; i < iMaxReserves && i < (int)vCandidates.size(); i++)
+	{
+		m_strategicReserveCities.push_back(vCandidates[i].iCityID);
+	}
+
+	if (GC.getLogging() && GC.getAILogging())
+	{
+		CvString playerName = GetPlayer()->getCivilizationShortDescription();
+		FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+		if (pLog)
+		{
+			for (size_t i = 0; i < m_strategicReserveCities.size(); i++)
+			{
+				CvCity* pCity = m_pPlayer->getCity(m_strategicReserveCities[i]);
+				CvString msg;
+				msg.Format("%03d, %s, STRATEGIC RESERVE: city %s (coopRisk=%d)",
+					GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+					pCity ? pCity->getNameNoSpace().c_str() : "???", m_iCoopWarRiskScore);
+				pLog->Msg(msg.c_str());
+			}
+		}
+	}
+}
+
+bool CvMilitaryAI::IsStrategicReserveCity(int iCityID) const
+{
+	for (size_t i = 0; i < m_strategicReserveCities.size(); i++)
+	{
+		if (m_strategicReserveCities[i] == iCityID)
+			return true;
+	}
+	return false;
+}
+
+/// Evaluate how likely a coop war against us is, based on observable diplomatic signals.
+/// Returns 0-100.  Called once per turn from DoTurn().
+int CvMilitaryAI::ComputeCoopWarRiskScore() const
+{
+	if (!m_pPlayer || !m_pPlayer->isMajorCiv())
+		return 0;
+
+	CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return 0;
+
+	PlayerTypes eUs = m_pPlayer->GetID();
+	int iRisk = 0;
+
+	// ------------------------------------------------------------------
+	// 1) Count hostile / unfriendly neighbours
+	// ------------------------------------------------------------------
+	struct NeighborInfo
+	{
+		PlayerTypes ePlayer;
+		bool bHostile;      // WAR or HOSTILE approach toward us
+		bool bUnfriendly;   // GUARDED or worse
+		bool bDenounced;    // has denounced us
+		bool bAggressive;   // aggressive military posture
+	};
+	vector<NeighborInfo> vNeighbors;
+
+	for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+	{
+		PlayerTypes eOther = (PlayerTypes)i;
+		if (eOther == eUs || !GET_PLAYER(eOther).isAlive() || GET_PLAYER(eOther).isMinorCiv())
+			continue;
+		if (GET_PLAYER(eOther).GetProximityToPlayer(eUs) < PLAYER_PROXIMITY_CLOSE)
+			continue;
+		if (m_pPlayer->IsAtWarWith(eOther))
+			continue; // already at war — not a *surprise* coop war threat
+
+		CvDiplomacyAI* pTheirDiplo = GET_PLAYER(eOther).GetDiplomacyAI();
+		// Use THEIR approach toward us (not ours toward them) to detect incoming threats
+		CivApproachTypes eTheirApproach = pTheirDiplo->GetCivApproach(eUs);
+
+		NeighborInfo ni;
+		ni.ePlayer = eOther;
+		ni.bHostile    = (eTheirApproach == CIV_APPROACH_WAR || eTheirApproach == CIV_APPROACH_HOSTILE);
+		ni.bUnfriendly = (eTheirApproach <= CIV_APPROACH_GUARDED); // WAR, HOSTILE, DECEPTIVE, GUARDED
+		ni.bDenounced  = pTheirDiplo->IsDenouncedPlayer(eUs);
+		ni.bAggressive = (pDiploAI->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM);
+		vNeighbors.push_back(ni);
+	}
+
+	if (vNeighbors.empty())
+		return 0;
+
+	int iHostileCount = 0;
+	int iDenounceCount = 0;
+	int iAggressiveCount = 0;
+	for (size_t i = 0; i < vNeighbors.size(); i++)
+	{
+		if (vNeighbors[i].bHostile)
+			iHostileCount++;
+		if (vNeighbors[i].bDenounced)
+			iDenounceCount++;
+		if (vNeighbors[i].bAggressive)
+			iAggressiveCount++;
+	}
+
+	// Multiple hostile neighbours is the primary signal
+	if (iHostileCount >= 2)
+		iRisk += 25;
+	else if (iHostileCount == 1)
+		iRisk += 10;
+
+	// Multiple denouncements suggest coordinated hostility
+	if (iDenounceCount >= 2)
+		iRisk += 20;
+	else if (iDenounceCount == 1)
+		iRisk += 5;
+
+	// Multiple aggressive postures from different players
+	if (iAggressiveCount >= 2)
+		iRisk += 15;
+
+	// ------------------------------------------------------------------
+	// 2) Hostile pair detection: A is hostile to us AND allied with B who
+	//    is also unfriendly to us → classic coop-war setup
+	// ------------------------------------------------------------------
+	int iPairBonus = 0;
+	for (size_t a = 0; a < vNeighbors.size(); a++)
+	{
+		if (!vNeighbors[a].bHostile)
+			continue;
+
+		CvDiplomacyAI* pDiploA = GET_PLAYER(vNeighbors[a].ePlayer).GetDiplomacyAI();
+		for (size_t b = a + 1; b < vNeighbors.size(); b++)
+		{
+			if (!vNeighbors[b].bUnfriendly)
+				continue;
+
+			// Are they friends/allied?
+			bool bAllied = pDiploA->IsDoFAccepted(vNeighbors[b].ePlayer)
+				|| pDiploA->IsHasDefensivePact(vNeighbors[b].ePlayer);
+
+			if (bAllied)
+			{
+				int iPair = 25;
+				// Even higher if BOTH are hostile
+				if (vNeighbors[b].bHostile)
+					iPair += 10;
+				// Even higher if they have defensive pact (obligated to join)
+				if (pDiploA->IsHasDefensivePact(vNeighbors[b].ePlayer))
+					iPair += 10;
+				if (iPair > iPairBonus)
+					iPairBonus = iPair;
+			}
+		}
+	}
+	iRisk += iPairBonus;
+
+	// ------------------------------------------------------------------
+	// 3) We are currently distracted by an existing war
+	// ------------------------------------------------------------------
+	int iCurrentWars = m_pPlayer->CountNumDangerousMajorsAtWarWith(true, false);
+	if (iCurrentWars >= 1 && iHostileCount >= 1)
+		iRisk += 15; // fighting one war while a hostile neighbor watches
+	if (iCurrentWars >= 2)
+		iRisk += 10; // already in multi-front war — very vulnerable
+
+	// ------------------------------------------------------------------
+	// 4) Coop-war warned state: we were explicitly warned about a coop war
+	// ------------------------------------------------------------------
+	// Check if any neighbour pair has us as target in WARNED_TARGET state
+	// (This means someone asked to coop war against us and the other player warned us)
+	for (size_t i = 0; i < vNeighbors.size(); i++)
+	{
+		CvDiplomacyAI* pTheirDiplo = GET_PLAYER(vNeighbors[i].ePlayer).GetDiplomacyAI();
+		for (int j = 0; j < MAX_MAJOR_CIVS; j++)
+		{
+			PlayerTypes eAlly = (PlayerTypes)j;
+			if (eAlly == eUs || eAlly == vNeighbors[i].ePlayer)
+				continue;
+			if (!GET_PLAYER(eAlly).isAlive())
+				continue;
+
+			// Check if this neighbour has a coop war state against us with some ally
+			CoopWarStates eState = pTheirDiplo->GetCoopWarState(eAlly, eUs);
+			if (eState == COOP_WAR_STATE_PREPARING)
+			{
+				iRisk += 40; // they're actively preparing!
+			}
+			else if (eState == COOP_WAR_STATE_WARNED_TARGET)
+			{
+				iRisk += 20; // rejected but we were warned
+			}
+
+			if (iRisk >= 100)
+				return 100;
+		}
+	}
+
+	iRisk = min(100, iRisk);
+
+	if (iRisk >= 30 && GC.getLogging() && GC.getAILogging())
+	{
+		CvString playerName = m_pPlayer->getCivilizationShortDescription();
+		FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+		if (pLog)
+		{
+			CvString msg;
+			msg.Format("%03d, %s, COOP WAR RISK: score=%d (hostile=%d, denounce=%d, aggr=%d, pairBonus=%d, wars=%d)",
+				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+				iRisk, iHostileCount, iDenounceCount, iAggressiveCount, iPairBonus, iCurrentWars);
+			pLog->Msg(msg.c_str());
+		}
+	}
+
+	return iRisk;
+}
+
 /// Issue 7.2: Propagate urgent flavor changes to diplomacy AI immediately
 void CvMilitaryAI::PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues)
 {
@@ -2694,6 +3018,35 @@ void CvMilitaryAI::UpdateDefenseState()
 	{
 		if(m_eLandDefenseState < DEFENSE_STATE_NEEDED)
 			m_eLandDefenseState = DEFENSE_STATE_NEEDED;
+	}
+
+	// Coop-war risk: elevate defense state when diplomatic signals indicate
+	// a coordinated attack is forming against us.
+	if (m_iCoopWarRiskScore >= 70 && m_eLandDefenseState < DEFENSE_STATE_CRITICAL)
+	{
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, COOP RISK DEFENSE: risk=%d -> land CRITICAL",
+				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), m_iCoopWarRiskScore);
+			pLog->Msg(msg.c_str());
+		}
+		m_eLandDefenseState = DEFENSE_STATE_CRITICAL;
+	}
+	else if (m_iCoopWarRiskScore >= 40 && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
+	{
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GetPlayer()->getCivilizationShortDescription();
+			FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, COOP RISK DEFENSE: risk=%d -> land NEEDED",
+				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), m_iCoopWarRiskScore);
+			pLog->Msg(msg.c_str());
+		}
+		m_eLandDefenseState = DEFENSE_STATE_NEEDED;
 	}
 
 	// Issue 7.2: Propagate urgent DEFENSE flavor boost if we transitioned to CRITICAL state
@@ -3663,6 +4016,79 @@ void CvMilitaryAI::UpdateOperations()
 						GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), iMemoryThreatWeight,
 						GET_PLAYER(eLoopPlayer).getCivilizationShortDescription(), bDefensivePressure ? 1 : 0);
 					pLog->Msg(msg.c_str());
+				}
+			}
+		}
+	}
+
+	// ---------------------------------------------------------------
+	// Coop-war preemptive defense: when risk is high AND we are not
+	// already at war with the threatening pair, set up defense ops
+	// for strategic reserve cities so they have defenders BEFORE the
+	// surprise declaration.
+	// ---------------------------------------------------------------
+	if (m_iCoopWarRiskScore >= 50 && m_pStrategyMap)
+	{
+		for (size_t r = 0; r < m_strategicReserveCities.size(); r++)
+		{
+			CvCity* pCity = m_pPlayer->getCity(m_strategicReserveCities[r]);
+			if (!pCity)
+				continue;
+
+			// Already covered by a defense operation?
+			if (m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_CITY_DEFENSE, NO_PLAYER, pCity->plot()))
+				continue;
+			if (m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_RAPID_RESPONSE, NO_PLAYER, pCity->plot()))
+				continue;
+
+			// Find the most threatening non-war neighbour to assign as the nominal enemy
+			PlayerTypes eMostThreateningNeighbor = NO_PLAYER;
+			int iBestThreat = 0;
+			for (int i = 0; i < MAX_MAJOR_CIVS; i++)
+			{
+				PlayerTypes eOther = (PlayerTypes)i;
+				if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive())
+					continue;
+				if (m_pPlayer->IsAtWarWith(eOther))
+					continue;
+				if (GET_PLAYER(eOther).GetProximityToPlayer(m_pPlayer->GetID()) < PLAYER_PROXIMITY_CLOSE)
+					continue;
+
+				// Use THEIR approach toward us to gauge incoming threat
+				CivApproachTypes eTheirApproach = GET_PLAYER(eOther).GetDiplomacyAI()->GetCivApproach(m_pPlayer->GetID());
+				int iThreat = 0;
+				if (eTheirApproach == CIV_APPROACH_WAR) iThreat += 40;
+				else if (eTheirApproach == CIV_APPROACH_HOSTILE) iThreat += 30;
+				else if (eTheirApproach == CIV_APPROACH_GUARDED) iThreat += 10;
+
+				if (m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM)
+					iThreat += 20;
+
+				if (iThreat > iBestThreat)
+				{
+					iBestThreat = iThreat;
+					eMostThreateningNeighbor = eOther;
+				}
+			}
+
+			if (eMostThreateningNeighbor != NO_PLAYER)
+			{
+				CheckLandDefenses(eMostThreateningNeighbor, pCity);
+
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = GetPlayer()->getCivilizationShortDescription();
+					FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+					if (pLog)
+					{
+						CvString msg;
+						msg.Format("%03d, %s, PREEMPTIVE DEFENSE: reserve city %s vs %s (coopRisk=%d)",
+							GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+							pCity->getNameNoSpace().c_str(),
+							GET_PLAYER(eMostThreateningNeighbor).getCivilizationShortDescription(),
+							m_iCoopWarRiskScore);
+						pLog->Msg(msg.c_str());
+					}
 				}
 			}
 		}

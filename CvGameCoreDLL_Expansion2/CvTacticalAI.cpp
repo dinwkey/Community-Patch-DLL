@@ -3017,6 +3017,12 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				bSkipAsCoreCity = false;
 		}
 
+		// Strategic reserve cities (computed by MilitaryAI) should never be skipped.
+		// These are second-line/floodgate/chokepoint cities identified as needing a
+		// permanent garrison even when they are not on the current front line.
+		if (bSkipAsCoreCity && m_pPlayer->GetMilitaryAI()->IsStrategicReserveCity(pCity->GetID()))
+			bSkipAsCoreCity = false;
+
 		if (bSkipAsCoreCity)
 			continue;
 

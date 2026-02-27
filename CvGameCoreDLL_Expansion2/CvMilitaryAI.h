@@ -299,6 +299,12 @@ public:
 	{
 		return m_iMemoryThreatWeight;
 	}
+	int GetCoopWarRiskScore() const
+	{
+		return m_iCoopWarRiskScore;
+	}
+	bool IsStrategicReserveCity(int iCityID) const;
+	const vector<int>& GetStrategicReserveCities() const { return m_strategicReserveCities; }
 
 private:
 
@@ -314,6 +320,10 @@ private:
 	bool AreEnemiesMovingTowardUs(DomainTypes eDomain);
 	int GetAlliedThreatMultiplier();
 	int CalculateMemoryThreatWeight() const;
+
+	// Strategic reserve & coop-war risk subsystem
+	void ComputeStrategicReserveCities();
+	int ComputeCoopWarRiskScore() const;
 	
 	// Issue 7.2: Urgent flavor propagation for immediate threat response
 	void PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues);
@@ -375,6 +385,8 @@ private:
 	int m_iLastRebalanceTurn;  // track when rebalancing last occurred
 	int m_iArmyBalanceScore;  // 0-100 score of army health
 	int m_iMemoryThreatWeight; // cached per-turn memory threat score
+	int m_iCoopWarRiskScore;   // 0-100 coop-war threat level (recomputed each turn)
+	vector<int> m_strategicReserveCities; // city IDs that should maintain a garrison reserve
 
 	// Internal calculated values - must be serialized
 	int m_iNumberOfTimesOpsBuildSkippedOver;

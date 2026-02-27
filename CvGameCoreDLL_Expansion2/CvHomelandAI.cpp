@@ -711,6 +711,50 @@ void CvHomelandAI::FindHomelandTargets()
 	}
 
 	std::stable_sort(m_TargetedCities.begin(), m_TargetedCities.end());
+
+	// Strategic reserve cities: ensure they appear as garrison targets even if the
+	// normal scan skipped them (e.g. because they don't provide happiness/strength bonus).
+	// This keeps a unit stationed at critical interior cities when coop-war risk is high.
+	const vector<int>& vReserveCities = m_pPlayer->GetMilitaryAI()->GetStrategicReserveCities();
+	if (!vReserveCities.empty())
+	{
+		for (size_t r = 0; r < vReserveCities.size(); r++)
+		{
+			CvCity* pResCity = m_pPlayer->getCity(vReserveCities[r]);
+			if (!pResCity)
+				continue;
+
+			// Already in the list?
+			bool bAlreadyTargeted = false;
+			for (size_t t = 0; t < m_TargetedCities.size(); t++)
+			{
+				if (m_TargetedCities[t].GetTargetX() == pResCity->getX() &&
+					m_TargetedCities[t].GetTargetY() == pResCity->getY())
+				{
+					bAlreadyTargeted = true;
+					break;
+				}
+			}
+			if (bAlreadyTargeted)
+				continue;
+
+			// Already garrisoned and handled by tactical AI? Skip.
+			if (pResCity->NeedsGarrison())
+				continue;
+
+			// Add with elevated priority so it gets a garrison
+			int iReservePriority = 200 + pResCity->getThreatValue();
+			newTarget.SetTargetType(AI_HOMELAND_TARGET_CITY);
+			newTarget.SetTargetX(pResCity->getX());
+			newTarget.SetTargetY(pResCity->getY());
+			newTarget.SetAuxIntData(iReservePriority);
+			m_TargetedCities.push_back(newTarget);
+		}
+
+		// Re-sort after adding reserve cities
+		if (!vReserveCities.empty())
+			std::stable_sort(m_TargetedCities.begin(), m_TargetedCities.end());
+	}
 }
 
 /// Choose which moves to run and assign units to it
