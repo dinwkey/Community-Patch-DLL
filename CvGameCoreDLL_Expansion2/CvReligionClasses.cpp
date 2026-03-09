@@ -36,14 +36,58 @@ CvReligionEntry::~CvReligionEntry()
 {
 }
 
+/// Load XML data
+bool CvReligionEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility& kUtility)
+{
+	if(!CvBaseInfo::CacheResults(kResults, kUtility))
+		return false;
+
+	//Basic Properties
+	m_strIconString = kResults.GetText("IconString");
+
+	if (MOD_RELIGION_LOCAL_RELIGIONS)
+		m_iLocalReligion = kResults.GetInt("LocalReligion");
+
+	return true;
+}
+
+//------------------------------------------------------------------------------
+CvString CvReligionEntry::GetIconString() const
+{
+	return m_strIconString;
+}
+
+//------------------------------------------------------------------------------
+bool CvReligionEntry::IsLocalReligion() const
+{
+	return m_iLocalReligion != 0;
+}
+
+//=====================================
+// CvReligionXMLEntries
+//=====================================
+/// Constructor
+CvReligionXMLEntries::CvReligionXMLEntries(void)
+{
+
+}
+
+/// Destructor
+CvReligionXMLEntries::~CvReligionXMLEntries(void)
+{
+	DeleteArray();
+}
+
+/// Returns vector of trait entries
 std::vector<CvReligionEntry*>& CvReligionXMLEntries::GetReligionEntries()
 {
-						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
-					}
-					if (!pCity)
-					{
-						iAvailabilityModifier--;
-					}
+	return m_paReligionEntries;
+}
+
+/// Number of defined traits
+int CvReligionXMLEntries::GetNumReligions()
+{
+	return m_paReligionEntries.size();
 }
 
 /// Clear trait entries
@@ -313,14 +357,37 @@ void CvGameReligions::SpreadReligionToOneCity(CvCity* pCity)
 
 				for (int iI = RELIGION_PANTHEON + 1; iI < GC.GetGameReligions()->GetNumReligions(); iI++)
 				{
+					ReligionTypes eReligion = (ReligionTypes)iI;
+
+					if (!IsValidTarget(eReligion, pLoopCity, pCity))
+						continue;
+
+					if (pLoopCity->GetCityReligions()->GetNumFollowers(eReligion) > 0)
+					{
+						bool bConnectedWithTrade = false;
+						int iRelativeDistancePercent = 0;
+						if (!IsCityConnectedToCity(eReligion, pLoopCity, pCity, bConnectedWithTrade, iRelativeDistancePercent))
+							continue;
+
+						int iNumTradeRoutes = 0;
+						int iPressure = GetAdjacentCityReligiousPressure(eReligion, pLoopCity, pCity, iNumTradeRoutes, true, false, bConnectedWithTrade, iRelativeDistancePercent);
+						if (iPressure > 0)
+						{
+							pCity->GetCityReligions()->AddReligiousPressure(FOLLOWER_CHANGE_ADJACENT_PRESSURE, eReligion, iPressure);
+							if (iNumTradeRoutes != 0)
+							{
+								pCity->GetCityReligions()->IncrementNumTradeRouteConnections(eReligion, iNumTradeRoutes);
+							}
+						}
 					}
 				}
-						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
-					}
-					if (!pCity)
-					{
-						iAvailabilityModifier--;
-					}
+			}
+		}
+	}
+}
+
+bool CvGameReligions::IsValidTarget(ReligionTypes eReligion, CvCity* pFromCity, CvCity* pToCity)
+{
 	if (pFromCity->getOwner() != pToCity->getOwner())
 	{
 		if (GET_PLAYER(pFromCity->getOwner()).GetPlayerTraits()->IsNoNaturalReligionSpread())
@@ -390,7 +457,7 @@ void CvGameReligions::SpreadReligionToOneCity(CvCity* pCity)
 	if (MOD_RELIGION_LOCAL_RELIGIONS && GC.getReligionInfo(eReligion)->IsLocalReligion())
 	{
 		// Can only spread a local religion to our own cities or City States
-		if (pToCity->getOwner() < MAX_MAJOR_CIVS && pFromCity->getOwner() != pToCity->getOwner()) 
+		if (pToCity->getOwner() < MAX_MAJOR_CIVS && pFromCity->getOwner() != pToCity->getOwner())
 		{
 			return false;
 		}
@@ -8384,14 +8451,6 @@ int CvReligionAI::ScorePantheonBeliefAtCity(CvBeliefEntry* pEntry, CvCity* pCity
 
 	if (bIsCapital || (pCity && pCity->GetCityReligions()->IsHolyCityAnyReligion()))
 	{
-	///////////////////
-
-						iAvailabilityModifier = max(0, 3 - (iEraNeeded - iCurrentEra));  // lose remaining value if we have to wait
-					}
-					if (!pCity)
-					{
-						iAvailabilityModifier--;
-					}
 		if (bIsCapital) {
 			iTempValue += 10 * pEntry->GetCapitalYieldChange(iI);
 		}

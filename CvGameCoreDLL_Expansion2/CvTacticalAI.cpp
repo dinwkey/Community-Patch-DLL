@@ -3131,7 +3131,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 					// City is falling - consider escaping to preserve the unit
 					// But first try attacking from garrison - might get a kill and survive
 					// Only escape if there's actually a safe place to go
-					CvPlot* pEscapePlot = TacticalAIHelpers::FindSafestPlotInReach(pGarrison, false, false);
+					CvPlot* pEscapePlot = TacticalAIHelpers::FindSafestPlotInReach(pGarrison, false, false).first;
 					int iEscapeThreshold = bImminentAttack ? (pGarrison->GetCurrHitPoints() * 2 / 3) : (pGarrison->GetCurrHitPoints() / 2);
 					if (pEscapePlot && pEscapePlot != pPlot && pGarrison->GetDanger(pEscapePlot) < iEscapeThreshold)
 					{
@@ -21165,6 +21165,24 @@ bool TacticalAIHelpers::ExecuteUnitAssignments(PlayerTypes ePlayer, const std::v
 
 			//movement may indeed fail if we stumble upon an invisible unit!
 			bPostcondition = (pUnit->plot() == pToPlot);
+
+			//post-move safety for ranged units: if we couldn't attack and we're in danger, try to pull back
+			if (bPostcondition && pUnit->IsCanAttackRanged() && pUnit->canMove())
+			{
+				int iDanger = pUnit->GetDanger();
+				if (iDanger > pUnit->GetCurrHitPoints() / 2)
+				{
+					bool bAttacked = TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit, true);
+					if (!bAttacked)
+					{
+						CvPlot* pSafePlot = TacticalAIHelpers::FindSafestPlotInReach(pUnit, true, true).first;
+						if (pSafePlot && pSafePlot != pUnit->plot() && pUnit->canMoveInto(*pSafePlot, CvUnit::MOVEFLAG_DESTINATION))
+						{
+							pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pSafePlot->getX(), pSafePlot->getY(), CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER, false, false, MISSIONAI_OPMOVE);
+						}
+					}
+				}
+			}
 
 #ifdef TACTDEBUG
 			//check this only for moves, eg melee kills can fail this check because the pathfinder assumes attacks end the turn!

@@ -4224,7 +4224,7 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 
 		if (iNewYieldTimes100 != 0 || iFutureYieldTimes100 != 0)
 		{
-			int iCityYieldModifier = pOwningCity ? GetYieldCityModifierTimes100(pOwningCity, m_pPlayer, eYield) : 100;
+			int iCityYieldModifier = pOwningCity ? GetYieldCityModifierTimes100(pOwningCity, eYield) : 100;
 			
 			// ISSUE 1 FIX: For YIELD_GOLD, subtract maintenance cost to get net gold value
 			int iAdjustedNewYieldTimes100 = iNewYieldTimes100;
