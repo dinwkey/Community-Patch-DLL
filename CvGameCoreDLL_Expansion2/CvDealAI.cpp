@@ -4298,7 +4298,7 @@ void CvDealAI::DoAddOpenBordersToThem(CvDeal* pDeal, PlayerTypes eThem, int& iTo
 					// so it can offer "Open Borders + GPT" in one adjustment rather than forcing
 					// the human to provide a small lump sum. This helps produce more natural
 					// symmetric offers (e.g., AI: GPT+OB, Human: OB).
-					if (!WithinAcceptableRange(eThem, pDeal->GetMaxValue(), iTotalValue))
+					if (!WithinAcceptableRange(iTotalValue))
 					{
 						// Try to fill the remaining value by adding GPT from them
 						DoAddGPTToThem(pDeal, eThem, iTotalValue, 0);

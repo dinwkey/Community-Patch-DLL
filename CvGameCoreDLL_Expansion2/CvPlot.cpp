@@ -9092,8 +9092,6 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 				}
 			}
 		}
-
->>>>>>> 04cf0802c (Fix resource counter desync when replacing improvements)
 		updateYield();
 		if(eBuilder != NO_PLAYER && getOwner() == eBuilder)
 		{
