@@ -19,6 +19,7 @@
 #include "CvTypes.h"
 #include "CvDiplomacyAI.h"
 #include "CvBarbarians.h"
+#include "CvUnitSightingManager.h"
 #include "CvUnitMovement.h"
 
 #include <iomanip>
@@ -3103,12 +3104,18 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			bool bCityInDanger = pCity->isInDangerOfFalling();
 			bool bIsRangedGarrison = pGarrison->IsCanAttackRanged();
 			bool bAllowLeaveCity = false;
+			const CvMilitaryAI* pMilitaryAI = m_pPlayer->GetMilitaryAI();
+			const CvStrategicGeographyMap* pGeoMap = pMilitaryAI ? pMilitaryAI->GetStrategicGeographyMap() : NULL;
+			const StrategicCityAnalysis* pCityAnalysis = pGeoMap ? pGeoMap->GetCityAnalysis(pCity->GetID()) : NULL;
+			bool bMustHoldStrategicCity = pCity->isCapital()
+				|| (pMilitaryAI && pMilitaryAI->IsStrategicReserveCity(pCity->GetID()))
+				|| (pCityAnalysis && (pCityAnalysis->bIsFloodgate || pCityAnalysis->bIsChokepointCity));
 
 			if (bIsRangedGarrison)
 			{
 				// Ranged garrisons can attack safely without taking damage
 				// Allow leaving city only if few enemies and not last city
-				bAllowLeaveCity = (iEnemyCount < 2 && m_pPlayer->getNumCities() > 1);
+				bAllowLeaveCity = (iEnemyCount < 2 && m_pPlayer->getNumCities() > 1 && !bMustHoldStrategicCity);
 				TacticalAIHelpers::PerformOpportunityAttack(pGarrison, bAllowLeaveCity);
 			}
 			else
@@ -3124,9 +3131,9 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				
 				// Leaving the city is risky - it becomes vulnerable
 				// Only leave if: few enemies, not in danger, not last city, and good opportunity
-				bAllowLeaveCity = (iWoundedEnemyCount > 0 && iEnemyCount < 2 && !bCityInDanger && m_pPlayer->getNumCities() > 1);
+				bAllowLeaveCity = (iWoundedEnemyCount > 0 && iEnemyCount < 2 && !bCityInDanger && m_pPlayer->getNumCities() > 1 && !bMustHoldStrategicCity);
 				
-				if (bCityInDanger && m_pPlayer->getNumCities() > 1)
+				if (bCityInDanger && m_pPlayer->getNumCities() > 1 && !bMustHoldStrategicCity)
 				{
 					// City is falling - consider escaping to preserve the unit
 					// But first try attacking from garrison - might get a kill and survive
@@ -9516,30 +9523,35 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				}
 			}
 			
-			//Also check "vanished" units - enemy units we saw last turn but can no longer see
-			//The AI remembers these for one turn (like a human would remember ships that moved into fog)
-			//This prevents the AI from being fooled by ships that simply moved out of visibility
+			//Also check remembered sightings for naval units that recently moved into fog.
+			//Use the sighting manager's last-seen coordinates rather than the unit's live plot,
+			//otherwise we'd be leaking hidden information into the retreat logic.
+			const CvUnitSightingManager& sightMgr = GET_PLAYER(pUnit->getOwner()).GetUnitSightingManager();
 			const UnitSet& vanishedUnits = GET_PLAYER(pUnit->getOwner()).GetVanishedUnits();
+			int iCurrentTurn = GC.getGame().getGameTurn();
 			for (UnitSet::const_iterator it = vanishedUnits.begin(); it != vanishedUnits.end(); ++it)
 			{
-				CvUnit* pVanishedUnit = GET_PLAYER(it->first).getUnit(it->second);
-				if (!pVanishedUnit)
+				const UnitSighting* pSighting = sightMgr.GetSighting(it->first, it->second);
+				if (!pSighting || pSighting->IsExpired(iCurrentTurn) || pSighting->IsConfirmed(iCurrentTurn))
 					continue;
 				
 				//Is this a remembered enemy naval unit that can attack?
-				if (pVanishedUnit->getDomainType() == DOMAIN_SEA && 
-					pVanishedUnit->isEnemy(pUnit->getTeam()) &&
-					pVanishedUnit->IsCanAttack())
+				if (((pSighting->flags & SIGHTING_FLAG_NAVAL) != 0) && GET_PLAYER((PlayerTypes)pSighting->owner).isAlive())
 				{
-					//Calculate distance from the vanished unit's last known position to the embark plot
-					int iDist = plotDistance(*pPlot, *pVanishedUnit->plot());
+					UnitTypes eRememberedType = (UnitTypes)pSighting->unitType;
+					CvUnitEntry* pkRememberedUnitInfo = GC.getUnitInfo(eRememberedType);
+					if (!pkRememberedUnitInfo)
+						continue;
+
+					//Calculate distance from the unit's last seen position to the embark plot.
+					int iDist = plotDistance(pPlot->getX(), pPlot->getY(), (int)pSighting->x, (int)pSighting->y);
 					
-					//Calculate this unit's threat range based on its actual stats
-					int iUnitMoves = pVanishedUnit->maxMoves() / GD_INT_GET(MOVE_DENOMINATOR);
+					//Calculate threat range from remembered capabilities only.
+					int iUnitMoves = (int)pSighting->movementPoints;
 					int iThreatRange = iUnitMoves;
 					
-					if (pVanishedUnit->IsCanAttackRanged())
-						iThreatRange += pVanishedUnit->GetRange();
+					if ((pSighting->flags & SIGHTING_FLAG_RANGED) != 0)
+						iThreatRange += pkRememberedUnitInfo->GetRange();
 					
 					//Is this remembered unit close enough to potentially threaten us?
 					//Use a slightly larger range since the unit may have moved toward us
@@ -9550,9 +9562,9 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
-							strLogString.Format("FindSafestPlotInReach: %s detected REMEMBERED naval threat %s (last seen at %d,%d), dist=%d, threatRange=%d",
-								pUnit->getName().GetCString(), pVanishedUnit->getName().GetCString(),
-								pVanishedUnit->plot()->getX(), pVanishedUnit->plot()->getY(), iDist, iThreatRange);
+							strLogString.Format("FindSafestPlotInReach: %s detected REMEMBERED naval threat unitType=%d (last seen at %d,%d), dist=%d, threatRange=%d",
+								pUnit->getName().GetCString(), (int)eRememberedType,
+								(int)pSighting->x, (int)pSighting->y, iDist, iThreatRange);
 							GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
 						}
 					}
