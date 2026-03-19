@@ -1453,7 +1453,7 @@ else
 			for info in GameInfo.HealthLevels() do
 				local healthLevelID = info.ID
 				if g_activePlayer:IsAffectedByHealthLevel(healthLevelID) then
-					for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+					for yieldID = 0, (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES)-1 do
 						cityYieldMods[yieldID] = (cityYieldMods[yieldID] or 0) + Game.GetHealthLevelCityYieldModifier(healthLevelID, excessHealth, yieldID)
 					end
 					combatMod = combatMod + (info.CombatModifier or 0)
@@ -1466,7 +1466,7 @@ else
 			tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_CITY_GROWTH_MODIFIER", cityGrowthMod )
 			tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_OUTPOST_GROWTH_MODIFIER", outpostGrowthMod )
 			tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_CITY_INTRIGUE_MODIFIER", cityIntrigueMod )
-			for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+			for yieldID = 0, (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES)-1 do
 				tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_CITY_YIELD_MODIFIER", cityYieldMods[yieldID] or 0, YieldIcons[yieldID] or "???", YieldNames[yieldID] or "???" )
 			end
 --			tips:insert( "[ENDCOLOR]" )
