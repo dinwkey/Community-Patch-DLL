@@ -1075,7 +1075,7 @@ bool EconomicAIHelpers::ShouldExplorerAvoid(const CvPlot* pPlot, const CvPlayer*
 		if (pLoopPlot != NULL)
 		{
 			//if there's an adjacent barbarian camp, assume danger
-			if (pLoopPlot->getRevealedImprovementType(pPlayer->getTeam()) == GD_INT_GET(BARBARIAN_CAMP_IMPROVEMENT) && !pPlot->isVisible(pPlayer->getTeam()))
+			if (pLoopPlot->getRevealedImprovementType(pPlayer->getTeam()) == GD_INT_GET(BARBARIAN_CAMP_IMPROVEMENT) && !pLoopPlot->isVisible(pPlayer->getTeam()))
 				return true;
 		}
 	}
