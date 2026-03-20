@@ -150,7 +150,7 @@ BuildingTypes CvWonderProductionAI::ChooseWonder(int& iWonderWeight)
 
 		// Loop through adding the available wonders
 		SPlotStats plotStats = pLoopCity->getPlotStats();
-		for (int iBldgLoop = 0; iBldgLoop < GC.GetGameBuildings()->GetNumBuildings(); iBldgLoop++)
+		for (int iBldgLoop = 0; iBldgLoop < m_pBuildings->GetNumBuildings(); iBldgLoop++)
 		{
 			const BuildingTypes eBuilding = static_cast<BuildingTypes>(iBldgLoop);
 			CvBuildingEntry* pkBuildingInfo = m_pBuildings->GetEntry(eBuilding);
@@ -164,7 +164,9 @@ BuildingTypes CvWonderProductionAI::ChooseWonder(int& iWonderWeight)
 
 			// if we are forced to restart a wonder, give one that has been started already a strong bump
 			bool bAlreadyStarted = pLoopCity->GetCityBuildings()->GetBuildingProduction(eBuilding) > 0;
-			int iTempWeight = bAlreadyStarted ? m_WonderAIWeights.GetWeight(iBldgLoop) * 5 : m_WonderAIWeights.GetWeight(iBldgLoop);
+			int iTempWeight = m_WonderAIWeights.GetWeight(iBldgLoop);
+			if (bAlreadyStarted)
+				iTempWeight *= 5;
 
 			int iWeight = CityStrategyAIHelpers::ReweightByTurnsLeft(iTempWeight, iTurnsRequired);
 			if (iWeight <= 0)
