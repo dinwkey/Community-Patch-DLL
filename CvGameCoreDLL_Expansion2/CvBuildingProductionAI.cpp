@@ -47,7 +47,7 @@ int CountNearbyVisibleEnemyNavalUnits(const CvCity* pCity, PlayerTypes ePlayer)
 	return iNearbyEnemyNaval;
 }
 
-int GetStructuralCoastalRisk(const CvCity* pCity, const StrategicCityAnalysis* pAnalysis)
+int GetStructuralCoastalRisk(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
 {
 	if (!pCity || !pAnalysis || pAnalysis->eExposure == COASTAL_EXPOSURE_NONE)
 		return 0;
@@ -73,6 +73,28 @@ int GetStructuralCoastalRisk(const CvCity* pCity, const StrategicCityAnalysis* p
 			iRisk += 40;
 	}
 
+	if (pAnalysis->bIsFloodgate)
+		iRisk += 80 + min(60, pAnalysis->iDependentCityCount * 15);
+	else if (pAnalysis->bIsChokepointCity)
+		iRisk += 50;
+
+	if (pAnalysis->bIsFrontLine)
+		iRisk += 40;
+	else if (pAnalysis->bIsSecondLine)
+		iRisk += 15;
+
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+		if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+			iRisk += 120;
+		else if (ePosture == GEO_POSTURE_ISLAND)
+			iRisk += 80;
+	}
+
+	iRisk += min(40, max(0, kPlayer.GetNumEffectiveCoastalCities() - 1) * 10);
+
 	return iRisk;
 }
 
@@ -88,7 +110,7 @@ int GetObservedNavalThreat(const CvCity* pCity, const CvPlayer& kPlayer, bool bM
 	const bool bDamaged = (pCity->getDamage() > 0);
 
 	if (iNearbyEnemyNaval > 0)
-		iThreat += 80 + min(120, iNearbyEnemyNaval * 30);
+		iThreat += 90 + min(140, iNearbyEnemyNaval * 35);
 
 	if (bBlockaded)
 		iThreat += 140;
@@ -100,7 +122,7 @@ int GetObservedNavalThreat(const CvCity* pCity, const CvPlayer& kPlayer, bool bM
 	{
 		iThreat += 20;
 		if (pMilitaryAI && pMilitaryAI->GetWarType() == WARTYPE_SEA)
-			iThreat += 40;
+			iThreat += 50;
 	}
 
 	if (pMilitaryAI)
@@ -183,7 +205,7 @@ int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlaye
 	}
 
 	iScore += min(60, iNearbyFriendlyRanged * 20);
-	iScore += min(60, iNearbyFriendlyNaval * 20);
+	iScore += min(80, iNearbyFriendlyNaval * 20);
 
 	if (pCity->IsRouteToCapitalConnected())
 		iScore += 30;
@@ -1048,7 +1070,7 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 					iDefenseMod -= 300;
 				}
 
-				const int iStructuralCoastalRisk = GetStructuralCoastalRisk(m_pCity, pAnalysis);
+				const int iStructuralCoastalRisk = GetStructuralCoastalRisk(m_pCity, kPlayer, pAnalysis);
 				const int iObservedNavalThreat = GetObservedNavalThreat(m_pCity, kPlayer, bMemoryThreat);
 				const int iCoastalDefenseSubstitutes = GetCoastalDefenseSubstituteScore(m_pCity, kPlayer, pAnalysis);
 				const bool bStrategicPort = pAnalysis->bIsFloodgate || pAnalysis->bIsChokepointCity
