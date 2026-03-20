@@ -226,14 +226,8 @@ int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlaye
 	if (pCity->IsRouteToCapitalConnected())
 		iScore += 30;
 
-	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
-	if (pMilitaryAI)
-	{
-		const bool bSeaDependentEmpire = IsSeaDependentEmpire(kPlayer, pAnalysis);
-
-		if (bSeaDependentEmpire)
-			iScore = iScore * 65 / 100;
-	}
+	if (IsSeaDependentEmpire(kPlayer, pAnalysis))
+		iScore = iScore * 65 / 100;
 
 	return iScore;
 }
