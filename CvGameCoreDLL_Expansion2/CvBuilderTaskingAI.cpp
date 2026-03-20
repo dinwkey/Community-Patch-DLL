@@ -1967,6 +1967,8 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 		int iRailroadTotalMaintenance = 0;
 		if (iRailroadValue > 0)
 		{
+			int iRailroadBaseValue = iRailroadValue;
+
 			// If the railroad is completed, increase its value
 			int iMissingTiles = GetRouteMissingTiles(plannedRouteRailroad);
 			if (iMissingTiles <= 3)
@@ -1976,9 +1978,9 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 			iRailroadTotalMaintenance = m_plannedRoutePlots[plannedRouteRailroad].size() * iRailroadMaintenance;
 			iRailroadValue -= iRailroadTotalMaintenance;
 
-			// ISSUE 3 FIX: Add movement speed bonus for railroads (military strategic value)
-			// Railroads provide 2x faster movement, which has significant strategic value even if unprofitable economically
-			int iMovementSpeedBonus = 500;  // Base movement bonus value for 2x faster unit movement
+			// Scale the railroad-only speed premium from the route pair's existing usefulness.
+			// This keeps short, low-value spurs from getting the same upgrade bonus as major corridors.
+			int iMovementSpeedBonus = max(150, min(800, iRailroadBaseValue / 2));
 
 			// Reduce bonus if empire is wealthy (can afford unprofitable routes for other reasons)
 			// Use CalculateBaseNetGoldTimes100 for consistent net gold calculation
