@@ -1755,119 +1755,98 @@ int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair
 	if (!pStartPlot || !pEndPlot)
 		return 0;  // Can't evaluate; use base value
 
-	// Check distance to nearest enemy unit or controlled territory
-	// Closer to enemies = more strategic for military movement
-	int iMinDistanceToEnemy = INT_MAX;
 	TeamTypes eOurTeam = m_pPlayer->getTeam();
-	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
-	{
-		PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
-		if (eLoopPlayer == m_pPlayer->GetID() || !GET_PLAYER(eLoopPlayer).isAlive())
-			continue;
 
-		TeamTypes eLoopTeam = GET_PLAYER(eLoopPlayer).getTeam();
-		if (!GET_TEAM(eOurTeam).isHasMet(eLoopTeam))
-			continue;
-		if (GET_TEAM(eOurTeam).IsHasDefensivePact(eLoopTeam) || GET_TEAM(eOurTeam).IsAllowsOpenBordersToTeam(eLoopTeam))
-			continue;
-
-		CvCity* pLoopCapital = GET_PLAYER(eLoopPlayer).getCapitalCity();
-		if (!pLoopCapital)
-			continue;
-
-		// Get distance from start to enemy territory
-		int iDistStart = plotDistance(pStartPlot->getX(), pStartPlot->getY(), pLoopCapital->getX(), pLoopCapital->getY());
-		int iDistEnd = plotDistance(pEndPlot->getX(), pEndPlot->getY(), pLoopCapital->getX(), pLoopCapital->getY());
-		int iDistToEnemy = min(iDistStart, iDistEnd);
-
-		if (iDistToEnemy < iMinDistanceToEnemy)
-			iMinDistanceToEnemy = iDistToEnemy;
-	}
-
-	// Bonus for proximity to enemy territory
-	// <5 tiles from enemy = high priority (50 bonus points)
-	// 5-10 tiles = moderate priority (25 bonus points)
-	// >10 tiles = safe (0 bonus points)
-	if (iMinDistanceToEnemy < 5)
-		iStrategicBonus += 50;  // Critical defensive location
-	else if (iMinDistanceToEnemy < 10)
-		iStrategicBonus += 25;  // Moderate threat distance
-
-	// Check if route endpoints are near threatened cities.
-	int iThreatenedCitiesNearby = 0;
+	// Score only the best nearby city to keep the existing 0-100 multiplier shape narrow.
+	CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	int iBestNearbyCityScore = 0;
 	int iLoop = 0;
 	for (CvCity* pCity = m_pPlayer->firstCity(&iLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iLoop))
 	{
-		// Check if city is threatened by barbarians or enemies
 		if (pCity->IsRazing())
 			continue;
 
 		int iCityDistance = min(
 			plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY()),
 			plotDistance(pEndPlot->getX(), pEndPlot->getY(), pCity->getX(), pCity->getY()));
-		if (iCityDistance <= 5)  // City is near route
+		if (iCityDistance > 5)
+			continue;
+
+		int iLayerScore = 0;
+		int iApproachDistanceScore = 0;
+		int iApproachDifficultyScore = 0;
+		int iRoadPriorityScore = 0;
+
+		if (pStratGeo)
 		{
-			// Check if threatened (surrounded by enemies, low defense, etc.)
-			int iCityThreatLevel = 0;
-			// Simple threat check: count nearby enemies
-			for (int iEnemyLoop = 0; iEnemyLoop < MAX_MAJOR_CIVS; iEnemyLoop++)
+			switch (pStratGeo->GetCityLayer(pCity->GetID()))
 			{
-				PlayerTypes eEnemy = (PlayerTypes)iEnemyLoop;
-				if (eEnemy == m_pPlayer->GetID() || !GET_PLAYER(eEnemy).isAlive())
-					continue;
-
-				TeamTypes eEnemyTeam = GET_PLAYER(eEnemy).getTeam();
-				if (!GET_TEAM(eOurTeam).isHasMet(eEnemyTeam))
-					continue;
-				if (GET_TEAM(eOurTeam).IsHasDefensivePact(eEnemyTeam) || GET_TEAM(eOurTeam).IsAllowsOpenBordersToTeam(eEnemyTeam))
-					continue;
-
-				CvCity* pEnemyCapital = GET_PLAYER(eEnemy).getCapitalCity();
-				if (!pEnemyCapital)
-					continue;
-
-				int iEnemyDist = plotDistance(pCity->getX(), pCity->getY(), pEnemyCapital->getX(), pEnemyCapital->getY());
-				if (iEnemyDist < 15)
-					iCityThreatLevel++;
+				case STRATEGIC_LAYER_FRONT_LINE:
+					iLayerScore = 25;
+					break;
+				case STRATEGIC_LAYER_SECOND_LINE:
+					iLayerScore = 15;
+					break;
+				case STRATEGIC_LAYER_REAR_AREA:
+					iLayerScore = 5;
+					break;
+				default:
+					break;
 			}
 
-			if (iCityThreatLevel > 0)
-				iThreatenedCitiesNearby++;
-		}
-	}
+			const std::vector<EnemyApproach>* pApproaches = pStratGeo->GetEnemyApproaches(pCity->GetID());
+			if (pApproaches)
+			{
+				int iBestApproachScore = 0;
+				for (size_t iA = 0; iA < pApproaches->size(); iA++)
+				{
+					const EnemyApproach& kApproach = (*pApproaches)[iA];
+					if (kApproach.eEnemy == NO_PLAYER || !GET_PLAYER(kApproach.eEnemy).isAlive())
+						continue;
 
-	// Bonus for defending threatened cities
-	// Each nearby threatened city adds 15 bonus points (capped at 45 for 3+ cities)
-	iStrategicBonus += min(iThreatenedCitiesNearby * 15, 45);
+					TeamTypes eEnemyTeam = GET_PLAYER(kApproach.eEnemy).getTeam();
+					if (!GET_TEAM(eOurTeam).isHasMet(eEnemyTeam))
+						continue;
+					if (GET_TEAM(eOurTeam).IsHasDefensivePact(eEnemyTeam) || GET_TEAM(eOurTeam).IsAllowsOpenBordersToTeam(eEnemyTeam))
+						continue;
 
-	// Phase 5: Strategic geography boost — routes connecting to strategically critical cities
-	// get extra priority for road/railroad construction.
-	CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
-	if (pStratGeo)
-	{
-		int iMaxCityRoadPri = 0;
-		int iCityLoop2 = 0;
-		for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop2); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop2))
-		{
-			int iCityDist = min(
-				plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY()),
-				plotDistance(pEndPlot->getX(), pEndPlot->getY(), pCity->getX(), pCity->getY()));
+					int iDistanceScore = 0;
+					if (kApproach.iDistanceFromEnemy <= 8)
+						iDistanceScore = 15;
+					else if (kApproach.iDistanceFromEnemy <= 14)
+						iDistanceScore = 10;
+					else if (kApproach.iDistanceFromEnemy <= 20)
+						iDistanceScore = 5;
 
-			if (iCityDist <= 4)
+					int iDifficultyScore = 0;
+					if (kApproach.iApproachDifficulty <= 33)
+						iDifficultyScore = 10;
+					else if (kApproach.iApproachDifficulty <= 66)
+						iDifficultyScore = 5;
+
+					if (iDistanceScore + iDifficultyScore > iBestApproachScore)
+					{
+						iBestApproachScore = iDistanceScore + iDifficultyScore;
+						iApproachDistanceScore = iDistanceScore;
+						iApproachDifficultyScore = iDifficultyScore;
+					}
+				}
+			}
+
+			if (iCityDistance <= 4)
 			{
 				int iRoadPri = pStratGeo->GetRoadPriority(pCity->GetID());
-				if (iRoadPri > iMaxCityRoadPri)
-					iMaxCityRoadPri = iRoadPri;
+				iRoadPriorityScore = min(50, (iRoadPri * 50) / 100);
 			}
 		}
 
-		// Convert road priority to a route value bonus (scale 0-60)
-		// Road priority of 100+ (capital/disconnected) → 60 bonus
-		// Road priority of 50-99 (floodgate/chokepoint) → 30-59 bonus
-		// Road priority of <50 → proportional bonus
-		if (iMaxCityRoadPri > 0)
-			iStrategicBonus += min((iMaxCityRoadPri * 60) / 100, 60);
+		int iLocalPressureScore = min(50, iLayerScore + iApproachDistanceScore + iApproachDifficultyScore);
+		int iCityScore = iLocalPressureScore + iRoadPriorityScore;
+		if (iCityScore > iBestNearbyCityScore)
+			iBestNearbyCityScore = iCityScore;
 	}
+
+	iStrategicBonus = min(100, iBestNearbyCityScore);
 
 	// Cap total bonus at 100 (max 2x multiplier)
 	iStrategicBonus = min(iStrategicBonus, 100);
