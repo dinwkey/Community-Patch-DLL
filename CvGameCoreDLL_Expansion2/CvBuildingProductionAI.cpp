@@ -71,22 +71,22 @@ int GetStructuralCoastalRisk(const CvCity* pCity, const CvPlayer& kPlayer, const
 	int iRisk = 0;
 
 	if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
-		iRisk += 150;
-	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
 		iRisk += 80;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
+		iRisk += 40;
 	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
-		iRisk += 25;
+		iRisk += 10;
 
 	if (pAnalysis->iLandingZonesRing2 > 2)
-		iRisk += min(100, (pAnalysis->iLandingZonesRing2 - 2) * 25);
+		iRisk += min(60, (pAnalysis->iLandingZonesRing2 - 2) * 15);
 
 	if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
-		iRisk += 150;
+		iRisk += 120;
 	else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
 	{
-		iRisk += 80;
+		iRisk += 60;
 		if (pAnalysis->iNavalChokeWidth == 1)
-			iRisk += 40;
+			iRisk += 25;
 	}
 
 	if (pAnalysis->bIsFloodgate)
