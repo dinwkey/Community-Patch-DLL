@@ -563,7 +563,14 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 	const int iObservedNavalThreat = GetObservedNavalThreatForProduction(m_pCity, kPlayer, bMemoryThreat);
 	const int iStructuralNavalNeed = GetStructuralNavalNeed(m_pCity, kPlayer, pCityAnalysis);
 	const int iCoastalDefenseSubstitutes = GetCoastalDefenseSubstituteScore(m_pCity, kPlayer, pCityAnalysis);
-	const int iLocalNavalNeed = max(0, iObservedNavalThreat + iStructuralNavalNeed - iCoastalDefenseSubstitutes);
+	const bool bStrategicPort = pCityAnalysis && (pCityAnalysis->bIsFloodgate || pCityAnalysis->bIsChokepointCity
+		|| pCityAnalysis->eNavalChoke != NAVAL_CHOKE_NONE || pCityAnalysis->iDependentCityCount > 0);
+	int iAdjustedStructuralNavalNeed = iStructuralNavalNeed;
+	if (iObservedNavalThreat == 0 && !bStrategicPort)
+		iAdjustedStructuralNavalNeed = iAdjustedStructuralNavalNeed * 65 / 100;
+	else if (iObservedNavalThreat < 100 && !bStrategicPort)
+		iAdjustedStructuralNavalNeed = iAdjustedStructuralNavalNeed * 85 / 100;
+	const int iLocalNavalNeed = max(0, iObservedNavalThreat + iAdjustedStructuralNavalNeed - iCoastalDefenseSubstitutes);
 	if (!bFree && bCombat)
 	{
 		CvLandmass* pLM = GC.getMap().getLandmassById(m_pCity->plot()->getLandmass());
