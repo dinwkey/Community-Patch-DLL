@@ -375,7 +375,10 @@ bool CvAStar::FindPathWithCurrentConfiguration(int iXstart, int iYstart, int iXd
 	Reset();
 
 	if(!isValid(iXstart, iYstart))
+	{
+		s_iPathfinderDepth--;
 		return false;
+	}
 
 	if(udInitializeFunc)
 		udInitializeFunc(m_sData, this);
@@ -1083,14 +1086,18 @@ bool CvPathFinder::DestinationReached(int iToX, int iToY) const
 			return true;
 
 		// UMP-006: Fallback for edge cases (islands, narrow straits)
-		// Allow stopping on passable terrain even if no common neighbor found
-		// This prevents siege units from being stranded unable to find ring2 position
-		if (GetNode(iToX, iToY)->m_kCostCacheData.bCanEnterTerrainPermanent)
+		// Only accept the fallback when the tile is still a valid ranged attack source.
+		const UnitPathCacheData* pCacheData = reinterpret_cast<const UnitPathCacheData*>(GetScratchBuffer());
+		CvUnit* pUnit = pCacheData ? pCacheData->pUnit : NULL;
+		CvPlot* pCandidatePlot = GC.getMap().plotCheckInvalid(iToX, iToY);
+		if (pUnit && pUnit->IsCanAttackRanged() && pCandidatePlot &&
+			GetNode(iToX, iToY)->m_kCostCacheData.bCanEnterTerrainPermanent &&
+			pUnit->canEverRangeStrikeAt(GetDestX(), GetDestY(), pCandidatePlot, true))
 		{
 			FILogFile* pLog = LOGFILEMGR.GetLog("pathfinder_ring2_fallback.log", FILogFile::kDontTimeStamp);
 			if (pLog)
 			{
-				pLog->Msg("Ring2 fallback: Using passable terrain at (%d,%d) when no common neighbor to target (%d,%d)\n",
+				pLog->Msg("Ring2 fallback: Using ranged-legal terrain at (%d,%d) when no common neighbor to target (%d,%d)\n",
 					iToX, iToY, GetDestX(), GetDestY());
 			}
 			return true;

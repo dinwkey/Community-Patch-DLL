@@ -1793,7 +1793,7 @@ int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair
 	else if (iMinDistanceToEnemy < 10)
 		iStrategicBonus += 25;  // Moderate threat distance
 
-	// Check if route connects to or passes through threatened cities
+	// Check if route endpoints are near threatened cities.
 	int iThreatenedCitiesNearby = 0;
 	int iLoop = 0;
 	for (CvCity* pCity = m_pPlayer->firstCity(&iLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iLoop))
@@ -1802,7 +1802,9 @@ int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair
 		if (pCity->IsRazing())
 			continue;
 
-		int iCityDistance = plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY());
+		int iCityDistance = min(
+			plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY()),
+			plotDistance(pEndPlot->getX(), pEndPlot->getY(), pCity->getX(), pCity->getY()));
 		if (iCityDistance <= 5)  // City is near route
 		{
 			// Check if threatened (surrounded by enemies, low defense, etc.)
@@ -1995,8 +1997,8 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 			bool bCanAffordNegativeRoute = (iNetGoldTimes100 > 0);  // Only build negative routes if currently profitable
 			if (!bCanAffordNegativeRoute && iRailroadValue < 0)
 			{
-				// Treasury constraint: cut the value in half to heavily discourage it
-				iRailroadValue = (iRailroadValue * 50) / 100;
+				// Treasury constraint: make already-negative routes even less attractive.
+				iRailroadValue = (iRailroadValue * 3) / 2;
 			}
 
 			// Weight by war situation: movement speed matters more during military pressure
@@ -3209,9 +3211,15 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 	{
 		int iDefensiveClearBonus = 0;
 		int iDistToCity = plotDistance(*pPlot, *pCity->plot());
+		CvMilitaryAI* pMilitaryAI = m_pPlayer->GetMilitaryAI();
+		bool bRelevantDefensiveCity = pCity->isBorderCity()
+			|| pCity->isInDangerOfFalling()
+			|| pCity->isUnderSiege()
+			|| pCity->getThreatValue() >= 35
+			|| (pMilitaryAI && pMilitaryAI->IsExposedToEnemy(pCity, NO_PLAYER));
 		
 		// Only consider defensive clearing close to the city (within 3 tiles)
-		if (iDistToCity <= 3)
+		if (iDistToCity <= 3 && bRelevantDefensiveCity)
 		{
 			// Check if we're at war with anyone who has forest/jungle combat advantages
 			for (int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
@@ -3387,11 +3395,12 @@ bool CvBuilderTaskingAI::ShouldBuilderConsiderPlot(CvUnit* pUnit, CvPlot* pPlot)
 	}
 
 	//if there is fallout, try to scrub it in spite of the danger
-	if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage())
+	FeatureTypes eFalloutFeature = m_eFalloutFeature != NO_FEATURE ? m_eFalloutFeature : GetFalloutFeature();
+	if(eFalloutFeature != NO_FEATURE && pPlot->getFeatureType() == eFalloutFeature && !pUnit->ignoreFeatureDamage())
 	{
 		// Check if unit can survive fallout damage considering healing
 		int iFalloutDamage = 0;
-		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(FEATURE_FALLOUT);
+		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(eFalloutFeature);
 		if (pkFeatureInfo)
 			iFalloutDamage = pkFeatureInfo->getTurnDamage();
 		
@@ -4886,19 +4895,23 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 
 	int iTotalScore = iYieldScore + iSecondaryScore;
 	int iFinalScore = iTotalScore;
+	int iFinalPotentialScore = iPotentialScore;
+	int iFinalUnusedYieldScore = bYieldUnused ? iYieldScore : 0;
 
 	// Factor in build time for ROI calculation - longer builds are less valuable
-	if (bIsBuild && eBuild != NO_BUILD)
+	if (bIsBuild && eBuild != NO_BUILD && iTotalScore > 0)
 	{
 		int iBuildTime = pPlot->getBuildTime(eBuild, m_pPlayer->GetID());
 		if (iBuildTime > 0)
 		{
-			// Scale score by build time - divide by (turns + 1) to avoid divide by zero and reduce impact
+			// Apply the ROI scaling consistently across the score components that feed directive priority.
 			iFinalScore = (iTotalScore * 100) / (iBuildTime + 1);
+			iFinalPotentialScore = (iPotentialScore * 100) / (iBuildTime + 1);
+			iFinalUnusedYieldScore = (iFinalUnusedYieldScore * 100) / (iBuildTime + 1);
 		}
 	}
 
-	return PlotBuildScore(iFinalScore, iPotentialScore, bYieldUnused ? iYieldScore : 0);
+	return PlotBuildScore(iFinalScore, iFinalPotentialScore, iFinalUnusedYieldScore);
 }
 
 int CvBuilderTaskingAI::GetResourceSpawnWorkableChance(CvPlot* pPlot, int& iTileClaimChance)
