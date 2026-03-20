@@ -1281,7 +1281,7 @@ int CvDealAI::GetResourceValue(ResourceTypes eResource, int iResourceQuantity, i
 /// How much is a Resource worth?
 int CvDealAI::GetLuxuryResourceValue(ResourceTypes eResource, int iNumTurns, bool bFromMe, PlayerTypes eOtherPlayer, int iCurrentNetGoldOfReceivingPlayer) const
 {
-	bool bPeaceDeal = GetPlayer()->IsAtWarWith(eOtherPlayer);
+	bool bPeaceDeal = !GetPlayer()->IsAtWarWith(eOtherPlayer);
 
 	const CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eResource);
 	if (!pkResourceInfo)
@@ -1977,7 +1977,7 @@ vector<int> CvDealAI::GetStrategicResourceItemList(ResourceTypes eResource, int 
 /// How much is a Resource worth?
 int CvDealAI::GetStrategicResourceValue(ResourceTypes eResource, int iResourceQuantity, int iNumTurns, bool bFromMe, PlayerTypes eOtherPlayer, int iCurrentNetGoldOfReceivingPlayer) const
 {
-	bool bPeaceDeal = GetPlayer()->IsAtWarWith(eOtherPlayer);
+	bool bPeaceDeal = !GetPlayer()->IsAtWarWith(eOtherPlayer);
 
 	if (eResource == NO_RESOURCE)
 		return INT_MAX;
