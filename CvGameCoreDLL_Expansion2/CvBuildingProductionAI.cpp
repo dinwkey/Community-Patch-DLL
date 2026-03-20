@@ -19,6 +19,191 @@
 // include after all other headers
 #include "LintFree.h"
 
+namespace
+{
+int CountNearbyVisibleEnemyNavalUnits(const CvCity* pCity, PlayerTypes ePlayer)
+{
+	if (!pCity || !pCity->plot())
+		return 0;
+
+	int iNearbyEnemyNaval = 0;
+	for (int i = RING2_PLOTS; i < RING5_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby || !pNearby->isWater() || !pNearby->isVisible(GET_PLAYER(ePlayer).getTeam()))
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() == ePlayer || !GET_PLAYER(ePlayer).IsAtWarWith(pUnit->getOwner()))
+				continue;
+
+			if (pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_SEA)
+				iNearbyEnemyNaval++;
+		}
+	}
+
+	return iNearbyEnemyNaval;
+}
+
+int GetStructuralCoastalRisk(const CvCity* pCity, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pCity || !pAnalysis || pAnalysis->eExposure == COASTAL_EXPOSURE_NONE)
+		return 0;
+
+	int iRisk = 0;
+
+	if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
+		iRisk += 150;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
+		iRisk += 80;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
+		iRisk += 25;
+
+	if (pAnalysis->iLandingZonesRing2 > 2)
+		iRisk += min(100, (pAnalysis->iLandingZonesRing2 - 2) * 25);
+
+	if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
+		iRisk += 150;
+	else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
+	{
+		iRisk += 80;
+		if (pAnalysis->iNavalChokeWidth == 1)
+			iRisk += 40;
+	}
+
+	return iRisk;
+}
+
+int GetObservedNavalThreat(const CvCity* pCity, const CvPlayer& kPlayer, bool bMemoryThreat)
+{
+	if (!pCity || !pCity->isCoastal())
+		return 0;
+
+	int iThreat = 0;
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	const int iNearbyEnemyNaval = CountNearbyVisibleEnemyNavalUnits(pCity, kPlayer.GetID());
+	const bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+	const bool bDamaged = (pCity->getDamage() > 0);
+
+	if (iNearbyEnemyNaval > 0)
+		iThreat += 80 + min(120, iNearbyEnemyNaval * 30);
+
+	if (bBlockaded)
+		iThreat += 140;
+
+	if (bDamaged)
+		iThreat += 50;
+
+	if (kPlayer.IsAtWarAnyMajor())
+	{
+		iThreat += 20;
+		if (pMilitaryAI && pMilitaryAI->GetWarType() == WARTYPE_SEA)
+			iThreat += 40;
+	}
+
+	if (pMilitaryAI)
+	{
+		if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_CRITICAL)
+			iThreat += 120;
+		else if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_NEEDED)
+			iThreat += 60;
+	}
+
+	if (bMemoryThreat)
+		iThreat += 30;
+
+	return iThreat;
+}
+
+int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pCity || !pCity->isCoastal())
+		return 0;
+
+	int iScore = 0;
+	CvUnit* pGarrison = pCity->GetGarrisonedUnit();
+
+	if (pCity->canRangeStrike())
+		iScore += 50;
+
+	if (pGarrison && !pGarrison->isDelayedDeath() && pGarrison->getDomainType() == DOMAIN_LAND && pGarrison->IsCanAttackRanged())
+	{
+		iScore += 80;
+		if (pGarrison->GetRange() >= 2)
+			iScore += 40;
+	}
+
+	int iShoreFirePositions = 0;
+	for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCity->plot(), i);
+		if (!pLoopPlot || pLoopPlot->isWater() || pLoopPlot->isMountain() || pLoopPlot->isImpassable())
+			continue;
+
+		bool bSupportsCoast = false;
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pLoopPlot->getX(), pLoopPlot->getY(), (DirectionTypes)iDir);
+			if (pAdj && pAdj->isWater() && !pAdj->isLake())
+			{
+				bSupportsCoast = true;
+				break;
+			}
+		}
+
+		if (bSupportsCoast)
+			iShoreFirePositions += pLoopPlot->isHills() ? 2 : 1;
+	}
+	iScore += min(100, iShoreFirePositions * 20);
+
+	int iNearbyFriendlyRanged = 0;
+	int iNearbyFriendlyNaval = 0;
+	for (int i = RING0_PLOTS; i < RING4_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby)
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() != kPlayer.GetID() || pUnit->isDelayedDeath())
+				continue;
+
+			if (pUnit == pGarrison)
+				continue;
+
+			if (pUnit->getDomainType() == DOMAIN_LAND && (pUnit->IsCanAttackRanged() || pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD))
+				iNearbyFriendlyRanged++;
+			else if (pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit())
+				iNearbyFriendlyNaval++;
+		}
+	}
+
+	iScore += min(60, iNearbyFriendlyRanged * 20);
+	iScore += min(60, iNearbyFriendlyNaval * 20);
+
+	if (pCity->IsRouteToCapitalConnected())
+		iScore += 30;
+
+	const int iEffectiveCoastalCities = kPlayer.GetNumEffectiveCoastalCities();
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		const int iRecommendedNavy = pMilitaryAI->GetRecommendNavySize();
+		const int iCurrentNavy = kPlayer.getNumMilitarySeaUnits();
+		const bool bSeaDependentEmpire = iEffectiveCoastalCities >= 3 || (pAnalysis && pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE);
+
+		if (bSeaDependentEmpire && iCurrentNavy < iRecommendedNavy)
+			iScore = iScore * 65 / 100;
+	}
+
+	return iScore;
+}
+}
+
 /// Constructor
 CvBuildingProductionAI::CvBuildingProductionAI(CvCity* m_pCity, CvCityBuildings* pCityBuildings):
 	m_pCity(m_pCity),
@@ -863,65 +1048,20 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 					iDefenseMod -= 300;
 				}
 
-				// Naval Phase 1: Coastal exposure boosts defensive building priority.
-				// Exposed coastal cities need walls/castles to survive naval bombardment + amphibious assault.
-				if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
-				{
-					iDefenseMod += 300;
-					// Extra if deep ocean access — can receive blue-water fleets, not just coastal galleys
-					if (pAnalysis->iDeepWaterTilesRing2 > 0)
-						iDefenseMod += 150;
-					// Many landing zones mean amphibious assault is likely
-					if (pAnalysis->iLandingZonesRing2 >= 4)
-						iDefenseMod += 100;
-				}
-				else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
-				{
-					iDefenseMod += 150;
-				}
-				else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
-				{
-					iDefenseMod += 50;
-				}
+				const int iStructuralCoastalRisk = GetStructuralCoastalRisk(m_pCity, pAnalysis);
+				const int iObservedNavalThreat = GetObservedNavalThreat(m_pCity, kPlayer, bMemoryThreat);
+				const int iCoastalDefenseSubstitutes = GetCoastalDefenseSubstituteScore(m_pCity, kPlayer, pAnalysis);
+				const bool bStrategicPort = pAnalysis->bIsFloodgate || pAnalysis->bIsChokepointCity
+					|| pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE || pAnalysis->iDependentCityCount > 0;
 
-				// Naval Phase 2: Naval chokepoint boosts defensive building priority.
-				// Canal cities and strait-adjacent cities gate fleet movement — defend them heavily.
-				if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
-				{
-					iDefenseMod += 400;
-				}
-				else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
-				{
-					iDefenseMod += 200;
-					// Very narrow strait (width 1) is nearly canal-equivalent
-					if (pAnalysis->iNavalChokeWidth == 1)
-						iDefenseMod += 100;
-				}
+				int iAdjustedStructuralRisk = iStructuralCoastalRisk;
+				if (iObservedNavalThreat == 0 && !bStrategicPort)
+					iAdjustedStructuralRisk = iAdjustedStructuralRisk * 65 / 100;
+				else if (iObservedNavalThreat < 100 && !bStrategicPort)
+					iAdjustedStructuralRisk = iAdjustedStructuralRisk * 85 / 100;
 
-				// Naval Phase 3: Connectivity boosts.
-				// Canal cities that reach the ocean are irreplaceable — losing one severs fleet access.
-				if (pAnalysis->bIsNavalCanalCity && pAnalysis->bFleetCanReachOcean)
-					iDefenseMod += 200;
-				// Fleet route blocked by enemy → local defenses matter more (no naval support).
-				if (pAnalysis->bEnemyBlocksNavalRoute)
-					iDefenseMod += 100;
-
-				// Naval Phase 4: Amphibious threat boosts.
-				// Cities vulnerable to amphibious assault need defensive buildings urgently.
-				if (pAnalysis->bVulnerableToAmphibious)
-				{
-					// Graduated by threat score
-					if (pAnalysis->iAmphibiousThreatScore >= 80)
-						iDefenseMod += 500;
-					else if (pAnalysis->iAmphibiousThreatScore >= 60)
-						iDefenseMod += 300;
-					else
-						iDefenseMod += 150;
-
-					// Multiple sea enemies = multiple threat vectors
-					if (pAnalysis->iHostileSeaApproaches >= 2)
-						iDefenseMod += 150;
-				}
+				const int iNetCoastalDefenseNeed = max(0, iAdjustedStructuralRisk + iObservedNavalThreat - iCoastalDefenseSubstitutes);
+				iDefenseMod += iNetCoastalDefenseNeed;
 			}
 		}
 	}

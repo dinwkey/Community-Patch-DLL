@@ -1806,6 +1806,195 @@ void CvMilitaryAI::UpdateBaseData()
 	SetRecommendedArmyNavySize();
 }
 
+namespace
+{
+int CountNearbyVisibleEnemyNavalUnitsForCity(const CvPlayer* pPlayer, const CvCity* pCity)
+{
+	if (!pPlayer || !pCity || !pCity->plot())
+		return 0;
+
+	int iNearbyEnemyNaval = 0;
+	for (int i = RING2_PLOTS; i < RING5_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby || !pNearby->isWater() || !pNearby->isVisible(pPlayer->getTeam()))
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() == pPlayer->GetID() || !pPlayer->IsAtWarWith(pUnit->getOwner()))
+				continue;
+
+			if (pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_SEA)
+				iNearbyEnemyNaval++;
+		}
+	}
+
+	return iNearbyEnemyNaval;
+}
+
+int GetCityObservedNavalThreatForSizing(const CvPlayer* pPlayer, CvMilitaryAI* pMilitaryAI, const CvCity* pCity, int iMemoryThreatWeight)
+{
+	if (!pPlayer || !pMilitaryAI || !pCity || !pCity->isCoastal())
+		return 0;
+
+	int iThreat = 0;
+	const int iNearbyEnemyNaval = CountNearbyVisibleEnemyNavalUnitsForCity(pPlayer, pCity);
+
+	if (iNearbyEnemyNaval > 0)
+		iThreat += 90 + min(140, iNearbyEnemyNaval * 35);
+
+	if (pCity->GetCityCitizens()->AnyPlotBlockaded())
+		iThreat += 140;
+
+	if (pCity->getDamage() > 0)
+		iThreat += 50;
+
+	if (pPlayer->IsAtWarAnyMajor())
+	{
+		iThreat += 20;
+		if (pMilitaryAI->GetWarType() == WARTYPE_SEA)
+			iThreat += 50;
+	}
+
+	if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_CRITICAL)
+		iThreat += 120;
+	else if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_NEEDED)
+		iThreat += 60;
+
+	if (iMemoryThreatWeight > 0)
+		iThreat += min(60, iMemoryThreatWeight / 2);
+
+	return iThreat;
+}
+
+int GetCityStructuralNavalNeedForSizing(const CvMilitaryAI* pMilitaryAI, const CvCity* pCity, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pMilitaryAI || !pCity || !pCity->isCoastal() || !pAnalysis)
+		return 0;
+
+	int iNeed = 0;
+
+	if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
+		iNeed += 80;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
+		iNeed += 40;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
+		iNeed += 10;
+
+	if (pAnalysis->iLandingZonesRing2 > 2)
+		iNeed += min(60, (pAnalysis->iLandingZonesRing2 - 2) * 15);
+
+	if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
+		iNeed += 120;
+	else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
+	{
+		iNeed += 60;
+		if (pAnalysis->iNavalChokeWidth == 1)
+			iNeed += 25;
+	}
+
+	if (pAnalysis->bIsFloodgate)
+		iNeed += 80 + min(60, pAnalysis->iDependentCityCount * 15);
+	else if (pAnalysis->bIsChokepointCity)
+		iNeed += 50;
+
+	if (pAnalysis->bIsFrontLine)
+		iNeed += 40;
+	else if (pAnalysis->bIsSecondLine)
+		iNeed += 15;
+
+	switch (pMilitaryAI->GetGeographicPosture())
+	{
+	case GEO_POSTURE_ARCHIPELAGO:
+		iNeed += 120;
+		break;
+	case GEO_POSTURE_ISLAND:
+		iNeed += 80;
+		break;
+	default:
+		break;
+	}
+
+	return iNeed;
+}
+
+int GetCityCoastalDefenseSubstituteScoreForSizing(const CvCity* pCity, const CvPlayer* pPlayer)
+{
+	if (!pCity || !pPlayer || !pCity->isCoastal())
+		return 0;
+
+	int iScore = 0;
+	CvUnit* pGarrison = pCity->GetGarrisonedUnit();
+
+	if (pCity->canRangeStrike())
+		iScore += 50;
+
+	if (pGarrison && !pGarrison->isDelayedDeath() && pGarrison->getDomainType() == DOMAIN_LAND && pGarrison->IsCanAttackRanged())
+	{
+		iScore += 80;
+		if (pGarrison->GetRange() >= 2)
+			iScore += 40;
+	}
+
+	int iShoreFirePositions = 0;
+	for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCity->plot(), i);
+		if (!pLoopPlot || pLoopPlot->isWater() || pLoopPlot->isMountain() || pLoopPlot->isImpassable())
+			continue;
+
+		bool bSupportsCoast = false;
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pLoopPlot->getX(), pLoopPlot->getY(), (DirectionTypes)iDir);
+			if (pAdj && pAdj->isWater() && !pAdj->isLake())
+			{
+				bSupportsCoast = true;
+				break;
+			}
+		}
+
+		if (bSupportsCoast)
+			iShoreFirePositions += pLoopPlot->isHills() ? 2 : 1;
+	}
+	iScore += min(100, iShoreFirePositions * 20);
+
+	int iNearbyFriendlyRanged = 0;
+	int iNearbyFriendlyNaval = 0;
+	for (int i = RING0_PLOTS; i < RING4_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby)
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() != pPlayer->GetID() || pUnit->isDelayedDeath())
+				continue;
+
+			if (pUnit == pGarrison)
+				continue;
+
+			if (pUnit->getDomainType() == DOMAIN_LAND && (pUnit->IsCanAttackRanged() || pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD))
+				iNearbyFriendlyRanged++;
+			else if (pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit())
+				iNearbyFriendlyNaval++;
+		}
+	}
+
+	iScore += min(60, iNearbyFriendlyRanged * 20);
+	iScore += min(80, iNearbyFriendlyNaval * 20);
+
+	if (pCity->IsRouteToCapitalConnected())
+		iScore += 30;
+
+	return iScore;
+}
+}
+
 ///	How many military units should we have given current threats?
 void CvMilitaryAI::SetRecommendedArmyNavySize()
 {
@@ -1823,6 +2012,11 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 	}
 
 	int iNumCoastalCities = m_pPlayer->GetNumEffectiveCoastalCities();
+	const bool bSeaDependentEmpire = (GetGeographicPosture() == GEO_POSTURE_ISLAND || GetGeographicPosture() == GEO_POSTURE_ARCHIPELAGO || iNumCoastalCities >= 3);
+ 	const CvStrategicGeographyMap* pStratGeo = GetStrategicGeographyMap();
+	int iObservedNavalThreatTotal = 0;
+	int iStructuralNavalNeedTotal = 0;
+	int iCoastalDefenseSubstitutesTotal = 0;
 
 	int iLandDefenseWeight = /*3*/ GD_INT_GET(AI_STRATEGY_DEFEND_MY_LANDS_BASE_UNITS) * 10;
 	int iNavalDefenseWeight = 0;
@@ -1849,7 +2043,25 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 			if (m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pCity, NO_PLAYER, ARMY_TYPE_NAVAL))
 				iNavalDefenseWeight += 10;
 		}
+
+		if (pCity->isCoastal())
+		{
+			const StrategicCityAnalysis* pAnalysis = pStratGeo ? pStratGeo->GetCityAnalysis(pCity->GetID()) : NULL;
+			int iObservedCityThreat = GetCityObservedNavalThreatForSizing(m_pPlayer, this, pCity, m_iMemoryThreatWeight);
+			int iStructuralCityNeed = GetCityStructuralNavalNeedForSizing(this, pCity, pAnalysis);
+			int iSubstituteCityDefense = GetCityCoastalDefenseSubstituteScoreForSizing(pCity, m_pPlayer);
+
+			if (bSeaDependentEmpire)
+				iSubstituteCityDefense = iSubstituteCityDefense * 65 / 100;
+
+			iObservedNavalThreatTotal += iObservedCityThreat;
+			iStructuralNavalNeedTotal += iStructuralCityNeed;
+			iCoastalDefenseSubstitutesTotal += iSubstituteCityDefense;
+		}
 	}
+
+	const int iNetLocalNavalNeed = max(0, iObservedNavalThreatTotal + iStructuralNavalNeedTotal - iCoastalDefenseSubstitutesTotal);
+	iNavalDefenseWeight += iNetLocalNavalNeed / 12;
 
 	int iTotalOffenseWeight = 0;
 
@@ -1896,6 +2108,24 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 	if (iNavalPercent < iNavalFloor)
 		iNavalPercent = iNavalFloor;
 
+	if (iObservedNavalThreatTotal >= 500)
+		iNavalPercent += 25;
+	else if (iObservedNavalThreatTotal >= 300)
+		iNavalPercent += 15;
+	else if (iObservedNavalThreatTotal >= 140)
+		iNavalPercent += 8;
+
+	if (iNetLocalNavalNeed >= 400)
+		iNavalPercent += 20;
+	else if (iNetLocalNavalNeed >= 220)
+		iNavalPercent += 12;
+	else if (iNetLocalNavalNeed >= 100)
+		iNavalPercent += 6;
+	else if (!bSeaDependentEmpire && iObservedNavalThreatTotal == 0)
+		iNavalPercent -= min(20, iCoastalDefenseSubstitutesTotal / 80);
+
+	iNavalPercent = range(iNavalFloor, 95, iNavalPercent);
+
 	// Modifiers
 	int iFlavorDefense = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_DEFENSE"));
 	int iDefenseModifier = 100 + iFlavorDefense * 2;
@@ -1917,6 +2147,18 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 				GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(), m_iMemoryThreatWeight, iDefenseModifier, iOffenseModifier);
 			pLog->Msg(msg.c_str());
 		}
+	}
+
+	if (GC.getLogging() && GC.getAILogging())
+	{
+		CvString playerName = GetPlayer()->getCivilizationShortDescription();
+		FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+		CvString msg;
+		msg.Format("%03d, %s, NAVAL SIZING MIXED MODEL: obs=%d, structural=%d, substitutes=%d, net=%d, navalPercent=%d, seaDependent=%d",
+			GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+			iObservedNavalThreatTotal, iStructuralNavalNeedTotal, iCoastalDefenseSubstitutesTotal,
+			iNetLocalNavalNeed, iNavalPercent, bSeaDependentEmpire ? 1 : 0);
+		pLog->Msg(msg.c_str());
 	}
 
 	iLandDefenseWeight = iLandDefenseWeight * iDefenseModifier;

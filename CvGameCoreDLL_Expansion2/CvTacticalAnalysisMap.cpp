@@ -996,10 +996,18 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 				iBaseValue *= 3;
 			}
 
+			CvMilitaryAI* pMilitaryAI = GET_PLAYER(m_ePlayer).GetMilitaryAI();
+			bool bCityUnderPressure = pZoneCity->isInDangerOfFalling()
+				|| pZoneCity->isUnderSiege()
+				|| pZoneCity->IsBlockadedWaterAndLand()
+				|| pZoneCity->getThreatValue() >= 35
+				|| (pMilitaryAI && pMilitaryAI->IsExposedToEnemy(pZoneCity, NO_PLAYER));
+			bool bCityAtRisk = bCityUnderPressure || eDominance == TACTICAL_DOMINANCE_ENEMY;
+
 			// Strategic Geography: use layer classification for zone prioritization when available.
-			// Chokepoint cities get massive priority; core/second-line get moderate boosts;
-			// front-line gets a small boost. Falls back to simple capital/distance heuristic.
-			CvStrategicGeographyMap* pStratMap = GET_PLAYER(m_ePlayer).GetMilitaryAI()->GetStrategicGeographyMap();
+			// Strategic cities should matter most when there is live pressure. Without it,
+			// geography is a tie-breaker, not a license to strip active fronts.
+			CvStrategicGeographyMap* pStratMap = pMilitaryAI ? pMilitaryAI->GetStrategicGeographyMap() : NULL;
 			const StrategicCityAnalysis* pCityStrat = pStratMap ? pStratMap->GetCityAnalysis(pZoneCity->GetID()) : NULL;
 			if (pCityStrat)
 			{
@@ -1007,38 +1015,40 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 				if (pCityStrat->bIsCapital)
 					iBaseValue *= 2;
 
-				// Chokepoint cities get a massive boost — losing them opens wide approach corridors
-				// Phase 3: Formal chokepoint city detection with 3x multiplier
+				// Chokepoints and floodgates deserve priority, but scale them up hard only when
+				// the city is actually contested or under imminent pressure.
 				if (pCityStrat->bIsChokepointCity)
 				{
-					iBaseValue *= 3; // 3x for formal chokepoint cities (acceptance criteria)
-					// Extra boost for extreme chokepoints (1 or fewer open approach corridors)
-					if (pCityStrat->iApproachCorridors <= 1)
-						iBaseValue = (iBaseValue * 3) / 2; // total 4.5x for Thermopylae-level chokes
+					iBaseValue = bCityAtRisk ? (iBaseValue * 2) : ((iBaseValue * 3) / 2);
+					if (pCityStrat->iApproachCorridors <= 1 && bCityAtRisk)
+						iBaseValue = (iBaseValue * 5) / 4;
 				}
-				else if (pCityStrat->iChokePointCount >= 1)
-					iBaseValue = (iBaseValue * 3) / 2; // 1.5x for near-chokepoint cities
+				else if (pCityStrat->iChokePointCount >= 1 && bCityAtRisk)
+					iBaseValue = (iBaseValue * 5) / 4;
 
 				// Layer-based boost
 				switch (pCityStrat->eLayer)
 				{
 				case STRATEGIC_LAYER_CORE:
-					iBaseValue = (iBaseValue * 3) / 2; // 50% boost for core territory
+					if (bCityAtRisk)
+						iBaseValue = (iBaseValue * 5) / 4;
 					break;
 				case STRATEGIC_LAYER_SECOND_LINE:
-					iBaseValue = (iBaseValue * 5) / 4; // 25% boost for second-line
+					if (bCityAtRisk)
+						iBaseValue = (iBaseValue * 6) / 5;
 					break;
 				default:
 					break; // front-line and rear get base value
 				}
 
-				// Phase 2: Salient-aware zone priority adjustments
+				// Defensible salients are worth reinforcing when contested; otherwise treat them
+				// conservatively so we do not pin the tactical layer to exposed geography.
 				if (pCityStrat->bIsSalient)
 				{
 					if (pCityStrat->bIsDefensibleSalient && !pCityStrat->bEnemyHasIndirectFire)
 					{
-						// Defensible salient: hedgehog is viable, moderate boost
-						iBaseValue = (iBaseValue * 3) / 2; // 1.5x
+						if (bCityAtRisk)
+							iBaseValue = (iBaseValue * 5) / 4;
 					}
 					else if (!pCityStrat->bIsCapital && !pCityStrat->bIsChokepointCity && pCityStrat->iChokePointCount < 3)
 					{
@@ -1047,14 +1057,13 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 					}
 				}
 
-				// Phase 4: Floodgate zone priority — losing these cities is catastrophic
+				// Floodgates remain important, but their full value shows up when enemy pressure is real.
 				if (pCityStrat->bIsFloodgate)
 				{
-					iBaseValue = (iBaseValue * 5) / 2; // 2.5x for floodgate cities
+					iBaseValue = bCityAtRisk ? ((iBaseValue * 7) / 4) : ((iBaseValue * 5) / 4);
 
-					// Extra boost for high-dependency floodgates (protecting 4+ cities)
-					if (pCityStrat->iDependentCityCount >= 4)
-						iBaseValue = (iBaseValue * 3) / 2; // total ~3.75x
+					if (pCityStrat->iDependentCityCount >= 4 && bCityAtRisk)
+						iBaseValue = (iBaseValue * 5) / 4;
 				}
 			}
 			else

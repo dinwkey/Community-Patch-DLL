@@ -36991,33 +36991,50 @@ int CvPlayer::GetWarScore(PlayerTypes ePlayer) const
 					if (!pAnalysis)
 						continue;
 
-					iCitiesEvaluated++;
+					bool bLikelyNextFront = pCity->isCapital()
+						|| pCity->getThreatValue() >= 25
+						|| pCity->isUnderSiege()
+						|| GetMilitaryAI()->IsExposedToEnemy(const_cast<CvCity*>(pCity), ePlayer)
+						|| pAnalysis->bIsFrontLine
+						|| pAnalysis->bIsChokepointCity
+						|| pAnalysis->bIsFloodgate;
+
+					int iCityScore = 0;
 
 					if (pAnalysis->bIsChokepointCity)
 					{
-						iDefensibilityScore += 12;
+						iCityScore += 12;
 						if (pAnalysis->iApproachCorridors <= 1)
-							iDefensibilityScore += 8;
+							iCityScore += 8;
 					}
 
 					if (pAnalysis->bIsFloodgate)
-						iDefensibilityScore += 10;
+						iCityScore += 10;
 
 					if (pAnalysis->iTerrainDefenseScore >= 40)
-						iDefensibilityScore += 8;
+						iCityScore += 8;
 					else if (pAnalysis->iTerrainDefenseScore >= 25)
-						iDefensibilityScore += 5;
+						iCityScore += 5;
 					else if (pAnalysis->iTerrainDefenseScore >= 15)
-						iDefensibilityScore += 2;
+						iCityScore += 2;
 
 					if (pAnalysis->iApproachCorridors <= 2 && !pAnalysis->bIsChokepointCity)
-						iDefensibilityScore += 4;
+						iCityScore += 4;
 
 					if (pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire)
-						iDefensibilityScore += 6;
+						iCityScore += 6;
 
 					if (pAnalysis->eLayer == STRATEGIC_LAYER_CORE || pAnalysis->eLayer == STRATEGIC_LAYER_REAR_AREA)
-						iDefensibilityScore += 3;
+						iCityScore += 3;
+
+					if (!bLikelyNextFront)
+						iCityScore /= 2;
+
+					if (iCityScore <= 0)
+						continue;
+
+					iDefensibilityScore += iCityScore;
+					iCitiesEvaluated++;
 				}
 
 				if (iCitiesEvaluated > 0)
