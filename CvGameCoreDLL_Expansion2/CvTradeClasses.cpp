@@ -2401,6 +2401,8 @@ bool CvGameTrade::RecalculateTradeRoutePath(int iTradeRouteIndex)
 			kConnection.m_bTradeUnitMovingForward = true;
 		else if (kConnection.m_iTradeUnitLocationIndex >= (int)kConnection.m_aPlotList.size() - 1)
 			kConnection.m_bTradeUnitMovingForward = false;
+		else
+			kConnection.m_bTradeUnitMovingForward = true;
 	}
 	else
 	{
