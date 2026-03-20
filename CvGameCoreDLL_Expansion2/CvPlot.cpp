@@ -8232,6 +8232,7 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 
 		// If old improvement was a gift, it ignored our tech limits, so be sure to remove resources properly
 		bool bOldImprovementConnectedResource = IsResourceImprovedForOwner(IsImprovedByGiftFromMajor());
+		bool bOldResourceLinkActive = IsResourceLinkedCityActive();
 
 		// Save per-resource amounts computed with the old improvement's extraction modifiers. We need these
 		// for the removal at the end of this function, because m_eImprovementType will have changed by then
@@ -9030,7 +9031,7 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 				// Remove Resource Quantity from total
 				if(getResourceType(getTeam()) != NO_RESOURCE)
 				{
-					if (bOldImprovementConnectedResource)
+					if (bOldImprovementConnectedResource && bOldResourceLinkActive)
 					{
 						// Use saved amounts from before the improvement type changed, so the old improvement's
 						// extraction modifiers are applied. Without this, both the add (for new imp) and remove

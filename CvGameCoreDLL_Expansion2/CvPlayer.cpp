@@ -70,6 +70,31 @@ bool isEmpty(const char* szString)
 	return szString == NULL || szString[0] == '\0';
 }
 
+namespace
+{
+int CountActiveTileResourcesForPlayer(const CvPlayer& kPlayer, ResourceTypes eResource)
+{
+	int iCount = 0;
+
+	for (int iPlot = 0; iPlot < GC.getMap().numPlots(); ++iPlot)
+	{
+		CvPlot* pLoopPlot = GC.getMap().plotByIndexUnchecked(iPlot);
+		if (!pLoopPlot || pLoopPlot->getOwner() != kPlayer.GetID())
+			continue;
+
+		if (!pLoopPlot->IsResourceLinkedCityActive())
+			continue;
+
+		if (pLoopPlot->getResourceType() != eResource)
+			continue;
+
+		iCount += pLoopPlot->getNumResourceForPlayer(kPlayer.GetID(), /*bExtraResources*/ false, /*bIgnoreTechPrereq*/ true);
+	}
+
+	return iCount;
+}
+}
+
 // Public Functions...
 namespace FSerialization
 {
@@ -38356,6 +38381,13 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 		else if (!bFromBuilding)
 		{
 			m_paiNumResourceFromTiles[eIndex] = m_paiNumResourceFromTiles[eIndex] + iChange;
+			if (m_paiNumResourceFromTiles[eIndex] < 0)
+			{
+				const int iRecountedTileResources = CountActiveTileResourcesForPlayer(*this, eIndex);
+				CUSTOMLOG("Improved resource counter underflow for Player %d (%s), Resource %s. Delta: %d, stored after change: %d, recounted: %d. Auto-correcting.",
+					GetID(), getCivilizationShortDescription(), GC.getResourceInfo(eIndex)->GetText(), iChange, m_paiNumResourceFromTiles[eIndex], iRecountedTileResources);
+				m_paiNumResourceFromTiles[eIndex] = iRecountedTileResources;
+			}
 			ASSERT(m_paiNumResourceFromTiles[eIndex] >= 0);
 		}
 		else
