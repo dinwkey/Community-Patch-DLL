@@ -2077,7 +2077,7 @@ int CvDealAI::GetStrategicResourceValue(ResourceTypes eResource, int iResourceQu
 		for (int iLoop = 1; iLoop <= iResourceQuantity; iLoop++)
 		{
 			int iAmountAfterThisResource = iNumberWeCanSell - iLoop;
-			if (iAmountAfterThisResource <= 0)
+			if (iAmountAfterThisResource < 0)
 				return INT_MAX;
 			else if (iAmountAfterThisResource <= 2)
 				iValue += iValueToAdd * 4 * (3 - iAmountAfterThisResource);
