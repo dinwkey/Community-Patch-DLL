@@ -47,6 +47,22 @@ int CountNearbyVisibleEnemyNavalUnits(const CvCity* pCity, PlayerTypes ePlayer)
 	return iNearbyEnemyNaval;
 }
 
+bool IsSeaDependentEmpire(const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+		if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+			return true;
+	}
+
+	if (kPlayer.GetNumEffectiveCoastalCities() >= 3)
+		return true;
+
+	return pAnalysis && (pAnalysis->bIsFloodgate || pAnalysis->bIsNavalCanalCity || pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE);
+}
+
 int GetStructuralCoastalRisk(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
 {
 	if (!pCity || !pAnalysis || pAnalysis->eExposure == COASTAL_EXPOSURE_NONE)
@@ -210,15 +226,12 @@ int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlaye
 	if (pCity->IsRouteToCapitalConnected())
 		iScore += 30;
 
-	const int iEffectiveCoastalCities = kPlayer.GetNumEffectiveCoastalCities();
 	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
 	if (pMilitaryAI)
 	{
-		const int iRecommendedNavy = pMilitaryAI->GetRecommendNavySize();
-		const int iCurrentNavy = kPlayer.getNumMilitarySeaUnits();
-		const bool bSeaDependentEmpire = iEffectiveCoastalCities >= 3 || (pAnalysis && pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE);
+		const bool bSeaDependentEmpire = IsSeaDependentEmpire(kPlayer, pAnalysis);
 
-		if (bSeaDependentEmpire && iCurrentNavy < iRecommendedNavy)
+		if (bSeaDependentEmpire)
 			iScore = iScore * 65 / 100;
 	}
 
