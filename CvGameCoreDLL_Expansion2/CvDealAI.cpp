@@ -301,7 +301,8 @@ void CvDealAI::DoAcceptedDeal(PlayerTypes eFromPlayer, const CvDeal& kDeal, int 
 		bool bGenerousPeaceTreaty = false;
 		if (iCachedPeaceValue != 0)
 		{
-			iCachedPeaceValue *= -1;
+			if (iCachedPeaceValue < 0)
+				iCachedPeaceValue *= -1;
 			if (iDealValueToMe < 0)
 				iDealValueToMe = 0;
 
