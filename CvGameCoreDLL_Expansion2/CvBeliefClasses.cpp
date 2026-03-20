@@ -5043,6 +5043,14 @@ void CvReligionBeliefs::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+
+	// Rebuild the derived lookup table against the current runtime belief count.
+	m_BeliefLookup = std::vector<int>(GC.GetGameBeliefs()->GetNumBeliefs(), 0);
+	for (BeliefList::const_iterator it = m_ReligionBeliefs.begin(); it != m_ReligionBeliefs.end(); ++it)
+	{
+		if (*it >= 0 && *it < (int)m_BeliefLookup.size())
+			m_BeliefLookup[*it] = 1;
+	}
 }
 
 /// Serialization write
