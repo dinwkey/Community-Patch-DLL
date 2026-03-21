@@ -4397,11 +4397,30 @@ void CvMilitaryAI::UpdateOperations()
 	}
 
 	//if we have an idle carrier, try to start a strike group. the carrier may be empty!
+	const int iUnassignedNavalReserve = CountUnassignedCombatNavalUnits(m_pPlayer);
 	int iLoop = 0;
 	for(CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = m_pPlayer->nextUnit(&iLoop))
 	{
 		if(pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA && pLoopUnit->getArmyID() == -1 && !pLoopUnit->shouldHeal(false))
 		{
+			if (iUnassignedNavalReserve <= m_iRecNavalUnits)
+			{
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = GetPlayer()->getCivilizationShortDescription();
+					FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+					if (pLog)
+					{
+						CvString msg;
+						msg.Format("%03d, %s, NAVAL RESERVE HOLD CARRIER GROUP: reserve=%d rec=%d",
+							GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+							iUnassignedNavalReserve, m_iRecNavalUnits);
+						pLog->Msg(msg.c_str());
+					}
+				}
+				break;
+			}
+
 			//the operation will find it's own target and remain active until indefinitely.
 			//the airplanes rebase independently, they are not part of the operation.
 			m_pPlayer->addAIOperation(AI_OPERATION_CARRIER_GROUP, 0, NO_PLAYER, NULL, NULL);
