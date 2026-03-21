@@ -1869,6 +1869,21 @@ int GetCityObservedNavalThreatForSizing(const CvPlayer* pPlayer, CvMilitaryAI* p
 	return iThreat;
 }
 
+bool IsSeaDependentEmpireForSizing(const CvMilitaryAI* pMilitaryAI, const CvPlayer* pPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pMilitaryAI || !pPlayer)
+		return false;
+
+	eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+	if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+		return true;
+
+	if (pPlayer->GetNumEffectiveCoastalCities() >= 3)
+		return true;
+
+	return pAnalysis && (pAnalysis->bIsFloodgate || pAnalysis->bIsNavalCanalCity || pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE);
+}
+
 int GetCityStructuralNavalNeedForSizing(const CvMilitaryAI* pMilitaryAI, const CvCity* pCity, const StrategicCityAnalysis* pAnalysis)
 {
 	if (!pMilitaryAI || !pCity || !pCity->isCoastal() || !pAnalysis)
@@ -2012,11 +2027,11 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 	}
 
 	int iNumCoastalCities = m_pPlayer->GetNumEffectiveCoastalCities();
-	const bool bSeaDependentEmpire = (GetGeographicPosture() == GEO_POSTURE_ISLAND || GetGeographicPosture() == GEO_POSTURE_ARCHIPELAGO || iNumCoastalCities >= 3);
  	const CvStrategicGeographyMap* pStratGeo = GetStrategicGeographyMap();
 	int iObservedNavalThreatTotal = 0;
 	int iStructuralNavalNeedTotal = 0;
 	int iCoastalDefenseSubstitutesTotal = 0;
+	bool bSeaDependentEmpire = IsSeaDependentEmpireForSizing(this, m_pPlayer, NULL);
 
 	int iLandDefenseWeight = /*3*/ GD_INT_GET(AI_STRATEGY_DEFEND_MY_LANDS_BASE_UNITS) * 10;
 	int iNavalDefenseWeight = 0;
@@ -2050,9 +2065,12 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 			int iObservedCityThreat = GetCityObservedNavalThreatForSizing(m_pPlayer, this, pCity, m_iMemoryThreatWeight);
 			int iStructuralCityNeed = GetCityStructuralNavalNeedForSizing(this, pCity, pAnalysis);
 			int iSubstituteCityDefense = GetCityCoastalDefenseSubstituteScoreForSizing(pCity, m_pPlayer);
+			const bool bSeaDependentCity = IsSeaDependentEmpireForSizing(this, m_pPlayer, pAnalysis);
 
-			if (bSeaDependentEmpire)
+			if (bSeaDependentCity)
 				iSubstituteCityDefense = iSubstituteCityDefense * 65 / 100;
+
+			bSeaDependentEmpire = bSeaDependentEmpire || bSeaDependentCity;
 
 			iObservedNavalThreatTotal += iObservedCityThreat;
 			iStructuralNavalNeedTotal += iStructuralCityNeed;

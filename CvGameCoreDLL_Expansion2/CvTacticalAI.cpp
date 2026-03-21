@@ -2159,9 +2159,9 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 					}
 				}
 				
-				// COORDINATED FIRE: If ranged, prefer positions where we can attack targets
-				// the city is NOT targeting (spread damage) or CAN be killed with combined fire
-				if (pUnit->IsCanAttackRanged() && pUnit->canRangeStrikeAt(pDefPlot->getX(), pDefPlot->getY()))
+				// COORDINATED FIRE: If ranged, prefer positions where we could attack targets
+				// from the destination plot, not just from the unit's current location.
+				if (pUnit->IsCanAttackRanged())
 				{
 					// Check what enemies we can reach from this position
 					for (int iRing = 1; iRing <= pUnit->GetRange(); iRing++)
@@ -2170,6 +2170,9 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 						{
 							CvPlot* pTargetPlot = iterateRingPlots(pDefPlot, iIdx);
 							if (!pTargetPlot)
+								continue;
+
+							if (!pUnit->canEverRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY(), pDefPlot, false))
 								continue;
 							
 							CvUnit* pEnemy = pTargetPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true);
