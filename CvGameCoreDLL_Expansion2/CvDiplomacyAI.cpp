@@ -14985,6 +14985,9 @@ void CvDiplomacyAI::DoUpdateMajorCivApproaches(vector<PlayerTypes>& vPlayersToRe
 			// If this player is someone's vassal (and aren't a priority update), we'll deal with them after we're done with the regular approaches
 			if (GET_PLAYER(eLoopPlayer).IsVassalOfSomeone())
 			{
+				if (bReevaluation && std::find(vPlayersToReevaluate.begin(), vPlayersToReevaluate.end(), eLoopPlayer) == vPlayersToReevaluate.end())
+					continue;
+
 				vPostUpdatePlayers.push_back(eLoopPlayer);
 			}
 			else
@@ -15015,7 +15018,8 @@ void CvDiplomacyAI::DoUpdateMajorCivApproaches(vector<PlayerTypes>& vPlayersToRe
 			SelectApproachTowardsVassal(*it);
 		}
 
-		DoUpdateWarTargets();
+		if (!bReevaluation)
+			DoUpdateWarTargets();
 	}
 }
 
