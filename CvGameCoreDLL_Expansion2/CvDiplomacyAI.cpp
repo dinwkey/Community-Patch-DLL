@@ -34917,6 +34917,9 @@ void CvDiplomacyAI::DoSendStatementToPlayer(PlayerTypes ePlayer, DiploStatementT
 			}
 		}
 
+		DoReevaluatePlayer(ePlayer, false, false);
+		GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayer(eMyPlayer, false, false);
+
 		GET_PLAYER(ePlayer).GetDiplomacyAI()->SetDoFBroken(eMyPlayer, true, false);
 		LogBrokenDoF(ePlayer);
 
@@ -39927,6 +39930,8 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 			gDLL->GameplayDiplomacyAILeaderMessage(eMyPlayer, DIPLO_UI_STATE_BLANK_DISCUSSION, strText, LEADERHEAD_ANIM_NEGATIVE);
 		}
 
+		DoReevaluatePlayer(eFromPlayer, false, false);
+
 		break;
 	}
 
@@ -40762,6 +40767,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 			}
 
 			SetDoFBroken(eFromPlayer, true, false);
+			DoReevaluatePlayer(eFromPlayer, false, false);
 
 			// AI message
 			if (bActivePlayer)
