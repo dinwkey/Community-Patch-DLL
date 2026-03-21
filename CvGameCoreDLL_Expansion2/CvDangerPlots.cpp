@@ -140,21 +140,39 @@ void CvDangerPlots::UpdateDanger()
 	{
 		CvPlayer& thisPlayer = GET_PLAYER(m_ePlayer);
 		PlotIndexContainer plotsWithOwnedUnitsLikelyToBeKilled;
+		const int iMaxDangerPasses = 3;
+		bool bPassTurnChange = bTurnChange;
+		bool bPassWarChange = bWarChange;
 
-		//first pass
-		UpdateDangerInternal(plotsWithOwnedUnitsLikelyToBeKilled, bTurnChange, bWarChange);
-
-		//find out which units might die and therefore won't have a ZOC
-		int iLoop;
-		for (CvUnit* pLoopUnit = thisPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = thisPlayer.nextUnit(&iLoop))
+		for (int iPass = 0; iPass < iMaxDangerPasses; iPass++)
 		{
-			if (pLoopUnit->IsCombatUnit() && pLoopUnit->GetDanger() > pLoopUnit->GetCurrHitPoints())
-				plotsWithOwnedUnitsLikelyToBeKilled.push_back(pLoopUnit->plot()->GetPlotIndex());
-		}
+			UpdateDangerInternal(plotsWithOwnedUnitsLikelyToBeKilled, bPassTurnChange, bPassWarChange);
+			bPassTurnChange = false;
+			bPassWarChange = true;
 
-		//second pass
-		if (!plotsWithOwnedUnitsLikelyToBeKilled.empty())
-			UpdateDangerInternal(plotsWithOwnedUnitsLikelyToBeKilled, false, true); //turn change already processed
+			PlotIndexContainer plotsLikelyToBeKilledNextPass;
+
+			// find out which units might die and therefore won't have a ZOC
+			int iLoop;
+			for (CvUnit* pLoopUnit = thisPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = thisPlayer.nextUnit(&iLoop))
+			{
+				if (pLoopUnit->IsCombatUnit() && pLoopUnit->GetDanger() > pLoopUnit->GetCurrHitPoints())
+					plotsLikelyToBeKilledNextPass.push_back(pLoopUnit->plot()->GetPlotIndex());
+			}
+
+			std::sort(plotsLikelyToBeKilledNextPass.begin(), plotsLikelyToBeKilledNextPass.end());
+			plotsLikelyToBeKilledNextPass.erase(std::unique(plotsLikelyToBeKilledNextPass.begin(), plotsLikelyToBeKilledNextPass.end()), plotsLikelyToBeKilledNextPass.end());
+			std::sort(plotsWithOwnedUnitsLikelyToBeKilled.begin(), plotsWithOwnedUnitsLikelyToBeKilled.end());
+			plotsWithOwnedUnitsLikelyToBeKilled.erase(std::unique(plotsWithOwnedUnitsLikelyToBeKilled.begin(), plotsWithOwnedUnitsLikelyToBeKilled.end()), plotsWithOwnedUnitsLikelyToBeKilled.end());
+
+			if (plotsLikelyToBeKilledNextPass == plotsWithOwnedUnitsLikelyToBeKilled)
+				break;
+
+			plotsWithOwnedUnitsLikelyToBeKilled.swap(plotsLikelyToBeKilledNextPass);
+
+			if (plotsWithOwnedUnitsLikelyToBeKilled.empty())
+				break;
+		}
 	}
 	else
 	{

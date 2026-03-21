@@ -9241,7 +9241,7 @@ void CvPlayer::DoLiberatePlayer(PlayerTypes ePlayer, int iOldCityID, bool bForce
 	}
 
 	vector<PlayerTypes> v = kLiberatedTeam.getPlayers();
-	GetDiplomacyAI()->DoReevaluatePlayers(v, false, !bAlive);
+	GetDiplomacyAI()->DoReevaluatePlayers(v, false, !bAlive, !bAlive);
 
 	if (MOD_EVENTS_LIBERATION)
 	{

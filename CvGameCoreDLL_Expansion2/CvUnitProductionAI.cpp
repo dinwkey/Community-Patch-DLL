@@ -227,6 +227,14 @@ int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlaye
 
 	return iScore;
 }
+
+int GetMilitaryProductionEraMultiplier(const CvPlayer& kPlayer)
+{
+	// Late-game local threat and war pressure already scale production demand heavily.
+	// Keep era relevance, but avoid a linear multiplier dominating every city's queue.
+	const int iEra = max(0, (int)kPlayer.GetCurrentEra());
+	return min(4, 1 + iEra / 2);
+}
 }
 
 
@@ -980,7 +988,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				if (iValue > 0 && kPlayer.GetPlayerTraits()->GetMinorInfluencePerGiftedUnit() > 0)
 					iBonus += 75;
 
-				iValue *= max(1, (int)kPlayer.GetCurrentEra());
+				iValue *= GetMilitaryProductionEraMultiplier(kPlayer);
 
 				if (iValue > 0 && !kPlayer.isBarbarian())
 				{
@@ -1110,7 +1118,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				if (iValue > 0 && kPlayer.GetPlayerTraits()->GetMinorInfluencePerGiftedUnit() > 0)
 					iBonus += 150;
 
-				iValue *= max(1, (int)kPlayer.GetCurrentEra());
+				iValue *= GetMilitaryProductionEraMultiplier(kPlayer);
 
 				if (iValue > 0 && !kPlayer.isBarbarian())
 				{

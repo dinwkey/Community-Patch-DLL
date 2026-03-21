@@ -9592,9 +9592,10 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		bool bIsInCityOrCitadel = (pPlot->isFriendlyCity(*pUnit) && !pPlot->getPlotCity()->isInDangerOfFalling()) ||
 			(pUnit->IsCombatUnit() && TacticalAIHelpers::IsPlayerCitadel(pPlot, pUnit->getOwner()) && pUnit->getDomainType() == DOMAIN_LAND);
 
-		//civilians and embarked units want cover
+		// civilians and already-embarked units want cover, but fresh embark moves must stay in the embark list
+		// so they do not bypass the "embark only as a last resort" ranking.
 		bool bIsInCover = false;
-		if (pUnit->IsCivilianUnit() || !pUnit->isNativeDomain(pPlot))
+		if (!bWouldEmbark && (pUnit->IsCivilianUnit() || !pUnit->isNativeDomain(pPlot)))
 		{
 			CvUnit* pDefender = pPlot->getBestDefender(pUnit->getOwner());
 			if (pDefender && pDefender != pUnit && !pDefender->isProjectedToDieNextTurn() && pDefender->GetDanger()<pDefender->GetCurrHitPoints())
