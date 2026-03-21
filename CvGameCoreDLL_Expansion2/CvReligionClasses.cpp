@@ -269,9 +269,10 @@ void CvGameReligions::Init()
 	m_iMinimumFaithForNextPantheon *= GC.getGame().getGameSpeedInfo().getTrainPercent();
 	m_iMinimumFaithForNextPantheon /= 100;
 
-	//extremely important, this vector should never be reallocated
-	//because we cache pointers to its entries in CvCityReligions!
-	m_CurrentReligions.reserve(MAX_CIV_PLAYERS);
+	// Extremely important: this vector should never be reallocated because
+	// CvCityReligions caches pointers to its entries.
+	// We need room for one pantheon entry per major civ plus all founded religions.
+	m_CurrentReligions.reserve(MAX_MAJOR_CIVS + GC.getNumReligionInfos());
 }
 
 /// Handle turn-by-turn religious updates
@@ -3320,6 +3321,7 @@ FDataStream& operator>>(FDataStream& loadFrom, CvGameReligions& writeTo)
 {
 	CvStreamLoadVisitor serialVisitor(loadFrom);
 	CvGameReligions::Serialize(writeTo, serialVisitor);
+	writeTo.m_CurrentReligions.reserve(MAX_MAJOR_CIVS + GC.getNumReligionInfos());
 	return loadFrom;
 }
 
