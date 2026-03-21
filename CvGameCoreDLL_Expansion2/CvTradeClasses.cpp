@@ -5155,6 +5155,14 @@ bool CvPlayerTrade::PlunderTradeRoute(int iTradeConnectionID, CvUnit* pUnit)
 				// Reset the ability to ask for a promise (they caught us again)
 				GET_PLAYER(eOwningPlayer).GetDiplomacyAI()->SetPlayerAskedNotToPlunder(m_pPlayer->GetID(), false);
 			}
+			if (eOwningPlayer != eDestPlayer && GET_PLAYER(eDestPlayer).isMajorCiv() && pPlunderPlot->isVisible(eDestTeam))
+			{
+				if (m_pPlayer->GetDiplomacyAI()->MadeNoPlunderPromise(eDestPlayer))
+				{
+					m_pPlayer->GetDiplomacyAI()->SetNoPlunderPromiseState(eDestPlayer, PROMISE_STATE_BROKEN);
+				}
+				GET_PLAYER(eDestPlayer).GetDiplomacyAI()->SetPlayerAskedNotToPlunder(m_pPlayer->GetID(), false);
+			}
 			
 			// Diplo penalty with owner
 			if (pPlunderPlot->isVisible(eOwningTeam))

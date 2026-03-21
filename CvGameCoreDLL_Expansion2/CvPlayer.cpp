@@ -8951,7 +8951,9 @@ void CvPlayer::DoLiberatePlayer(PlayerTypes ePlayer, int iOldCityID, bool bForce
 				pDiploAI->SetSpyPromiseState(*it, NO_PROMISE_STATE);
 				pDiploAI->SetNoConvertPromiseState(*it, NO_PROMISE_STATE);
 				pDiploAI->SetNoDiggingPromiseState(*it, NO_PROMISE_STATE);
+				pDiploAI->SetNoPlunderPromiseState(*it, NO_PROMISE_STATE);
 				pDiploAI->SetBrokeCoopWarPromise(*it, false);
+				pDiploAI->SetPlayerAskedNotToPlunder(*it, false);
 
 				pDiploAI->SetOtherPlayerNumProtectedMinorsKilled(*it, 0);
 				pDiploAI->SetOtherPlayerNumProtectedMinorsAttacked(*it, 0);

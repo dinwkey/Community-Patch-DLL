@@ -49,6 +49,13 @@ public:
 	void Init(CvPlayer* pPlayer);
 	template<typename DiplomacyAI, typename Visitor>
 	static void Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	template<typename DiplomacyAI, typename Visitor>
+	static void SerializePreNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	template<typename DiplomacyAI, typename Visitor>
+	static void SerializeNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	template<typename DiplomacyAI, typename Visitor>
+	static void SerializePostNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	static void ResetNoPlunderPromiseData(CvDiplomacyAI& diplomacyAI);
 	void Read(FDataStream& kStream);
 	void Write(FDataStream& kStream) const;
 	void update();

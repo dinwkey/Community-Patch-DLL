@@ -417,7 +417,7 @@ void CvDiplomacyAI::Init(CvPlayer* pPlayer)
 }
 
 template<typename DiplomacyAI, typename Visitor>
-void CvDiplomacyAI::Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
+void CvDiplomacyAI::SerializePreNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor)
 {
 	visitor(diplomacyAI.m_eID);
 	visitor(diplomacyAI.m_eTeam);
@@ -609,10 +609,22 @@ void CvDiplomacyAI::Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
 	visitor(diplomacyAI.m_aiNoDiggingPromiseTurn);
 	visitor(diplomacyAI.m_abAskedNotToDig);
 
+}
+
+template<typename DiplomacyAI, typename Visitor>
+void CvDiplomacyAI::SerializeNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor)
+{
+
 	// No Plunder Promise (Morocco UA)
 	visitor(diplomacyAI.m_aeNoPlunderPromiseState);
 	visitor(diplomacyAI.m_aiNoPlunderPromiseTurn);
 	visitor(diplomacyAI.m_abAskedNotToPlunder);
+
+}
+
+template<typename DiplomacyAI, typename Visitor>
+void CvDiplomacyAI::SerializePostNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor)
+{
 
 	// Coop War Promise
 	visitor(diplomacyAI.m_aiBrokenCoopWarPromiseTurn);
@@ -712,11 +724,34 @@ void CvDiplomacyAI::Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
 	visitor(diplomacyAI.m_aiVassalGoldPerTurnCollectedSinceVassalStarted);
 }
 
+template<typename DiplomacyAI, typename Visitor>
+void CvDiplomacyAI::Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
+{
+	SerializePreNoPlunderPromise(diplomacyAI, visitor);
+	SerializeNoPlunderPromise(diplomacyAI, visitor);
+	SerializePostNoPlunderPromise(diplomacyAI, visitor);
+}
+
+void CvDiplomacyAI::ResetNoPlunderPromiseData(CvDiplomacyAI& diplomacyAI)
+{
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+	{
+		diplomacyAI.m_aeNoPlunderPromiseState[iPlayerLoop] = NO_PROMISE_STATE;
+		diplomacyAI.m_aiNoPlunderPromiseTurn[iPlayerLoop] = -1;
+		diplomacyAI.m_abAskedNotToPlunder[iPlayerLoop] = false;
+	}
+}
+
 /// Serialization read
 void CvDiplomacyAI::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
-	CvDiplomacyAI::Serialize(*this, serialVisitor);
+	CvDiplomacyAI::SerializePreNoPlunderPromise(*this, serialVisitor);
+	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_NO_PLUNDER_PROMISE)
+		CvDiplomacyAI::SerializeNoPlunderPromise(*this, serialVisitor);
+	else
+		CvDiplomacyAI::ResetNoPlunderPromiseData(*this);
+	CvDiplomacyAI::SerializePostNoPlunderPromise(*this, serialVisitor);
 	m_DiplomacyMemory.Init(this);
 	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_MEMORY)
 		ReadMemorySystem(kStream);
@@ -726,7 +761,10 @@ void CvDiplomacyAI::Read(FDataStream& kStream)
 void CvDiplomacyAI::Write(FDataStream& kStream) const
 {
 	CvStreamSaveVisitor serialVisitor(kStream);
-	CvDiplomacyAI::Serialize(*this, serialVisitor);
+	CvDiplomacyAI::SerializePreNoPlunderPromise(*this, serialVisitor);
+	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_NO_PLUNDER_PROMISE)
+		CvDiplomacyAI::SerializeNoPlunderPromise(*this, serialVisitor);
+	CvDiplomacyAI::SerializePostNoPlunderPromise(*this, serialVisitor);
 	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_MEMORY)
 		WriteMemorySystem(kStream);
 }
@@ -1022,9 +1060,11 @@ void CvDiplomacyAI::SlotStateChange()
 						SetSpyPromiseState(ePlayer, NO_PROMISE_STATE);
 						SetNoConvertPromiseState(ePlayer, NO_PROMISE_STATE);
 						SetNoDiggingPromiseState(ePlayer, NO_PROMISE_STATE);
+						SetNoPlunderPromiseState(ePlayer, NO_PROMISE_STATE);
 						SetBrokeCoopWarPromise(ePlayer, false);
 						SetPlayerAskedNotToConvert(ePlayer, false);
 						SetPlayerAskedNotToDig(ePlayer, false);
+						SetPlayerAskedNotToPlunder(ePlayer, false);
 						pOther->SetMilitaryPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetExpansionPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetBorderPromiseState(eID, NO_PROMISE_STATE);
@@ -1033,9 +1073,11 @@ void CvDiplomacyAI::SlotStateChange()
 						pOther->SetSpyPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetNoConvertPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetNoDiggingPromiseState(eID, NO_PROMISE_STATE);
+						pOther->SetNoPlunderPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetBrokeCoopWarPromise(eID, false);
 						pOther->SetPlayerAskedNotToConvert(eID, false);
 						pOther->SetPlayerAskedNotToDig(eID, false);
+						pOther->SetPlayerAskedNotToPlunder(eID, false);
 					}
 				}
 
@@ -1168,9 +1210,11 @@ void CvDiplomacyAI::SlotStateChange()
 						SetSpyPromiseState(ePlayer, NO_PROMISE_STATE);
 						SetNoConvertPromiseState(ePlayer, NO_PROMISE_STATE);
 						SetNoDiggingPromiseState(ePlayer, NO_PROMISE_STATE);
+						SetNoPlunderPromiseState(ePlayer, NO_PROMISE_STATE);
 						SetBrokeCoopWarPromise(ePlayer, false);
 						SetPlayerAskedNotToConvert(ePlayer, false);
 						SetPlayerAskedNotToDig(ePlayer, false);
+						SetPlayerAskedNotToPlunder(ePlayer, false);
 						pOther->SetMilitaryPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetExpansionPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetBorderPromiseState(eID, NO_PROMISE_STATE);
@@ -1179,9 +1223,11 @@ void CvDiplomacyAI::SlotStateChange()
 						pOther->SetSpyPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetNoConvertPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetNoDiggingPromiseState(eID, NO_PROMISE_STATE);
+						pOther->SetNoPlunderPromiseState(eID, NO_PROMISE_STATE);
 						pOther->SetBrokeCoopWarPromise(eID, false);
 						pOther->SetPlayerAskedNotToConvert(eID, false);
 						pOther->SetPlayerAskedNotToDig(eID, false);
+						pOther->SetPlayerAskedNotToPlunder(eID, false);
 					}
 				}
 
@@ -59133,6 +59179,7 @@ void CvDiplomacyAI::DoWeMadeVassalageWithSomeone(TeamTypes eMasterTeam, bool bVo
 				SetSpyPromiseState(eOtherTeamPlayer, NO_PROMISE_STATE);
 				SetNoConvertPromiseState(eOtherTeamPlayer, NO_PROMISE_STATE);
 				SetNoDiggingPromiseState(eOtherTeamPlayer, NO_PROMISE_STATE);
+				SetNoPlunderPromiseState(eOtherTeamPlayer, NO_PROMISE_STATE);
 				SetBrokeCoopWarPromise(eOtherTeamPlayer, false);
 
 				SetOtherPlayerNumProtectedMinorsKilled(eOtherTeamPlayer, 0);
