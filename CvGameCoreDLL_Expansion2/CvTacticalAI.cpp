@@ -60,6 +60,16 @@ int gMedianUnitXP;
 int gMinHpForTactsim;
 PlayerTypes eLastTactSimPlayer = NO_PLAYER;
 
+int GetRingPlotCountSafe(int iRing)
+{
+	if (iRing <= 0)
+		return RING0_PLOTS;
+	if (iRing < 6)
+		return RING_PLOTS[iRing];
+
+	return 1 + 3 * iRing * (iRing + 1);
+}
+
 //just some statistics
 unsigned long gMovePlotsCacheHit = 0, gMovePlotsCacheMiss = 0;
 unsigned long gAttackPlotsCacheHit = 0, gAttackPlotsCacheMiss = 0;
@@ -12270,7 +12280,9 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			int iMaxRingToCheck = min(iMaxAirRange, 10); // Cap at 10 for performance
 			for (int iRing = 3; iRing <= iMaxRingToCheck; iRing++)
 			{
-				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
+				int iRingStart = GetRingPlotCountSafe(iRing - 1);
+				int iRingEnd = GetRingPlotCountSafe(iRing);
+				for (int i = iRingStart; i < iRingEnd; i++)
 				{
 					CvPlot* pLoopPlot = iterateRingPlots(testPlot.getPlot(), i);
 					if (pLoopPlot && pLoopPlot->isVisibleOtherUnit(pUnit->getOwner()))
