@@ -60,6 +60,9 @@ void CvDiplomacyMemory::ReadMemorySystem(FDataStream& kStream)
 {
 	kStream >> m_Memory.currentIndex;
 	kStream >> m_Memory.validCount;
+	m_Memory.currentIndex = (unsigned char)(m_Memory.currentIndex % AI_MEMORY_DEPTH);
+	if (m_Memory.validCount > AI_MEMORY_DEPTH)
+		m_Memory.validCount = AI_MEMORY_DEPTH;
 
 	for (int i = 0; i < AI_MEMORY_DEPTH; i++)
 	{

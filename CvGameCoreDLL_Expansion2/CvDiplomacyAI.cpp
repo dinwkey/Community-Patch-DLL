@@ -718,7 +718,8 @@ void CvDiplomacyAI::Read(FDataStream& kStream)
 	CvStreamLoadVisitor serialVisitor(kStream);
 	CvDiplomacyAI::Serialize(*this, serialVisitor);
 	m_DiplomacyMemory.Init(this);
-	ReadMemorySystem(kStream);
+	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_MEMORY)
+		ReadMemorySystem(kStream);
 }
 
 /// Serialization write
@@ -726,7 +727,8 @@ void CvDiplomacyAI::Write(FDataStream& kStream) const
 {
 	CvStreamSaveVisitor serialVisitor(kStream);
 	CvDiplomacyAI::Serialize(*this, serialVisitor);
-	WriteMemorySystem(kStream);
+	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_MEMORY)
+		WriteMemorySystem(kStream);
 }
 
 FDataStream& operator>>(FDataStream& stream, CvDiplomacyAI& diplomacyAI)
