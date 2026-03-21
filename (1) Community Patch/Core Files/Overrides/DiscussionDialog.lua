@@ -229,8 +229,6 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR) then
 		bMyMode = true;
-	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
 		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_AI_REQUEST_DENOUNCE) then
@@ -597,11 +595,6 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 				strButton2Tooltip = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_HOW_DARE_YOU_TT", pAIPlayer:GetCivilizationShortDescriptionKey(), pMajor:GetCivilizationShortDescriptionKey());
 			end
 -- END
-			bHideBackButton = true;
-		-- AI shows up saying it's time to declare war against someone
-		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_COOP_WAR_NOW" );
-			strButton2Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_CHANGED_MIND" );
 			bHideBackButton = true;
 		-- AI asking player to make RA in the future - NOT CURRENTLY IN USE
 		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
@@ -991,11 +984,6 @@ function OnButton1()
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR) then
 		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
 	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
-	    
-    -- AI asking to declare war against someone NOW - we agree
-	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
-	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_NOW_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
     
     -- AI asking to make RA in the future - we agree
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
@@ -1170,11 +1158,6 @@ function OnButton2()
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR) then
 		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
 	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
-    
-    -- AI asking to declare war against someone NOW - we tell him no
-	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
-	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_NOW_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
     
     -- AI asking to make RA in the future - we tell him sorry
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
