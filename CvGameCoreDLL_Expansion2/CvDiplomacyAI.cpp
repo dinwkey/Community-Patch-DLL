@@ -38248,13 +38248,6 @@ const char* CvDiplomacyAI::GetDiploStringForMessage(DiploMessageTypes eDiploMess
 		strText = GetDiploTextFromTag("RESPONSE_COOP_WAR_REQUEST", strOptionalKey1);
 		break;
 
-	/*
-		// AI calls up and says it's time to declare war on someone with a player
-	case DIPLO_MESSAGE_COOP_WAR_TIME:
-		strText = GetDiploTextFromTag("RESPONSE_COOP_WAR_TIME", strOptionalKey1);
-		break;
-	*/
-
 		// AI is telling player he's unforgivable
 	case DIPLO_MESSAGE_NOW_UNFORGIVABLE:
 		strText = GetDiploTextFromTag("RESPONSE_NOW_UNFORGIVABLE");
@@ -54763,9 +54756,6 @@ void CvDiplomacyAI::LogStatementToPlayer(PlayerTypes ePlayer, DiploStatementType
 			break;
 		case DIPLO_STATEMENT_COOP_WAR_REQUEST:
 			strTemp.Format("Wanna coop war against someone?");
-			break;
-		case DIPLO_STATEMENT_COOP_WAR_TIME:
-			strTemp.Format("It's time to coop war against someone!");
 			break;
 		case DIPLO_STATEMENT_NOW_UNFORGIVABLE:
 			strTemp.Format("***** You are Unforgivable! *****");
