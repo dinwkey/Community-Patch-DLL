@@ -33858,7 +33858,7 @@ void CvDiplomacyAI::DoWeMadePeaceWithSomeone(TeamTypes eOtherTeam)
 	}
 
 	// Update other diplomacy stuff!
-	DoReevaluatePlayers(vPlayersToReevaluate, false, false);
+	DoReevaluatePlayers(vPlayersToReevaluate, true, false);
 }
 
 /// ePlayer declared war on someone, so figure out what that means
