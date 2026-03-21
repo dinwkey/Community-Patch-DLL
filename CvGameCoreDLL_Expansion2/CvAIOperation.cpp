@@ -29,6 +29,43 @@
 
 #define LINT_WARNINGS_ONLY
 #include "LintFree.h"
+
+namespace
+{
+bool IsNavalOperationUnitAI(UnitAITypes eUnitAI)
+{
+	switch (eUnitAI)
+	{
+	case UNITAI_ATTACK_SEA:
+	case UNITAI_RESERVE_SEA:
+	case UNITAI_ESCORT_SEA:
+	case UNITAI_ASSAULT_SEA:
+	case UNITAI_CARRIER_SEA:
+	case UNITAI_MISSILE_CARRIER_SEA:
+	case UNITAI_PIRATE_SEA:
+	case UNITAI_SUBMARINE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+int CountUnassignedCombatNavalUnits(const CvPlayer& kOwner)
+{
+	int iCount = 0;
+	int iLoop = 0;
+	for (const CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
+	{
+		if (pLoopUnit->isDelayedDeath())
+			continue;
+
+		if (pLoopUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsCombatUnit() && pLoopUnit->getArmyID() == -1)
+			iCount++;
+	}
+
+	return iCount;
+}
+}
 // PUBLIC FUNCTIONS
 
 /// Constructor
@@ -464,6 +501,13 @@ int CvAIOperation::GrabUnitsFromTheReserves(CvPlot* pMusterPlot, CvPlot* pTarget
 	SPathFinderUserData data(m_eOwner, PT_ARMY_MIXED, m_eEnemy, GetMaximumRecruitTurns()*4);
 	//cast a wide net for recruiting - land units may come from anywhere and mixed naval ops include land units
 	CvPlayer& kOwner = GET_PLAYER(m_eOwner);
+	int iAdditionalNavalRecruitsAllowed = INT_MAX;
+	if (IsOffensive() && IsNavalOperation())
+	{
+		CvMilitaryAI* pMilitaryAI = kOwner.GetMilitaryAI();
+		if (pMilitaryAI)
+			iAdditionalNavalRecruitsAllowed = max(0, CountUnassignedCombatNavalUnits(kOwner) - pMilitaryAI->GetRecommendNavySize());
+	}
 	if (!kOwner.CanCrossOcean())
 		data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
 
@@ -522,11 +566,25 @@ int CvAIOperation::GrabUnitsFromTheReserves(CvPlot* pMusterPlot, CvPlot* pTarget
 		if (pSlot->IsFree())
 		{
 			OperationSlot opSlot(m_iID, pArmy->GetID(), iI);
+			const CvFormationSlotEntry kSlotInfo = pArmy->GetSlotInfo(iI);
+			const bool bNavalSlot = IsNavalOperationUnitAI(kSlotInfo.m_primaryUnitType) || IsNavalOperationUnitAI(kSlotInfo.m_secondaryUnitType);
+
+			if (bNavalSlot && iAdditionalNavalRecruitsAllowed != INT_MAX && iAdditionalNavalRecruitsAllowed <= 0)
+			{
+				if (kSlotInfo.m_requiredSlot)
+					m_viListOfUnitsWeStillNeedToBuild.push_back(opSlot);
+				continue;
+			}
+
 			if (FindBestFitReserveUnit(opSlot, choices))
+			{
 				iCount++;
+				if (bNavalSlot && iAdditionalNavalRecruitsAllowed != INT_MAX)
+					iAdditionalNavalRecruitsAllowed--;
+			}
 			else
 			{
-				if (pArmy->GetSlotInfo(iI).m_requiredSlot)
+				if (kSlotInfo.m_requiredSlot)
 					m_viListOfUnitsWeStillNeedToBuild.push_back(opSlot);
 			}
 		}

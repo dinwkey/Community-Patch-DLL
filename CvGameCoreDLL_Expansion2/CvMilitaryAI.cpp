@@ -22,6 +22,28 @@
 // must be included after all other headers
 #include "LintFree.h"
 
+namespace
+{
+int CountUnassignedCombatNavalUnits(const CvPlayer* pPlayer)
+{
+	if (!pPlayer)
+		return 0;
+
+	int iCount = 0;
+	int iLoop = 0;
+	for (const CvUnit* pLoopUnit = pPlayer->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = pPlayer->nextUnit(&iLoop))
+	{
+		if (pLoopUnit->isDelayedDeath())
+			continue;
+
+		if (pLoopUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsCombatUnit() && pLoopUnit->getArmyID() == -1)
+			iCount++;
+	}
+
+	return iCount;
+}
+}
+
 // set this to 1 in debugger if needed
 int gDebugOutput = 0;
 
@@ -1104,6 +1126,26 @@ bool CvMilitaryAI::RequestCityAttack(PlayerTypes eIntendedTarget, int iNumUnitsW
 			break;
 		default:
 			continue;
+		}
+
+		if (bCareful && (opType == AI_OPERATION_CITY_ATTACK_NAVAL || opType == AI_OPERATION_CITY_ATTACK_COMBINED))
+		{
+			const int iUnassignedNavalReserve = CountUnassignedCombatNavalUnits(m_pPlayer);
+			if (iUnassignedNavalReserve <= m_iRecNavalUnits)
+			{
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = GetPlayer()->getCivilizationShortDescription();
+					FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+					CvString msg;
+					msg.Format("%03d, %s, NAVAL RESERVE DEFER ATTACK: reserve=%d rec=%d vs %s (%d)",
+						GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+						iUnassignedNavalReserve, m_iRecNavalUnits,
+						GET_PLAYER(eIntendedTarget).getCivilizationShortDescription(), (int)opType);
+					pLog->Msg(msg.c_str());
+				}
+				continue;
+			}
 		}
 
 		//don't duplicate operations
