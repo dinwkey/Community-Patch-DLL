@@ -9876,8 +9876,7 @@ void CvDiplomacyAI::DoStartCoopWar(PlayerTypes eAllyPlayer, PlayerTypes eTargetP
 
 			SetCoopWarState(eAllyPlayer, eTargetPlayer, COOP_WAR_STATE_ONGOING);
 			GET_PLAYER(eAllyPlayer).GetDiplomacyAI()->SetCoopWarState(GetID(), eTargetPlayer, COOP_WAR_STATE_ONGOING);
-			DoReevaluatePlayer(eAllyPlayer, false, false);
-			GET_PLAYER(eAllyPlayer).GetDiplomacyAI()->DoReevaluatePlayer(GetID(), false, false);
+			DoReevaluateMutualRelation(eAllyPlayer, false, false);
 		}
 		else
 		{
@@ -14804,6 +14803,13 @@ void CvDiplomacyAI::DoReevaluatePlayer(PlayerTypes ePlayer, bool bMajorEvent, bo
 {
 	vector<PlayerTypes> v(1, ePlayer);
 	DoReevaluatePlayers(v, bMajorEvent, bCancelExchanges, bFromResurrection);
+}
+
+/// Reevaluate both sides of a major-civ relationship through one consistent helper
+void CvDiplomacyAI::DoReevaluateMutualRelation(PlayerTypes ePlayer, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection)
+{
+	DoReevaluatePlayer(ePlayer, bMajorEvent, bCancelExchanges, bFromResurrection);
+	GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayer(GetID(), bMajorEvent, bCancelExchanges, bFromResurrection);
 }
 
 /// Reevaluate our general Diplomatic Approach towards all valid major civs
@@ -34836,8 +34842,7 @@ void CvDiplomacyAI::DoSendStatementToPlayer(PlayerTypes ePlayer, DiploStatementT
 			GET_PLAYER(ePlayer).GetDiplomacyAI()->SetDoFAccepted(GetID(), true);
 
 			// Update diplomacy stuff
-			DoReevaluatePlayer(ePlayer, false, false);
-			GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayer(GetID(), false, false);
+			DoReevaluateMutualRelation(ePlayer, false, false);
 
 			LogDoF(ePlayer);
 		}
@@ -34929,8 +34934,7 @@ void CvDiplomacyAI::DoSendStatementToPlayer(PlayerTypes ePlayer, DiploStatementT
 			}
 		}
 
-		DoReevaluatePlayer(ePlayer, false, false);
-		GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayer(eMyPlayer, false, false);
+		DoReevaluateMutualRelation(ePlayer, false, false);
 
 		GET_PLAYER(ePlayer).GetDiplomacyAI()->SetDoFBroken(eMyPlayer, true, false);
 		LogBrokenDoF(ePlayer);
@@ -45670,8 +45674,7 @@ void CvDiplomacyAI::DoDenouncePlayer(PlayerTypes ePlayer)
 	}
 
 	// Update opinions and approaches
-	GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayer(GetID());
-	DoReevaluatePlayer(ePlayer);
+	DoReevaluateMutualRelation(ePlayer);
 
 	Localization::String someoneDenounceInfo;
 	int iMessage = GetDenounceMessage(ePlayer);
