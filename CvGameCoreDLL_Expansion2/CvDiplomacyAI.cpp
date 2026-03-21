@@ -15608,6 +15608,7 @@ void CvDiplomacyAI::SelectApproachTowardsVassal(PlayerTypes ePlayer)
 										continue;
 
 									SetCivApproach(vMasterTeam[i], CIV_APPROACH_WAR);
+									SetCivStrategicApproach(vMasterTeam[i], CIV_APPROACH_WAR);
 								}
 							}
 							else
