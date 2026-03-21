@@ -317,7 +317,7 @@ void CvTechAI::PropagateWeights(int iTech, int iWeight, int iPropagationPercent,
 		// Did we find a prereq?
 		int iPrereq = pkTechInfo->GetPrereqAndTechs(iI);
 		if (iPrereq != NO_TECH)
-			PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel++);
+			PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel + 1);
 	}
 }
 

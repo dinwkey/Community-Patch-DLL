@@ -12879,6 +12879,11 @@ void CvMinorCivAI::DoFriendshipChangeEffects(const PlayerTypes ePlayer, const in
 		}
 	}
 
+	if (bFriendsChange && !bAlliesChange)
+	{
+		GET_PLAYER(ePlayer).RefreshCSAlliesFriends();
+	}
+
 	//ally change is more complex
 	if (bAlliesChange)
 	{
