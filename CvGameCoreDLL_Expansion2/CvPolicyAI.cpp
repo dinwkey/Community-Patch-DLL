@@ -1126,7 +1126,7 @@ void CvPolicyAI::PropagateWeights(int iPolicy, int iWeight, int iPropagationPerc
 				// Recurse to its prereqs (assuming we have any weight left)
 				if(iPropagatedWeight > 0)
 				{
-					PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel++);
+					PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel + 1);
 				}
 			}
 			else
