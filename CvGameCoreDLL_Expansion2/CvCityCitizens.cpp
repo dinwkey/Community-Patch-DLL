@@ -3216,6 +3216,11 @@ bool CvCityCitizens::DoRemoveWorstSpecialist(SpecialistTypes eDontChangeSpeciali
 
 		// We might not be allowed to change this Building's Specialists
 		SpecialistTypes specType = (SpecialistTypes)pkBuildingInfo->GetSpecialistType();
+		if (specType < 0 || specType >= GC.getNumSpecialistInfos())
+		{
+			continue;
+		}
+
 		if (eDontChangeSpecialist == specType)
 		{
 			continue;
