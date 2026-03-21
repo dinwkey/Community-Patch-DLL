@@ -14889,6 +14889,10 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 		DoUpdateWarmongerThreats();
 		GetPlayer()->DoTestEmpireInBadShapeForWar(); // intentionally called twice because it updates based on data from DoUpdatePlayerStrengthEstimates()
 		DoUpdateEasyTargets();
+		DoUpdateMilitaryAggressivePostures();
+		DoUpdateLandDisputeLevels();
+		DoUpdateWonderDisputeLevels();
+		DoUpdateMinorCivDisputeLevels();
 		DoUpdateSaneDiplomaticTargets();
 	}
 
