@@ -2164,8 +2164,22 @@ ReligionTypes CvReligionBeliefs::GetReligion() const
 void CvReligionBeliefs::AddBelief(BeliefTypes eBelief, PlayerTypes ePlayer, bool bTriggerAccomplishment)
 {
 	PRECONDITION(eBelief != NO_BELIEF);
+	if (eBelief == NO_BELIEF)
+		return;
+
+	if ((int)eBelief < 0 || (int)eBelief >= GC.GetGameBeliefs()->GetNumBeliefs())
+	{
+		ASSERT(false, "Invalid belief type passed to CvReligionBeliefs::AddBelief");
+		return;
+	}
+
+	if ((int)eBelief >= (int)m_BeliefLookup.size())
+		m_BeliefLookup.resize(GC.GetGameBeliefs()->GetNumBeliefs(), 0);
+
 	CvBeliefEntry* belief = GC.GetGameBeliefs()->GetEntry(eBelief);
 	ASSERT(belief);
+	if (!belief)
+		return;
 
 	m_ReligionBeliefs.push_back(eBelief);
 	m_BeliefLookup[eBelief] = 1;
@@ -2190,6 +2204,9 @@ bool CvReligionBeliefs::HasBelief(BeliefTypes eBelief) const
 {
 	if (eBelief == NO_BELIEF)
 		return m_ReligionBeliefs.empty();
+
+	if ((int)eBelief < 0 || (int)eBelief >= (int)m_BeliefLookup.size())
+		return false;
 
 	return (m_BeliefLookup[eBelief] == 1);
 }
