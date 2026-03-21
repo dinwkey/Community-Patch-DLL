@@ -2348,14 +2348,18 @@ CvPlot* CvAIOperationNavalSuperiority::FindBestTarget(CvPlot** ppMuster) const
 	vector<CvCity*> coastCities = GET_PLAYER(m_eOwner).GetThreatenedCities(true);
 	for (size_t i = 0; i < coastCities.size() && i < 3; i++)
 	{
-		if (!pCurrent)
-			return MilitaryAIHelpers::GetCoastalWaterNearPlot(coastCities[i]->plot(), true);
+		CvPlot* pCoastalTarget = MilitaryAIHelpers::GetCoastalWaterNearPlot(coastCities[i]->plot(), true);
+		if (!pCoastalTarget)
+			continue;
 
-		SPath path = GC.GetStepFinder().GetPath(pCurrent, coastCities[i]->plot(), data);
+		if (!pCurrent)
+			return pCoastalTarget;
+
+		SPath path = GC.GetStepFinder().GetPath(pCurrent, pCoastalTarget, data);
 		if (!!path && path.length() < iClostestDistance)
 		{
 			iClostestDistance = path.length();
-			pTarget = MilitaryAIHelpers::GetCoastalWaterNearPlot(coastCities[i]->plot(), true);
+			pTarget = pCoastalTarget;
 		}
 	}
 
@@ -2394,6 +2398,13 @@ void CvAIOperationCarrierGroup::Init(CvCity* /*pTarget*/, CvCity* /*pMuster*/)
 	if (!pCarrier)
 		return;
 
+	CvPlot* pCarrierPlot = pCarrier->plot();
+	if (pCarrierPlot && !pCarrierPlot->isWater())
+		pCarrierPlot = MilitaryAIHelpers::GetCoastalWaterNearPlot(pCarrierPlot, true);
+
+	if (!pCarrierPlot)
+		return;
+
 	//now where should we go
 	CvPlot* pBestTarget = NULL;
 	CvPlot* pBestMuster = NULL;
@@ -2402,23 +2413,32 @@ void CvAIOperationCarrierGroup::Init(CvCity* /*pTarget*/, CvCity* /*pMuster*/)
 	//peacetime
 	if (vTargetZones.empty())
 	{
-		pBestMuster = pCarrier->plot();
-		if (pBestMuster->isCity())
-			pBestMuster = MilitaryAIHelpers::GetCoastalWaterNearPlot(pBestMuster, true);
+		pBestMuster = pCarrierPlot;
 
 		//good enough for now, will update if war breaks out
 		pBestTarget = pBestMuster;
 	}
 	else
 	{
-		//take the deployment zone that is closest to home
+		SPathFinderUserData data(m_eOwner, PT_ARMY_WATER, NO_PLAYER, INT_MAX);
+		if (!kOwner.CanCrossOcean())
+			data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
+
+		//take the deployment zone that is closest to the carrier that will actually run this operation
 		int iClosestDistance = INT_MAX;
 		CvTacticalAnalysisMap* pTactMap = GET_PLAYER(m_eOwner).GetTacticalAI()->GetTacticalAnalysisMap();
 		for (set<int>::const_iterator it = vTargetZones.begin(); it != vTargetZones.end(); ++it)
 		{
 			CvTacticalDominanceZone* pTargetZone = pTactMap->GetZoneByID(*it);
 			CvPlot* pCenterPlot = GC.getMap().plot(pTargetZone->GetCenterX(), pTargetZone->GetCenterY());
-			int iDistance = GET_PLAYER(m_eOwner).GetCityDistancePathLength(pCenterPlot);
+			if (!pCenterPlot || !pCenterPlot->isWater())
+				continue;
+
+			SPath path = GC.GetStepFinder().GetPath(pCarrierPlot, pCenterPlot, data);
+			if (!path)
+				continue;
+
+			int iDistance = path.length();
 			if (iDistance < iClosestDistance)
 			{
 				CvCity* pMusterCity = OperationalAIHelpers::GetClosestFriendlyCoastalCity(m_eOwner, pCenterPlot, 1);
