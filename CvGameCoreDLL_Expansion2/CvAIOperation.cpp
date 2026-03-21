@@ -65,6 +65,36 @@ int CountUnassignedCombatNavalUnits(const CvPlayer& kOwner)
 
 	return iCount;
 }
+
+int ScoreCarrierDeploymentZone(PlayerTypes eOwner, CvPlot* pReferencePlot, CvTacticalDominanceZone* pTargetZone, CvPlot** ppTargetPlot)
+{
+	if (!pReferencePlot || !pTargetZone)
+		return INT_MIN;
+
+	CvPlot* pCenterPlot = GC.getMap().plot(pTargetZone->GetCenterX(), pTargetZone->GetCenterY());
+	if (!pCenterPlot || !pCenterPlot->isWater())
+		return INT_MIN;
+
+	CvPlayer& kOwner = GET_PLAYER(eOwner);
+	SPathFinderUserData data(eOwner, PT_ARMY_WATER, NO_PLAYER, INT_MAX);
+	if (!kOwner.CanCrossOcean())
+		data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
+
+	SPath path = GC.GetStepFinder().GetPath(pReferencePlot, pCenterPlot, data);
+	if (!path)
+		return INT_MIN;
+
+	if (ppTargetPlot)
+		*ppTargetPlot = pCenterPlot;
+
+	int iScore = pTargetZone->GetDominanceZoneValue() * 10 - path.length() * 3;
+	if (pTargetZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY)
+		iScore += 25;
+	else if (pTargetZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_EVEN)
+		iScore += 10;
+
+	return iScore;
+}
 }
 // PUBLIC FUNCTIONS
 
@@ -2448,32 +2478,21 @@ void CvAIOperationCarrierGroup::Init(CvCity* /*pTarget*/, CvCity* /*pMuster*/)
 	}
 	else
 	{
-		SPathFinderUserData data(m_eOwner, PT_ARMY_WATER, NO_PLAYER, INT_MAX);
-		if (!kOwner.CanCrossOcean())
-			data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
-
-		//take the deployment zone that is closest to the carrier that will actually run this operation
-		int iClosestDistance = INT_MAX;
+		// favor tactically valuable deployment zones, not just the nearest reachable one
+		int iBestScore = INT_MIN;
 		CvTacticalAnalysisMap* pTactMap = GET_PLAYER(m_eOwner).GetTacticalAI()->GetTacticalAnalysisMap();
 		for (set<int>::const_iterator it = vTargetZones.begin(); it != vTargetZones.end(); ++it)
 		{
 			CvTacticalDominanceZone* pTargetZone = pTactMap->GetZoneByID(*it);
-			CvPlot* pCenterPlot = GC.getMap().plot(pTargetZone->GetCenterX(), pTargetZone->GetCenterY());
-			if (!pCenterPlot || !pCenterPlot->isWater())
-				continue;
-
-			SPath path = GC.GetStepFinder().GetPath(pCarrierPlot, pCenterPlot, data);
-			if (!path)
-				continue;
-
-			int iDistance = path.length();
-			if (iDistance < iClosestDistance)
+			CvPlot* pCenterPlot = NULL;
+			int iScore = ScoreCarrierDeploymentZone(m_eOwner, pCarrierPlot, pTargetZone, &pCenterPlot);
+			if (iScore > iBestScore)
 			{
 				CvCity* pMusterCity = OperationalAIHelpers::GetClosestFriendlyCoastalCity(m_eOwner, pCenterPlot, 1);
 				if (!pMusterCity)
 					continue;
 
-				iClosestDistance = iDistance;
+				iBestScore = iScore;
 				pBestTarget = pCenterPlot;
 				pBestMuster = pMusterCity->plot();
 			}
@@ -2506,22 +2525,17 @@ AIOperationAbortReason CvAIOperationCarrierGroup::VerifyOrAdjustTarget(CvArmyAI*
 	//this includes the zone we are currently targeting
 	set<int> vTargetZones = GetPossibleDeploymentZones();
 
-	//take the one that is closest to us
-	int iClosestDistance = INT_MAX;
+	// keep following the best reachable staging zone instead of switching by flat map distance
+	int iBestScore = INT_MIN;
 	CvTacticalAnalysisMap* pTactMap = GET_PLAYER(m_eOwner).GetTacticalAI()->GetTacticalAnalysisMap();
 	for (set<int>::const_iterator it = vTargetZones.begin(); it != vTargetZones.end(); ++it)
 	{
 		CvTacticalDominanceZone* pTargetZone = pTactMap->GetZoneByID(*it);
-		CvPlot* pCenterPlot = GC.getMap().plot(pTargetZone->GetCenterX(), pTargetZone->GetCenterY());
-
-		//simplification
-		if (pCenterPlot->getLandmass() != pCurrentPosition->getLandmass())
-			continue;
-
-		int iDistance = plotDistance(*pCenterPlot,*pCurrentPosition);
-		if (iDistance < iClosestDistance)
+		CvPlot* pCenterPlot = NULL;
+		int iScore = ScoreCarrierDeploymentZone(m_eOwner, pCurrentPosition, pTargetZone, &pCenterPlot);
+		if (iScore > iBestScore)
 		{
-			iClosestDistance = iDistance;
+			iBestScore = iScore;
 			pNewTarget = pCenterPlot;
 		}
 	}
