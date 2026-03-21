@@ -2116,7 +2116,10 @@ void CvBeliefXMLEntries::DeleteArray()
 /// Get a specific entry
 CvBeliefEntry* CvBeliefXMLEntries::GetEntry(int index)
 {
-	return (index != NO_BELIEF) ? m_paBeliefEntries[index] : NULL;
+	if (index < 0 || index >= (int)m_paBeliefEntries.size())
+		return NULL;
+
+	return m_paBeliefEntries[index];
 }
 
 //=====================================

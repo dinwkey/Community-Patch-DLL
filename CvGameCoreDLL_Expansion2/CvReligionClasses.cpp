@@ -104,7 +104,10 @@ void CvReligionXMLEntries::DeleteArray()
 /// Get a specific entry
 CvReligionEntry* CvReligionXMLEntries::GetEntry(int index)
 {
-	return (index!=NO_RELIGION) ? m_paReligionEntries[index] : NULL;
+	if (index < 0 || index >= (int)m_paReligionEntries.size())
+		return NULL;
+
+	return m_paReligionEntries[index];
 }
 
 //=====================================
