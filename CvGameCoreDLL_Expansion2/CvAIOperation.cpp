@@ -2338,7 +2338,7 @@ CvPlot* CvAIOperationNavalSuperiority::FindBestTarget(CvPlot** ppMuster) const
 {
 	CvPlot* pCurrent = GetArmy(0) ? GetArmy(0)->GetCurrentPlot() : NULL;
 	CvPlot* pTarget = NULL;
-	int iClostestDistance = INT_MAX;
+	int iBestScore = INT_MIN;
 
 	//once the army has gathered both pure and mixed naval ops can only use water plots
 	SPathFinderUserData data(m_eOwner, PT_ARMY_WATER, m_eEnemy, INT_MAX);
@@ -2346,20 +2346,48 @@ CvPlot* CvAIOperationNavalSuperiority::FindBestTarget(CvPlot** ppMuster) const
 		data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
 
 	vector<CvCity*> coastCities = GET_PLAYER(m_eOwner).GetThreatenedCities(true);
-	for (size_t i = 0; i < coastCities.size() && i < 3; i++)
+	for (size_t i = 0; i < coastCities.size(); i++)
 	{
+		CvCity* pThreatenedCity = coastCities[i];
+		if (!pThreatenedCity)
+			continue;
+
 		CvPlot* pCoastalTarget = MilitaryAIHelpers::GetCoastalWaterNearPlot(coastCities[i]->plot(), true);
 		if (!pCoastalTarget)
 			continue;
 
+		int iUrgency = pThreatenedCity->getThreatValue();
+		if (pThreatenedCity->IsBlockadedWaterAndLand())
+			iUrgency += 60;
+		else if (pThreatenedCity->GetCityCitizens()->AnyPlotBlockaded())
+			iUrgency += 35;
+
+		if (pThreatenedCity->isUnderSiege())
+			iUrgency += 45;
+		if (pThreatenedCity->isInDangerOfFalling())
+			iUrgency += 70;
+		if (pThreatenedCity->getDamage() > 0)
+			iUrgency += min(40, pThreatenedCity->getDamage() / 5);
+
 		if (!pCurrent)
-			return pCoastalTarget;
+		{
+			if (iUrgency > iBestScore)
+			{
+				iBestScore = iUrgency;
+				pTarget = pCoastalTarget;
+			}
+			continue;
+		}
 
 		SPath path = GC.GetStepFinder().GetPath(pCurrent, pCoastalTarget, data);
-		if (!!path && path.length() < iClostestDistance)
+		if (!!path)
 		{
-			iClostestDistance = path.length();
-			pTarget = pCoastalTarget;
+			int iScore = iUrgency * 4 - path.length() * 3;
+			if (iScore > iBestScore)
+			{
+				iBestScore = iScore;
+				pTarget = pCoastalTarget;
+			}
 		}
 	}
 
@@ -3451,20 +3479,33 @@ CvCity* OperationalAIHelpers::GetClosestFriendlyCoastalCity(PlayerTypes ePlayer,
 	if (ePlayer==NO_PLAYER || !pRefPlot)
 		return NULL;
 
+	CvPlot* pWaterRefPlot = const_cast<CvPlot*>(pRefPlot);
+	if (pWaterRefPlot && !pWaterRefPlot->isWater())
+		pWaterRefPlot = MilitaryAIHelpers::GetCoastalWaterNearPlot(pWaterRefPlot, true);
+
+	if (!pWaterRefPlot)
+		return NULL;
+
 	CvCity* pBestCoastalCity = NULL;
 	int iBestDistance = MAX_INT;
 	int iLoop = 0;
 
-	//todo: use a simple water path length lookup once we have it
+	SPathFinderUserData data(ePlayer, PT_ARMY_WATER, NO_PLAYER, INT_MAX);
+	if (!GET_PLAYER(ePlayer).CanCrossOcean())
+		data.iFlags |= CvUnit::MOVEFLAG_NO_OCEAN;
+
 	for(CvCity* pLoopCity = GET_PLAYER(ePlayer).firstCity(&iLoop); pLoopCity != NULL; pLoopCity = GET_PLAYER(ePlayer).nextCity(&iLoop))
 	{
 		if(pLoopCity->isCoastal(iMinWaterSize) && pLoopCity->HasAccessToLandmassOrOcean(pRefPlot->getLandmass()))
 		{
-			//dangerous: city might be on the wrong side of a continent! need to create path length distance map per domain!
-			int iDistance = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pRefPlot->getX(), pRefPlot->getY());
-			if(iDistance >= 0 && iDistance < iBestDistance)
+			CvPlot* pCoastalCityPlot = MilitaryAIHelpers::GetCoastalWaterNearPlot(pLoopCity->plot(), true);
+			if (!pCoastalCityPlot)
+				continue;
+
+			SPath path = GC.GetStepFinder().GetPath(pCoastalCityPlot, pWaterRefPlot, data);
+			if (!!path && path.length() < iBestDistance)
 			{
-				iBestDistance = iDistance;
+				iBestDistance = path.length();
 				pBestCoastalCity = pLoopCity;
 			}
 		}
