@@ -732,6 +732,8 @@ int CvVoterDecision::GetDecision()
 									return eHost;
 								}
 							}
+
+							return LeagueHelpers::CHOICE_NONE;
 						}
 						break;
 					// All other decisions are CHOICE_NONE in a tie, so nothing happens
