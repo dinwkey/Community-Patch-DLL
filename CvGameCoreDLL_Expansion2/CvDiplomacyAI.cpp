@@ -9876,6 +9876,8 @@ void CvDiplomacyAI::DoStartCoopWar(PlayerTypes eAllyPlayer, PlayerTypes eTargetP
 
 			SetCoopWarState(eAllyPlayer, eTargetPlayer, COOP_WAR_STATE_ONGOING);
 			GET_PLAYER(eAllyPlayer).GetDiplomacyAI()->SetCoopWarState(GetID(), eTargetPlayer, COOP_WAR_STATE_ONGOING);
+			DoReevaluatePlayer(eAllyPlayer, false, false);
+			GET_PLAYER(eAllyPlayer).GetDiplomacyAI()->DoReevaluatePlayer(GetID(), false, false);
 		}
 		else
 		{
@@ -41014,6 +41016,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 				int iAssistPenalty = AdjustConditionalModifier(-100, GetNeediness());
 				ChangeRecentAssistValue(eFromPlayer, iAssistPenalty);
 				ChangeCoopWarAgreementScore(eFromPlayer, -1);
+				DoReevaluatePlayer(eFromPlayer, false, false);
 			}
 			// Big penalty for warning the target
 			else
@@ -41101,6 +41104,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 				SetBrokeCoopWarPromise(eFromPlayer, true);
 				ChangeRecentAssistValue(eFromPlayer, -300);
 				ChangeCoopWarAgreementScore(eFromPlayer, -2);
+				DoReevaluatePlayer(eFromPlayer, false, false);
 			}
 
 			if (bActivePlayer)
