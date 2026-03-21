@@ -1857,7 +1857,7 @@ void CvGameReligions::UpdateAllCitiesThisReligion(ReligionTypes eReligion)
 /// Return a pointer to a religion that has been founded
 const CvReligion* CvGameReligions::GetReligion(ReligionTypes eReligion, PlayerTypes ePlayer) const
 {
-	if (eReligion == NO_RELIGION)
+	if (eReligion == NO_RELIGION || eReligion < 0 || eReligion >= (int)m_religionIndex.size())
 		return NULL;
 
 	//caching for performance (but only for real religions, not pantheons)
