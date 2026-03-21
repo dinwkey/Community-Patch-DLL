@@ -341,8 +341,16 @@ FDataStream& operator>>(FDataStream& loadFrom, CvEspionageSpy& writeTo)
 
 	MOD_SERIALIZE_READ(23, loadFrom, writeTo.m_bPassive, false);
 
-	loadFrom >> writeTo.m_iTurnCounterspyMissionChanged;
-	loadFrom >> writeTo.m_iTurnActiveMissionConducted;
+	if (uiVersion >= 2)
+	{
+		loadFrom >> writeTo.m_iTurnCounterspyMissionChanged;
+		loadFrom >> writeTo.m_iTurnActiveMissionConducted;
+	}
+	else
+	{
+		writeTo.m_iTurnCounterspyMissionChanged = 0;
+		writeTo.m_iTurnActiveMissionConducted = 0;
+	}
 
 	return loadFrom;
 }
