@@ -9540,8 +9540,8 @@ void CvDiplomacyAI::DoTurn(DiplomacyMode eDiploMode, PlayerTypes ePlayer)
 
 	// Aggressive Postures
 	DoUpdateMilitaryAggressivePostures();
-	DoExpansionBickering();
 	DoUpdatePlotBuyingAggressivePostures();
+	DoExpansionBickering();
 
 	// Dispute Levels
 	DoUpdateLandDisputeLevels();
