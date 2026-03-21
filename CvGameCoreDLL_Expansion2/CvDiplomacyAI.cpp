@@ -34251,6 +34251,9 @@ void CvDiplomacyAI::DoFirstContactInitRelationship(PlayerTypes ePlayer)
 			SetPlayerApproachValue(ePlayer, eApproach, 0);
 		}
 
+		// First contact seeds a brand-new major-civ relationship, and the approach update path
+		// reads global-politics caches such as competitor/friend/ally selections.
+		// Keep this on the full reevaluation path so those caches are refreshed first.
 		DoReevaluatePlayer(ePlayer);
 	}
 	// Minor civ
@@ -41047,7 +41050,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 				int iAssistPenalty = AdjustConditionalModifier(-100, GetNeediness());
 				ChangeRecentAssistValue(eFromPlayer, iAssistPenalty);
 				ChangeCoopWarAgreementScore(eFromPlayer, -1);
-				DoReevaluatePlayer(eFromPlayer, false, false);
+				DoReevaluateLocalPlayer(eFromPlayer, false);
 			}
 			// Big penalty for warning the target
 			else
