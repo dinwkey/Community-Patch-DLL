@@ -2077,27 +2077,25 @@ bool CvGrandStrategyAI::OtherPlayerDoingBetterThanUs(PlayerTypes ePlayer, AIGran
 			ProjectTypes eApolloProgram = (ProjectTypes) GC.getInfoTypeForString("PROJECT_APOLLO_PROGRAM", true);
 			if(eApolloProgram != NO_PROJECT)
 			{
-				//They have Apollo, and we don't.
-				if(GET_TEAM(GET_PLAYER(ePlayer).getTeam()).getProjectCount(eApolloProgram) > 0)
-				{
-					if(GET_TEAM(m_pPlayer->getTeam()).getProjectCount(eApolloProgram) <= 0)
-					{
-						return true;
-					}
-				}
-				else
-				{
-					int iTheirTechNum = GET_TEAM(GET_PLAYER(ePlayer).getTeam()).GetTeamTechs()->GetNumTechsKnown();
-					int iOurTechNum = GET_TEAM(GetPlayer()->getTeam()).GetTeamTechs()->GetNumTechsKnown();
-					int iOurScience = GetPlayer()->GetScience();
-					int iTheirScience = GET_PLAYER(ePlayer).GetScience();
-					int iOurTotal = (iOurTechNum * iOurScience);
-					int iTheirTotal = (iTheirTechNum * iTheirScience);
+				const bool bTheyHaveApollo = GET_TEAM(GET_PLAYER(ePlayer).getTeam()).getProjectCount(eApolloProgram) > 0;
+				const bool bWeHaveApollo = GET_TEAM(m_pPlayer->getTeam()).getProjectCount(eApolloProgram) > 0;
 
-					if(iTheirTotal > iOurTotal)
-					{
-						return true;
-					}
+				//They have Apollo, and we don't.
+				if(bTheyHaveApollo && !bWeHaveApollo)
+				{
+					return true;
+				}
+
+				int iTheirTechNum = GET_TEAM(GET_PLAYER(ePlayer).getTeam()).GetTeamTechs()->GetNumTechsKnown();
+				int iOurTechNum = GET_TEAM(GetPlayer()->getTeam()).GetTeamTechs()->GetNumTechsKnown();
+				int iOurScience = GetPlayer()->GetScience();
+				int iTheirScience = GET_PLAYER(ePlayer).GetScience();
+				int iOurTotal = (iOurTechNum * iOurScience);
+				int iTheirTotal = (iTheirTechNum * iTheirScience);
+
+				if(iTheirTotal > iOurTotal)
+				{
+					return true;
 				}
 			}
 		}
