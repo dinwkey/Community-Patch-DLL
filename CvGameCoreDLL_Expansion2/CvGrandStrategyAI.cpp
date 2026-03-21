@@ -381,7 +381,8 @@ void CvGrandStrategyAI::DoTurn()
 			int MaxTurn = GC.getGame().getEstimateEndTurn();
 			if (MaxTurn > 0)
 			{
-				iTempPriority *= (GC.getGame().getGameTurn() * 2);
+				const int iScalingTurn = min(GC.getGame().getGameTurn() * 2, MaxTurn);
+				iTempPriority *= iScalingTurn;
 				iTempPriority /= MaxTurn;
 			}
 
