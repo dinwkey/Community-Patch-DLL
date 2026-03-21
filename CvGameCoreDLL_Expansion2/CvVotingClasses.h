@@ -418,8 +418,14 @@ public:
 	int GetTurnEnacted() const;
 
 	int m_iTurnEnacted;
+	bool m_bTargetCityStateStateCaptured;
+	PlayerTypes m_eCachedTargetCityStatePermanentAlly;
+	bool m_bCachedTargetCityStateNoAlly;
+	int m_aiOpenDoorFriendshipChange[MAX_MAJOR_CIVS];
 
 private:
+	void CaptureTargetCityStateState(PlayerTypes eTargetCityState);
+	void RestoreTargetCityStateState(PlayerTypes eTargetCityState);
 };
 
 FDataStream& operator>>(FDataStream&, CvActiveResolution&);

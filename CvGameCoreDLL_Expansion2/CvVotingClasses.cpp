@@ -20,6 +20,33 @@
 
 #include "LintFree.h"
 
+namespace
+{
+	bool IsChoiceValidForDecision(CvLeague* pLeague, ResolutionDecisionTypes eDecision, PlayerTypes eDecider, int iChoice)
+	{
+		if (pLeague == NULL)
+		{
+			return false;
+		}
+
+		std::vector<int> vValidChoices = pLeague->GetChoicesForDecision(eDecision, eDecider);
+		if (vValidChoices.empty())
+		{
+			return (eDecision == RESOLUTION_DECISION_NONE && iChoice == LeagueHelpers::CHOICE_NONE);
+		}
+
+		for (uint i = 0; i < vValidChoices.size(); i++)
+		{
+			if (vValidChoices[i] == iChoice)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
 
 // ================================================================================
 //			LeagueHelpers
@@ -1292,11 +1319,25 @@ FDataStream& operator<<(FDataStream& saveTo, const CvEnactProposal& readFrom)
 CvActiveResolution::CvActiveResolution(void)
 {
 	m_iTurnEnacted = -1;
+	m_bTargetCityStateStateCaptured = false;
+	m_eCachedTargetCityStatePermanentAlly = NO_PLAYER;
+	m_bCachedTargetCityStateNoAlly = false;
+	for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
+	{
+		m_aiOpenDoorFriendshipChange[iMajor] = 0;
+	}
 }
 
 CvActiveResolution::CvActiveResolution(CvEnactProposal* pResolution) : CvResolution(pResolution->GetID(), pResolution->GetType(), pResolution->GetLeague())
 {
 	m_iTurnEnacted = -1;
+	m_bTargetCityStateStateCaptured = false;
+	m_eCachedTargetCityStatePermanentAlly = NO_PLAYER;
+	m_bCachedTargetCityStateNoAlly = false;
+	for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
+	{
+		m_aiOpenDoorFriendshipChange[iMajor] = 0;
+	}
 	m_VoterDecision = (*(pResolution->GetVoterDecision()));
 	m_ProposerDecision = (*(pResolution->GetProposerDecision()));
 }
@@ -1307,6 +1348,98 @@ CvActiveResolution::~CvActiveResolution(void)
 
 void CvActiveResolution::Init()
 {
+}
+
+void CvActiveResolution::CaptureTargetCityStateState(PlayerTypes eTargetCityState)
+{
+	if (m_bTargetCityStateStateCaptured)
+	{
+		return;
+	}
+
+	if (eTargetCityState < 0 || eTargetCityState >= MAX_CIV_PLAYERS)
+	{
+		return;
+	}
+
+	CvPlayer& kTargetCityState = GET_PLAYER(eTargetCityState);
+	if (!kTargetCityState.isMinorCiv() || !kTargetCityState.isAlive())
+	{
+		return;
+	}
+
+	CvMinorCivAI* pMinorCivAI = kTargetCityState.GetMinorCivAI();
+	if (pMinorCivAI == NULL)
+	{
+		return;
+	}
+
+	m_eCachedTargetCityStatePermanentAlly = pMinorCivAI->GetPermanentAlly();
+	m_bCachedTargetCityStateNoAlly = pMinorCivAI->IsNoAlly();
+	m_bTargetCityStateStateCaptured = true;
+}
+
+void CvActiveResolution::RestoreTargetCityStateState(PlayerTypes eTargetCityState)
+{
+	if (!m_bTargetCityStateStateCaptured)
+	{
+		return;
+	}
+
+	if (eTargetCityState < 0 || eTargetCityState >= MAX_CIV_PLAYERS)
+	{
+		return;
+	}
+
+	CvPlayer& kTargetCityState = GET_PLAYER(eTargetCityState);
+	if (!kTargetCityState.isMinorCiv() || !kTargetCityState.isAlive())
+	{
+		return;
+	}
+
+	CvMinorCivAI* pMinorCivAI = kTargetCityState.GetMinorCivAI();
+	if (pMinorCivAI == NULL)
+	{
+		return;
+	}
+
+	pMinorCivAI->SetDisableNotifications(true);
+
+	for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
+	{
+		if (m_aiOpenDoorFriendshipChange[iMajor] != 0)
+		{
+			PlayerTypes eMajor = (PlayerTypes)iMajor;
+			int iCurrentFriendship = pMinorCivAI->GetBaseFriendshipWithMajor(eMajor);
+			pMinorCivAI->SetFriendshipWithMajor(eMajor, iCurrentFriendship - m_aiOpenDoorFriendshipChange[iMajor], false, false, false);
+		}
+	}
+
+	pMinorCivAI->SetNoAlly(false);
+	pMinorCivAI->SetPermanentAlly(NO_PLAYER);
+	pMinorCivAI->SetPermanentAlly(m_eCachedTargetCityStatePermanentAlly);
+	pMinorCivAI->SetNoAlly(m_bCachedTargetCityStateNoAlly);
+
+	PlayerTypes eRestoredAlly = NO_PLAYER;
+	if (m_bCachedTargetCityStateNoAlly)
+	{
+		eRestoredAlly = NO_PLAYER;
+	}
+	else if (m_eCachedTargetCityStatePermanentAlly != NO_PLAYER)
+	{
+		eRestoredAlly = m_eCachedTargetCityStatePermanentAlly;
+	}
+	else
+	{
+		PlayerTypes eBestPlayer = NO_PLAYER;
+		int iBestFriendship = pMinorCivAI->GetMostFriendshipWithAnyMajor(eBestPlayer);
+		if (eBestPlayer != NO_PLAYER && pMinorCivAI->IsFriendshipAboveAlliesThreshold(eBestPlayer, iBestFriendship))
+		{
+			eRestoredAlly = eBestPlayer;
+		}
+	}
+	pMinorCivAI->SetAlly(eRestoredAlly, true);
+	pMinorCivAI->SetDisableNotifications(false);
 }
 
 void CvActiveResolution::DoEffects(PlayerTypes ePlayer)
@@ -1351,6 +1484,10 @@ void CvActiveResolution::DoEffects(PlayerTypes ePlayer)
 	if (eProposerDecision == RESOLUTION_DECISION_CITY_CSD)
 	{
 		eTargetCityState = (PlayerTypes) GetProposerDecision()->GetDecision();
+	}
+	if ((GetEffects()->bOpenDoor || GetEffects()->bSphereOfInfluence) && eTargetCityState != NO_PLAYER)
+	{
+		CaptureTargetCityStateState(eTargetCityState);
 	}
 
 	// == Voter Choices ==
@@ -1416,6 +1553,7 @@ void CvActiveResolution::DoEffects(PlayerTypes ePlayer)
 	{
 		if (GET_PLAYER(ePlayer).isMajorCiv() && GET_PLAYER(ePlayer).isAlive() && eTargetCityState != NO_PLAYER && GET_PLAYER(eTargetCityState).isMinorCiv() && GET_PLAYER(eTargetCityState).isAlive())
 		{
+			m_aiOpenDoorFriendshipChange[ePlayer] = 40 - GET_PLAYER(eTargetCityState).GetMinorCivAI()->GetBaseFriendshipWithMajor((PlayerTypes)ePlayer);
 			TeamTypes eTeam = GET_PLAYER(ePlayer).getTeam();
 			TeamTypes eCityStateTeam = GET_PLAYER(eTargetCityState).getTeam();
 			if (!GET_TEAM(eTeam).isHasMet(eCityStateTeam))
@@ -1908,8 +2046,11 @@ void CvActiveResolution::RemoveEffects(PlayerTypes ePlayer)
 
 	if (GetEffects()->bOpenDoor || GetEffects()->bSphereOfInfluence)
 	{
-		//the player is the City State with the open door/sphere on it or the player is the major civ with the open door/sphere on eTargetCityState
-		if (ePlayer == eTargetCityState)
+		if (m_bTargetCityStateStateCaptured && ePlayer == eTargetCityState)
+		{
+			RestoreTargetCityStateState(eTargetCityState);
+		}
+		else if (ePlayer == eTargetCityState)
 		{
 			if (GetEffects()->bOpenDoor)
 				GET_PLAYER(eTargetCityState).GetMinorCivAI()->SetNoAlly(false);
@@ -1953,8 +2094,31 @@ int CvActiveResolution::GetTurnEnacted() const
 template<typename ActiveResolution, typename Visitor>
 void CvActiveResolution::Serialize(ActiveResolution& activeResolution, Visitor& visitor)
 {
+	const bool bLoading = visitor.isLoading();
+	CvActiveResolution& mutActiveResolution = const_cast<CvActiveResolution&>(activeResolution);
+
 	activeResolution.CvResolution::serialize(visitor);
 	visitor(activeResolution.m_iTurnEnacted);
+	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_LEAGUE_TARGET_CITY_STATE_RESTORE)
+	{
+		visitor(activeResolution.m_bTargetCityStateStateCaptured);
+		visitor(activeResolution.m_eCachedTargetCityStatePermanentAlly);
+		visitor(activeResolution.m_bCachedTargetCityStateNoAlly);
+		for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
+		{
+			visitor(activeResolution.m_aiOpenDoorFriendshipChange[iMajor]);
+		}
+	}
+	else if (bLoading)
+	{
+		mutActiveResolution.m_bTargetCityStateStateCaptured = false;
+		mutActiveResolution.m_eCachedTargetCityStatePermanentAlly = NO_PLAYER;
+		mutActiveResolution.m_bCachedTargetCityStateNoAlly = false;
+		for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
+		{
+			mutActiveResolution.m_aiOpenDoorFriendshipChange[iMajor] = 0;
+		}
+	}
 }
 
 // Serialization Read
@@ -2537,10 +2701,17 @@ void CvLeague::DoVoteEnact(int iID, PlayerTypes eVoter, int iNumVotes, int iChoi
 		{
 			if (it->GetID() == iID)
 			{
-				it->GetVoterDecision()->ProcessVote(eVoter, iNumVotes, iChoice);
-				GetMember(eVoter)->iVotes -= iNumVotes;
-				ASSERT(GetRemainingVotesForMember(eVoter) >= 0, "A voter now has negative votes remaining.");
-				bProcessed = true;
+				if (IsChoiceValidForDecision(this, it->GetVoterDecision()->GetType(), eVoter, iChoice))
+				{
+					it->GetVoterDecision()->ProcessVote(eVoter, iNumVotes, iChoice);
+					GetMember(eVoter)->iVotes -= iNumVotes;
+					ASSERT(GetRemainingVotesForMember(eVoter) >= 0, "A voter now has negative votes remaining.");
+					bProcessed = true;
+				}
+				else
+				{
+					ASSERT(false, "Attempt to cast enact vote with an invalid choice.");
+				}
 				break;
 			}
 		}
@@ -2560,10 +2731,17 @@ void CvLeague::DoVoteRepeal(int iResolutionID, PlayerTypes eVoter, int iNumVotes
 			{
 				if (it->GetTargetResolutionID() == iResolutionID)
 				{
-					it->GetRepealDecision()->ProcessVote(eVoter, iNumVotes, iChoice);
-					GetMember(eVoter)->iVotes -= iNumVotes;
-					ASSERT(GetRemainingVotesForMember(eVoter) >= 0, "A voter now has negative votes remaining.");
-					bProcessed = true;
+					if (IsChoiceValidForDecision(this, it->GetRepealDecision()->GetType(), eVoter, iChoice))
+					{
+						it->GetRepealDecision()->ProcessVote(eVoter, iNumVotes, iChoice);
+						GetMember(eVoter)->iVotes -= iNumVotes;
+						ASSERT(GetRemainingVotesForMember(eVoter) >= 0, "A voter now has negative votes remaining.");
+						bProcessed = true;
+					}
+					else
+					{
+						ASSERT(false, "Attempt to cast repeal vote with an invalid choice.");
+					}
 					break;
 				}
 			}
@@ -3282,6 +3460,10 @@ bool CvLeague::IsResolutionEffectsValid(ResolutionTypes eResolution, int iPropos
 	{
 		PlayerTypes eTargetPlayer = (PlayerTypes) iProposerChoice;
 		PRECONDITION(eTargetPlayer >= 0 && eTargetPlayer < MAX_MAJOR_CIVS);
+		if (!(eTargetPlayer >= 0 && eTargetPlayer < MAX_MAJOR_CIVS))
+		{
+			return false;
+		}
 		if (eTargetPlayer >= 0 && eTargetPlayer < MAX_MAJOR_CIVS)
 		{
 			// Player is dead
@@ -3366,6 +3548,11 @@ bool CvLeague::IsResolutionEffectsValid(ResolutionTypes eResolution, int iPropos
 			return false;
 		}
 		PlayerTypes eTargetPlayer = (PlayerTypes) iProposerChoice;
+		PRECONDITION(eTargetPlayer >= 0 && eTargetPlayer < MAX_CIV_PLAYERS);
+		if (!(eTargetPlayer >= 0 && eTargetPlayer < MAX_CIV_PLAYERS))
+		{
+			return false;
+		}
 		if (!GET_PLAYER(eTargetPlayer).isMinorCiv())
 		{
 			return false;
@@ -8585,8 +8772,8 @@ void CvLeague::NotifyProposalResult(CvEnactProposal* pProposal)
 		if (pProposal->IsPassed(GetVotesSpentThisSession()))
 		{
 			PlayerTypes eWinner = (PlayerTypes) pProposal->GetVoterDecision()->GetDecision();
-			PRECONDITION(eWinner != NO_PLAYER);
-			if (eWinner != NO_PLAYER)
+			PRECONDITION(eWinner >= 0 && eWinner < MAX_CIV_PLAYERS);
+			if (eWinner >= 0 && eWinner < MAX_CIV_PLAYERS)
 			{
 				Localization::String sTemp = Localization::Lookup("TXT_KEY_NOTIFICATION_LEAGUE_VOTING_RESULT_WORLD_LEADER_PASS");
 				sTemp << GET_PLAYER(eWinner).getCivilizationShortDescriptionKey();
@@ -8621,8 +8808,8 @@ void CvLeague::NotifyProposalResult(CvEnactProposal* pProposal)
 		}
 
 		CvString sHostKey = "Nobody";
-		PRECONDITION(eNewHost != NO_PLAYER, "Could not determine the new host.");
-		if (eNewHost != NO_PLAYER)
+		PRECONDITION(eNewHost >= 0 && eNewHost < MAX_CIV_PLAYERS, "Could not determine the new host.");
+		if (eNewHost >= 0 && eNewHost < MAX_CIV_PLAYERS)
 		{
 			sHostKey = GET_PLAYER(eNewHost).getCivilizationShortDescriptionKey();
 		}
