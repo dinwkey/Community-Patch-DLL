@@ -34075,6 +34075,11 @@ void CvDiplomacyAI::DoPlayerBulliedSomeone(PlayerTypes ePlayer, PlayerTypes eOth
 			}
 		}
 	}
+
+	if (GET_PLAYER(ePlayer).isMajorCiv() && IsPlayerValid(ePlayer, true))
+	{
+		DoReevaluatePlayer(ePlayer, true);
+	}
 }
 
 /// Return the value of the warmonger amount adjusted by how much this player hates warmongers
