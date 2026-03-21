@@ -5795,6 +5795,7 @@ FDataStream& operator>>(FDataStream& loadFrom, CvCityReligions& writeTo)
 {
 	CvStreamLoadVisitor serialVisitor(loadFrom);
 	CvCityReligions::Serialize(writeTo, serialVisitor);
+	writeTo.ResetNumTradeRoutePressure();
 	return loadFrom;
 }
 
