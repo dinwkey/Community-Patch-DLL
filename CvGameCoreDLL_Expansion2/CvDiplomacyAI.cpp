@@ -14920,6 +14920,7 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ false);
 	DoUpdatePlanningExchanges(); // called twice intentionally
 	DoUpdatePrimeLeagueAlly(); // called twice intentionally
+	DoUpdateMinorCivApproaches();
 
 	// Finally, we update peace treaty willingness
 	DoUpdatePeaceTreatyWillingness();
