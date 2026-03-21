@@ -2266,17 +2266,18 @@ int CvGrandStrategyAI::GetGuessOtherPlayerSpaceshipPriority(PlayerTypes ePlayer,
 	TeamTypes eTeam = GET_PLAYER(ePlayer).getTeam();
 
 	// If the player has the Apollo Program we're pretty sure he's going for the SS
+	int iSSPriority = 0;
 	ProjectTypes eApolloProgram = (ProjectTypes) GC.getInfoTypeForString("PROJECT_APOLLO_PROGRAM", true);
 	if(eApolloProgram != NO_PROJECT)
 	{
 		if(GET_TEAM(eTeam).getProjectCount(eApolloProgram) > 0)
 		{
-			return /*150*/ GD_INT_GET(AI_GS_SS_HAS_APOLLO_PROGRAM);
+			iSSPriority += /*150*/ GD_INT_GET(AI_GS_SS_HAS_APOLLO_PROGRAM);
 		}
 	}
 
 	int iNumTechs = GET_TEAM(eTeam).GetTeamTechs()->GetNumTechsKnown();
-	int iSSPriority = (iNumTechs - iWorldNumTechsAverage) * /*600*/ GD_INT_GET(AI_GS_SS_TECH_PROGRESS_MOD) / max(iWorldNumTechsAverage, 1);
+	iSSPriority += (iNumTechs - iWorldNumTechsAverage) * /*600*/ GD_INT_GET(AI_GS_SS_TECH_PROGRESS_MOD) / max(iWorldNumTechsAverage, 1);
 
 	PolicyBranchTypes eCurrentBranchType = GET_PLAYER(ePlayer).GetPlayerPolicies()->GetLateGamePolicyTree();
 	if (eCurrentBranchType == (PolicyBranchTypes)GD_INT_GET(POLICY_BRANCH_ORDER) || eCurrentBranchType == (PolicyBranchTypes)GD_INT_GET(POLICY_BRANCH_FREEDOM))
