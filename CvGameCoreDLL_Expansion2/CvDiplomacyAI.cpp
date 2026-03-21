@@ -16172,11 +16172,15 @@ void CvDiplomacyAI::SelectBestApproachTowardsMajorCiv(PlayerTypes ePlayer, bool 
 	{
 		PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
 
-		if (IsPlayerValid(eLoopPlayer) && GetCoopWarState(ePlayer, eLoopPlayer) >= COOP_WAR_STATE_PREPARING)
+		if (IsPlayerValid(eLoopPlayer))
 		{
-			bCoopWar = true;
-			int iStrengthMod = (int)GetMilitaryStrengthComparedToUs(eLoopPlayer) - 2;
-			vApproachScores[CIV_APPROACH_FRIENDLY] += iStrengthMod > 0 ? vApproachBias[CIV_APPROACH_FRIENDLY] * iStrengthMod : vApproachBias[CIV_APPROACH_FRIENDLY];
+			CoopWarStates eCoopWarState = GetCoopWarState(ePlayer, eLoopPlayer);
+			if (eCoopWarState == COOP_WAR_STATE_ONGOING || (eCoopWarState == COOP_WAR_STATE_PREPARING && CanStartCoopWar(ePlayer, eLoopPlayer)))
+			{
+				bCoopWar = true;
+				int iStrengthMod = (int)GetMilitaryStrengthComparedToUs(eLoopPlayer) - 2;
+				vApproachScores[CIV_APPROACH_FRIENDLY] += iStrengthMod > 0 ? vApproachBias[CIV_APPROACH_FRIENDLY] * iStrengthMod : vApproachBias[CIV_APPROACH_FRIENDLY];
+			}
 		}
 	}
 	if (bCoopWar)
