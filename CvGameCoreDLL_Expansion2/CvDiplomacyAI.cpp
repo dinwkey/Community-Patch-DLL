@@ -14909,8 +14909,10 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 	if (GetPlayer()->isHuman(ISHUMAN_AI_DIPLOMACY))
 		return;
 
-	DoUpdatePrimeLeagueAlly();
 	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ true);
+	DoUpdateMajorCompetitors();
+	DoRelationshipPairing();
+	DoUpdatePrimeLeagueAlly();
 	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ false);
 	DoUpdatePrimeLeagueAlly(); // called twice intentionally
 
