@@ -14923,7 +14923,7 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 	DoUpdateMinorCivApproaches();
 
 	// Finally, we update peace treaty willingness
-	DoUpdatePeaceTreatyWillingness();
+	DoUpdatePeaceTreatyWillingness(GetPlayer()->isTurnActive());
 }
 
 /// Updates our general Diplomatic Approach towards each major civilization we've met
