@@ -29045,89 +29045,6 @@ void CvDiplomacyAI::DoBulliedCityStateStatement(PlayerTypes ePlayer, DiploStatem
 	}
 }
 
-/*
-/// Possible Contact Statement - Notify human it's time for a coop war they agreed to
-void CvDiplomacyAI::DoCoopWarTimeStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement, int& iData1)
-{
-	PRECONDITION(ePlayer >= 0, "DIPLOMACY_AI: Invalid Player Index.");
-	PRECONDITION(ePlayer < MAX_MAJOR_CIVS, "DIPLOMACY_AI: Invalid Player Index.");
-
-	if(eStatement == NO_DIPLO_STATEMENT_TYPE)
-	{
-		// Don't send this to AI players - coop war timer is automatically handled in DoCounters()
-		if(!GET_PLAYER(ePlayer).isHuman())
-			return;
-
-		CvTeam* pTeam = &GET_TEAM(GET_PLAYER(ePlayer).getTeam());
-
-		PlayerTypes eTargetPlayer;
-		TeamTypes eTargetTeam;
-
-		for(int iTargetLoop = 0; iTargetLoop < MAX_MAJOR_CIVS; iTargetLoop++)
-		{
-			eTargetPlayer = (PlayerTypes) iTargetLoop;
-
-			bool bInvalid = false;
-
-			if (!GET_TEAM(GET_PLAYER(ePlayer).getTeam()).canDeclareWar(GET_PLAYER(eTargetPlayer).getTeam(), ePlayer))
-			{
-				bInvalid = true;
-			}
-
-			if (!IsPlayerValid(eTargetPlayer))
-			{
-				bInvalid = true;
-			}
-
-			if (bInvalid)
-			{
-				if (GetCoopWarAcceptedState(ePlayer, eTargetPlayer) == COOP_WAR_STATE_SOON)
-				{
-					SetCoopWarAcceptedState(ePlayer, eTargetPlayer, NO_COOP_WAR_STATE);
-					SetCoopWarCounter(ePlayer, eTargetPlayer, -666);
-					GET_PLAYER(ePlayer).GetDiplomacyAI()->SetCoopWarAcceptedState(GetID(), eTargetPlayer, NO_COOP_WAR_STATE);
-					GET_PLAYER(ePlayer).GetDiplomacyAI()->SetCoopWarCounter(GetID(), eTargetPlayer, -666);
-				}
-				continue;
-			}
-
-			// Agreed to go to war soon... what's the counter at?
-			if(GetCoopWarAcceptedState(ePlayer, eTargetPlayer) == COOP_WAR_STATE_SOON)
-			{
-				if(GetCoopWarCounter(ePlayer, eTargetPlayer) == GD_INT_GET(COOP_WAR_SOON_COUNTER))
-				{
-					eTargetTeam = GET_PLAYER(eTargetPlayer).getTeam();
-
-					// If they're already at war, don't bother
-					if(!pTeam->isAtWar(eTargetTeam) && GET_PLAYER(eTargetPlayer).isAlive())
-					{
-						eStatement = DIPLO_STATEMENT_COOP_WAR_TIME;
-						iData1 = eTargetPlayer;
-
-						// Don't evaluate other players
-						break;
-					}
-					// Human is already at war - process what we would have if he'd agreed at this point
-					else
-					{
-						SetCoopWarAcceptedState(ePlayer, eTargetPlayer, COOP_WAR_STATE_ACCEPTED);
-
-						// AI declaration
-						if(!IsAtWar(eTargetPlayer) && GET_PLAYER(eTargetPlayer).isAlive())
-						{
-							if (DeclareWar(eTargetPlayer))
-							{
-								GetPlayer()->GetMilitaryAI()->RequestBasicAttack(eTargetPlayer, 1);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-*/
-
 /// Possible Contact Statement - guy has his military positioned aggressively near us
 void CvDiplomacyAI::DoAggressiveMilitaryStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement)
 {
@@ -31877,7 +31794,6 @@ void CvDiplomacyAI::DoGenerousOffer(PlayerTypes ePlayer, DiploStatementTypes& eS
 //	ASSERT(ePlayer < MAX_MAJOR_CIVS, "DIPLOMACY_AI: Invalid Player Index.");
 //
 //	if (MOD_DIPLOAI_SHUT_UP_INSULTS && GET_PLAYER(ePlayer).isHuman(ISHUMAN_AI_DIPLOMACY))
-//		return;
 //
 //	if (eStatement == NO_DIPLO_STATEMENT_TYPE)
 //	{
@@ -35095,28 +35011,6 @@ void CvDiplomacyAI::DoSendStatementToPlayer(PlayerTypes ePlayer, DiploStatementT
 		}
 	}
 
-	/*
-	// We'd like to declare war on someone
-	else if(eStatement == DIPLO_STATEMENT_COOP_WAR_TIME)
-	{
-		PlayerTypes eAgainstPlayer = (PlayerTypes) iData1;
-		ASSERT(eAgainstPlayer != NO_PLAYER);
-		if(eAgainstPlayer != NO_PLAYER)
-		{
-			// Send message to human
-			if(bHuman)
-			{
-				const char* strAgainstPlayerKey = GET_PLAYER(eAgainstPlayer).getNameKey();
-				szText = GetDiploStringForMessage(DIPLO_MESSAGE_COOP_WAR_TIME, ePlayer, strAgainstPlayerKey);
-
-				CvDiplomacyRequests::SendRequest(GetID(), ePlayer, DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME, szText, LEADERHEAD_ANIM_POSITIVE, eAgainstPlayer);
-			}
-		}
-
-		// No AI resolution! This is handled automatically in DoCounters() - no need for diplo exchange
-	}
-	*/
-
 	// We're making a demand of this player
 	else if (eStatement == DIPLO_STATEMENT_DEMAND)
 	{
@@ -36565,7 +36459,6 @@ void CvDiplomacyAI::DoContactPlayer(PlayerTypes ePlayer)
 		DoEndVassalageStatement(ePlayer, eStatement);
 		DoAttackedCityStateStatement(ePlayer, eStatement, iData1);
 		DoBulliedCityStateStatement(ePlayer, eStatement, iData1);
-		//DoCoopWarTimeStatement(ePlayer, eStatement, iData1);
 		DoAggressiveMilitaryStatement(ePlayer, eStatement);
 
 		// After the war stuff but before any other statement, try to renew expired deals
@@ -41089,68 +40982,6 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 
 		break;
 	}
-
-	/*
-	// *********************************************
-	// AI asked human if he'd declare war against someone earlier, and now it's time to put your money where your mouth is
-	// *********************************************
-	case FROM_UI_DIPLO_EVENT_COOP_WAR_NOW_RESPONSE:
-	{
-		// **** NOTE **** - iArg1 is BUTTON ID from DiscussionDialog.lua
-
-		PlayerTypes eAgainstPlayer = (PlayerTypes) iArg2;
-
-		SetCoopWarCounter(eFromPlayer, eAgainstPlayer, 0);
-
-		// Human agrees
-		if (iArg1 == 1)
-		{
-			if (GET_PLAYER(eFromPlayer).GetDiplomacyAI()->DeclareWar(eAgainstPlayer))
-			{
-				SetCoopWarAcceptedState(eFromPlayer, eAgainstPlayer, COOP_WAR_STATE_ACCEPTED);
-
-				if (bActivePlayer)
-				{
-					strText = GetDiploStringForMessage(DIPLO_MESSAGE_PLEASED);
-					gDLL->GameplayDiplomacyAILeaderMessage(eMyPlayer, DIPLO_UI_STATE_BLANK_DISCUSSION, strText, LEADERHEAD_ANIM_POSITIVE);
-				}
-
-				// AI declaration
-				if (DeclareWar(eAgainstPlayer))
-				{
-					GetPlayer()->GetMilitaryAI()->RequestBasicAttack(eAgainstPlayer, 3);
-				}
-				// Human declaration
-				TeamTypes eAgainstTeam = GET_PLAYER(eAgainstPlayer).getTeam();
-				int iLockedTurns = GD_INT_GET(COOP_WAR_LOCKED_LENGTH);
-				GET_TEAM(GetTeam()).ChangeNumTurnsLockedIntoWar(eAgainstTeam, iLockedTurns);
-				GET_TEAM(eFromTeam).ChangeNumTurnsLockedIntoWar(eAgainstTeam, iLockedTurns);
-			}
-		}
-		// Human says no
-		if (iArg1 == 2)
-		{
-			SetCoopWarAcceptedState(eFromPlayer, eAgainstPlayer, NO_COOP_WAR_STATE);
-
-			// No penalty for teammates; otherwise, the AI gets mad
-			if (!IsTeammate(eFromPlayer))
-			{
-				SetBrokeCoopWarPromise(eFromPlayer, true);
-				ChangeRecentAssistValue(eFromPlayer, -300);
-				ChangeCoopWarAgreementScore(eFromPlayer, -2);
-				DoReevaluatePlayer(eFromPlayer, false, false);
-			}
-
-			if (bActivePlayer)
-			{
-				strText = GetDiploStringForMessage(DIPLO_MESSAGE_DISAPPOINTED);
-				gDLL->GameplayDiplomacyAILeaderMessage(eMyPlayer, DIPLO_UI_STATE_BLANK_DISCUSSION, strText, LEADERHEAD_ANIM_NEGATIVE);
-			}
-		}
-
-		break;
-	}
-	*/
 
 	// *********************************************
 	// Human made a demand. NOTE: Unlike the other messages in here, this one is actually triggered from inside CvDealAI on a player's local machine
