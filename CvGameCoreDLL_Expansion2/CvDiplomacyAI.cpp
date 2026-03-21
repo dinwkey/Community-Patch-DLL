@@ -14798,29 +14798,60 @@ void CvDiplomacyAI::DoUpdateGlobalPolitics()
 	DoUpdateMinorCivApproaches();
 }
 
+void CvDiplomacyAI::DoFinalizeReevaluation(vector<PlayerTypes>& vPlayersToReevaluate, bool bRefreshGlobalPolitics)
+{
+	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ true);
+
+	if (bRefreshGlobalPolitics)
+	{
+		DoUpdateMajorCompetitors();
+		DoRelationshipPairing();
+		DoUpdatePrimeLeagueAlly();
+	}
+
+	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ false);
+
+	if (bRefreshGlobalPolitics)
+	{
+		DoUpdatePlanningExchanges(); // called twice intentionally
+		DoUpdatePrimeLeagueAlly(); // called twice intentionally
+		DoUpdateMinorCivApproaches();
+	}
+
+	DoUpdatePeaceTreatyWillingness(GetPlayer()->isTurnActive());
+}
+
 /// Reevaluate our general Diplomatic Approach towards a single player
 void CvDiplomacyAI::DoReevaluatePlayer(PlayerTypes ePlayer, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection)
 {
 	vector<PlayerTypes> v(1, ePlayer);
-	DoReevaluatePlayers(v, bMajorEvent, bCancelExchanges, bFromResurrection);
+	DoReevaluatePlayersInternal(v, bMajorEvent, bCancelExchanges, bFromResurrection, true);
 }
 
 /// Reevaluate both sides of a major-civ relationship through one consistent helper
 void CvDiplomacyAI::DoReevaluateMutualRelation(PlayerTypes ePlayer, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection)
 {
-	DoReevaluatePlayer(ePlayer, bMajorEvent, bCancelExchanges, bFromResurrection);
-	GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayer(GetID(), bMajorEvent, bCancelExchanges, bFromResurrection);
+	vector<PlayerTypes> v(1, ePlayer);
+	DoReevaluatePlayersInternal(v, bMajorEvent, bCancelExchanges, bFromResurrection, false);
+
+	vector<PlayerTypes> vReverse(1, GetID());
+	GET_PLAYER(ePlayer).GetDiplomacyAI()->DoReevaluatePlayersInternal(vReverse, bMajorEvent, bCancelExchanges, bFromResurrection, false);
 }
 
 /// Reevaluate our general Diplomatic Approach towards all valid major civs
 void CvDiplomacyAI::DoReevaluateEveryone(bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection)
 {
 	vector<PlayerTypes> v = GetAllValidMajorCivs();
-	DoReevaluatePlayers(v, bMajorEvent, bCancelExchanges, bFromResurrection);
+	DoReevaluatePlayersInternal(v, bMajorEvent, bCancelExchanges, bFromResurrection, true);
 }
 
 /// Reevaluate our general Diplomatic Approach towards specified players
 void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection)
+{
+	DoReevaluatePlayersInternal(vTargetPlayers, bMajorEvent, bCancelExchanges, bFromResurrection, true);
+}
+
+void CvDiplomacyAI::DoReevaluatePlayersInternal(vector<PlayerTypes>& vTargetPlayers, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection, bool bRefreshGlobalPolitics)
 {
 	if (vTargetPlayers.empty())
 		return;
@@ -14921,17 +14952,7 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 	if (GetPlayer()->isHuman(ISHUMAN_AI_DIPLOMACY))
 		return;
 
-	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ true);
-	DoUpdateMajorCompetitors();
-	DoRelationshipPairing();
-	DoUpdatePrimeLeagueAlly();
-	DoUpdateMajorCivApproaches(vPlayersToReevaluate, /*bStrategic*/ false);
-	DoUpdatePlanningExchanges(); // called twice intentionally
-	DoUpdatePrimeLeagueAlly(); // called twice intentionally
-	DoUpdateMinorCivApproaches();
-
-	// Finally, we update peace treaty willingness
-	DoUpdatePeaceTreatyWillingness(GetPlayer()->isTurnActive());
+	DoFinalizeReevaluation(vPlayersToReevaluate, bRefreshGlobalPolitics);
 }
 
 /// Updates our general Diplomatic Approach towards each major civilization we've met
