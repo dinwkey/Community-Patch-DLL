@@ -338,6 +338,7 @@ void CvTechAI::ReweightByCost(CvPlayer *pPlayer, bool bWantsExpensive)
 	{
 		eTech = (TechTypes)m_ResearchableTechs.GetElement(iI);
 		int iTurnsLeft = m_pCurrentTechs->GetResearchTurnsLeft(eTech, true);
+		iTurnsLeft = max(1, iTurnsLeft);
 
 		//reweight by turns left
 		double fTotalCostFactor = /*0.2f*/ GD_FLOAT_GET(AI_RESEARCH_WEIGHT_BASE_MOD) + (iTurnsLeft * /*0.035f*/ GD_FLOAT_GET(AI_RESEARCH_WEIGHT_MOD_PER_TURN_LEFT));
