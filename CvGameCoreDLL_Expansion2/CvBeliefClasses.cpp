@@ -2137,10 +2137,14 @@ CvReligionBeliefs::CvReligionBeliefs() :
 /// Copy Constructor with typical parameters
 CvReligionBeliefs::CvReligionBeliefs(const CvReligionBeliefs& source) :
 	m_eReligion(source.m_eReligion),
-	m_BeliefLookup(source.m_BeliefLookup),
+	m_BeliefLookup(GC.GetGameBeliefs()->GetNumBeliefs(), 0),
 	m_ReligionBeliefs(source.m_ReligionBeliefs)
 {
-	// No need to call Reset here since we're copying the state from source
+	for (std::vector<int>::const_iterator it = m_ReligionBeliefs.begin(); it != m_ReligionBeliefs.end(); ++it)
+	{
+		if (*it >= 0 && *it < (int)m_BeliefLookup.size())
+			m_BeliefLookup[*it] = 1;
+	}
 }
 
 /// Reset data members
