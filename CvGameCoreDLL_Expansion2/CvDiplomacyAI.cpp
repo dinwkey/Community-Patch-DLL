@@ -8057,7 +8057,7 @@ void CvDiplomacyAI::ChangeNegativeReligiousConversionPoints(PlayerTypes ePlayer,
 		if (!GetPlayer()->isHuman(ISHUMAN_AI_DIPLOMACY))
 		{
 			// Time to reevaluate this thief!
-			DoReevaluatePlayer(ePlayer);
+			DoReevaluateLocalPlayer(ePlayer);
 		}
 	}
 }
@@ -8093,7 +8093,7 @@ void CvDiplomacyAI::ChangeNumTimesRobbedBy(PlayerTypes ePlayer, int iChange)
 	if (iChange > 0 && !GetPlayer()->isHuman(ISHUMAN_AI_DIPLOMACY))
 	{
 		// Time to reevaluate this thief!
-		DoReevaluatePlayer(ePlayer);
+		DoReevaluateLocalPlayer(ePlayer);
 	}
 }
 
@@ -8128,7 +8128,7 @@ void CvDiplomacyAI::ChangeNumTimesPerformedCoupAgainstUs(PlayerTypes ePlayer, in
 	if (iChange > 0 && !GetPlayer()->isHuman(ISHUMAN_AI_DIPLOMACY))
 	{
 		// Time to reevaluate this thief!
-		DoReevaluatePlayer(ePlayer);
+		DoReevaluateLocalPlayer(ePlayer);
 	}
 }
 
@@ -8344,7 +8344,7 @@ void CvDiplomacyAI::ChangeNegativeArchaeologyPoints(PlayerTypes ePlayer, int iCh
 		if (!GetPlayer()->isHuman(ISHUMAN_AI_DIPLOMACY))
 		{
 			// Time to reevaluate this thief!
-			DoReevaluatePlayer(ePlayer);
+			DoReevaluateLocalPlayer(ePlayer);
 		}
 	}
 }
@@ -14819,6 +14819,12 @@ void CvDiplomacyAI::DoFinalizeReevaluation(vector<PlayerTypes>& vPlayersToReeval
 	}
 
 	DoUpdatePeaceTreatyWillingness(GetPlayer()->isTurnActive());
+}
+
+void CvDiplomacyAI::DoReevaluateLocalPlayer(PlayerTypes ePlayer, bool bCancelExchanges, bool bFromResurrection)
+{
+	vector<PlayerTypes> v(1, ePlayer);
+	DoReevaluatePlayersInternal(v, false, bCancelExchanges, bFromResurrection, false);
 }
 
 /// Reevaluate our general Diplomatic Approach towards a single player
@@ -39931,7 +39937,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 			{
 				SetDoFAccepted(eFromPlayer, true);
 				GET_PLAYER(eFromPlayer).GetDiplomacyAI()->SetDoFAccepted(eMyPlayer, true);
-				DoReevaluatePlayer(eFromPlayer, false, false);
+				DoReevaluateLocalPlayer(eFromPlayer, false);
 			}
 
 			if (bActivePlayer)
@@ -39967,7 +39973,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 			gDLL->GameplayDiplomacyAILeaderMessage(eMyPlayer, DIPLO_UI_STATE_BLANK_DISCUSSION, strText, LEADERHEAD_ANIM_NEGATIVE);
 		}
 
-		DoReevaluatePlayer(eFromPlayer, false, false);
+		DoReevaluateLocalPlayer(eFromPlayer, false);
 
 		break;
 	}
@@ -40694,7 +40700,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 			GET_PLAYER(eFromPlayer).GetDiplomacyAI()->SetDoFAccepted(eMyPlayer, true);
 
 			// Update diplomacy stuff
-			DoReevaluatePlayer(eFromPlayer, false, false);
+			DoReevaluateLocalPlayer(eFromPlayer, false);
 
 			if (bActivePlayer)
 			{
@@ -40804,7 +40810,7 @@ void CvDiplomacyAI::DoFromUIDiploEvent(PlayerTypes eFromPlayer, FromUIDiploEvent
 			}
 
 			SetDoFBroken(eFromPlayer, true, false);
-			DoReevaluatePlayer(eFromPlayer, false, false);
+			DoReevaluateLocalPlayer(eFromPlayer, false);
 
 			// AI message
 			if (bActivePlayer)
@@ -44370,7 +44376,7 @@ void CvDiplomacyAI::DoDemandMade(PlayerTypes ePlayer, DemandResponseTypes eRespo
 		iNumTurns += GC.getGame().randRangeInclusive(0, /*10*/ GD_INT_GET(DEMAND_TURN_LIMIT_RAND), CvSeeder::fromRaw(0x0af32abc).mix(GetID()).mix(GET_PLAYER(ePlayer).GetID()));
 		SetDemandTooSoonNumTurns(ePlayer, iNumTurns);
 
-		DoReevaluatePlayer(ePlayer);
+		DoReevaluateLocalPlayer(ePlayer);
 	}
 	// We refused the demand
 	else
@@ -44447,7 +44453,7 @@ void CvDiplomacyAI::DoDemandMade(PlayerTypes ePlayer, DemandResponseTypes eRespo
 			}
 		}
 
-			DoReevaluatePlayer(ePlayer);
+			DoReevaluateLocalPlayer(ePlayer);
 	}
 }
 

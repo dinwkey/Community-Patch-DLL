@@ -1218,6 +1218,7 @@ public:
 	void DoUpdateGlobalPolitics();
 	void DoFinalizeReevaluation(vector<PlayerTypes>& vPlayersToReevaluate, bool bRefreshGlobalPolitics);
 	void DoReevaluatePlayersInternal(vector<PlayerTypes>& vTargetPlayers, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection, bool bRefreshGlobalPolitics);
+	void DoReevaluateLocalPlayer(PlayerTypes ePlayer, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoReevaluatePlayer(PlayerTypes ePlayer, bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoReevaluateEveryone(bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
