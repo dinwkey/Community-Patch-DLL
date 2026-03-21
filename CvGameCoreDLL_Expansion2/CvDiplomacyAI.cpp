@@ -34040,6 +34040,11 @@ void CvDiplomacyAI::DoPlayerDeclaredWarOnSomeone(PlayerTypes ePlayer, TeamTypes 
 			}
 		}
 	}
+
+	if (GET_PLAYER(ePlayer).isMajorCiv() && IsPlayerValid(ePlayer, true))
+	{
+		DoReevaluatePlayer(ePlayer, true);
+	}
 }
 
 /// ePlayer bullied eOtherPlayer (minor civ), so figure out what that means
