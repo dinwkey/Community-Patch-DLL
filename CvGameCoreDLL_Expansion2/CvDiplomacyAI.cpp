@@ -44412,6 +44412,8 @@ void CvDiplomacyAI::DoDemandMade(PlayerTypes ePlayer, DemandResponseTypes eRespo
 				}
 			}
 		}
+
+			DoReevaluatePlayer(ePlayer);
 	}
 }
 
