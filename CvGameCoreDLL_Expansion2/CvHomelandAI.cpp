@@ -52,6 +52,24 @@ bool CarrierLoadingPrioritySort(const CvUnit* pLeft, const CvUnit* pRight)
 
 	return pLeft->GetID() < pRight->GetID();
 }
+
+int GetDesiredCarrierFighterReserve(int iPlatformSlots, int iEnemyBombers, int iEnemyFighters)
+{
+	int iDesiredFighters = 0;
+	if (iEnemyBombers > 0 || iEnemyFighters >= 2)
+		iDesiredFighters = 1;
+	if (iPlatformSlots >= 4 && iEnemyBombers >= 2)
+		iDesiredFighters = max(iDesiredFighters, 2);
+	if (iPlatformSlots >= 6 && iEnemyBombers >= 4)
+		iDesiredFighters = max(iDesiredFighters, 3);
+	if (iPlatformSlots >= 8 && iEnemyBombers >= 6)
+		iDesiredFighters = max(iDesiredFighters, 4);
+	if (iPlatformSlots >= 6 && iEnemyFighters >= 5)
+		iDesiredFighters = max(iDesiredFighters, 2);
+
+	// Always leave at least one slot available for strike aircraft on full carriers.
+	return min(iDesiredFighters, max(0, iPlatformSlots - 1));
+}
 }
 
 CvHomelandUnit::CvHomelandUnit() :
@@ -7623,12 +7641,9 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 			{
 				// FULL CARRIERS (can carry fighters, bombers, missiles)
 				// Need to balance bomber/missile ratio
-				int iEnemyAirPressure = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, true, true);
-				int iDesiredFighters = 0;
-				if (iEnemyAirPressure >= 6)
-					iDesiredFighters = min(2, max(1, iPlatformSlots / 2));
-				else if (iEnemyAirPressure >= 2)
-					iDesiredFighters = 1;
+				int iEnemyBombers = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, false, true);
+				int iEnemyFighters = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, true, false);
+				int iDesiredFighters = GetDesiredCarrierFighterReserve(iPlatformSlots, iEnemyBombers, iEnemyFighters);
 				
 				// Check distance to nearest friendly city for resupply
 				CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
@@ -7766,10 +7781,14 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 
 		if (eUnitAI == UNITAI_DEFENSE_AIR)
 		{
-			int iEnemyAirPressure = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, true, true);
-			iBaseScore += iEnemyAirPressure * 4;
-			if (iEnemyAirPressure >= 4)
+			int iEnemyBombers = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, false, true);
+			int iEnemyFighters = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, true, false);
+			int iDesiredFighters = GetDesiredCarrierFighterReserve(pDefender->cargoSpace(), iEnemyBombers, iEnemyFighters);
+			iBaseScore += iEnemyBombers * 6 + iEnemyFighters * 2;
+			if (iDesiredFighters >= 2)
 				iBaseScore += 12;
+			if (iDesiredFighters >= 3)
+				iBaseScore += 8;
 		}
 	}
 
