@@ -50,6 +50,56 @@ bool IsNavalOperationUnitAI(UnitAITypes eUnitAI)
 	}
 }
 
+bool IsLandCityCaptureUnitAI(UnitAITypes eUnitAI)
+{
+	switch (eUnitAI)
+	{
+	case UNITAI_ATTACK:
+	case UNITAI_FAST_ATTACK:
+	case UNITAI_COUNTER:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool IsNavalCityCaptureUnitAI(UnitAITypes eUnitAI)
+{
+	switch (eUnitAI)
+	{
+	case UNITAI_ATTACK_SEA:
+	case UNITAI_RESERVE_SEA:
+	case UNITAI_PIRATE_SEA:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool IsCityCaptureSlotEntry(const CvFormationSlotEntry& kSlotInfo, AIOperationTypes eType, bool bNavalPreferredTarget)
+{
+	const bool bLandSlot = IsLandCityCaptureUnitAI(kSlotInfo.m_primaryUnitType) || IsLandCityCaptureUnitAI(kSlotInfo.m_secondaryUnitType);
+	const bool bNavalSlot = IsNavalCityCaptureUnitAI(kSlotInfo.m_primaryUnitType) || IsNavalCityCaptureUnitAI(kSlotInfo.m_secondaryUnitType);
+
+	switch (eType)
+	{
+	case AI_OPERATION_CITY_ATTACK_LAND:
+		return bLandSlot;
+	case AI_OPERATION_CITY_ATTACK_NAVAL:
+		return bNavalSlot;
+	case AI_OPERATION_CITY_ATTACK_COMBINED:
+		return bNavalPreferredTarget ? bNavalSlot : (bLandSlot || bNavalSlot);
+	default:
+		return false;
+	}
+}
+
+bool HasPendingOperationSlot(const std::deque<OperationSlot>& vNeededSlots, const std::vector<OperationSlot>& vCommittedSlots, const OperationSlot& kSlot)
+{
+	return std::find(vNeededSlots.begin(), vNeededSlots.end(), kSlot) != vNeededSlots.end() ||
+		std::find(vCommittedSlots.begin(), vCommittedSlots.end(), kSlot) != vCommittedSlots.end();
+}
+
 int CountUnassignedCombatNavalUnits(const CvPlayer& kOwner)
 {
 	int iCount = 0;
@@ -94,6 +144,114 @@ int ScoreCarrierDeploymentZone(PlayerTypes eOwner, CvPlot* pReferencePlot, CvTac
 		iScore += 10;
 
 	return iScore;
+}
+
+bool IsCityAttackOperationType(AIOperationTypes eType)
+{
+	switch (eType)
+	{
+	case AI_OPERATION_CITY_ATTACK_LAND:
+	case AI_OPERATION_CITY_ATTACK_NAVAL:
+	case AI_OPERATION_CITY_ATTACK_COMBINED:
+		return true;
+	default:
+		return false;
+	}
+}
+
+CvCity* GetOperationalTargetCity(CvPlot* pTargetPlot, PlayerTypes eExpectedOwner)
+{
+	if (!pTargetPlot)
+		return NULL;
+
+	CvCity* pTargetCity = pTargetPlot->isCity() ? pTargetPlot->getPlotCity() : pTargetPlot->GetAdjacentCity();
+	if (!pTargetCity)
+		return NULL;
+
+	if (eExpectedOwner != NO_PLAYER && pTargetCity->getOwner() != eExpectedOwner)
+		return NULL;
+
+	return pTargetCity;
+}
+
+void GetCityAttackApproachCounts(const CvCity* pTargetCity, int& iLandApproaches, int& iWaterApproaches)
+{
+	iLandApproaches = 0;
+	iWaterApproaches = 0;
+
+	if (!pTargetCity)
+		return;
+
+	for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+	{
+		CvPlot* pAdjacentPlot = plotDirection(pTargetCity->getX(), pTargetCity->getY(), static_cast<DirectionTypes>(iDir));
+		if (!pAdjacentPlot)
+			continue;
+
+		if (pAdjacentPlot->isWater())
+			iWaterApproaches++;
+		else if (!pAdjacentPlot->isMountain())
+			iLandApproaches++;
+	}
+}
+
+bool IsNavalPreferredCityAttackTarget(AIOperationTypes eType, const CvCity* pTargetCity, bool bCrossWater)
+{
+	if (!pTargetCity || !pTargetCity->isCoastal())
+		return false;
+
+	if (eType == AI_OPERATION_CITY_ATTACK_NAVAL)
+		return true;
+
+	int iLandApproaches = 0;
+	int iWaterApproaches = 0;
+	GetCityAttackApproachCounts(pTargetCity, iLandApproaches, iWaterApproaches);
+
+	if (iLandApproaches == 0)
+		return true;
+
+	if (bCrossWater && iWaterApproaches >= iLandApproaches)
+		return true;
+
+	return iWaterApproaches > iLandApproaches;
+}
+
+bool IsValidCityCaptureUnitForOperation(const CvUnit* pUnit, AIOperationTypes eType, const CvCity* pTargetCity, bool bNavalPreferredTarget)
+{
+	if (!pUnit || pUnit->isDelayedDeath())
+		return false;
+
+	if (!pUnit->IsCombatUnit() || !pUnit->IsCanAttack() || pUnit->IsCanAttackRanged() || pUnit->isNoCapture())
+		return false;
+
+	const bool bLandMelee = (pUnit->getDomainType() == DOMAIN_LAND);
+	const bool bNavalMelee = (pUnit->getDomainType() == DOMAIN_SEA && pTargetCity && pTargetCity->isCoastal());
+
+	switch (eType)
+	{
+	case AI_OPERATION_CITY_ATTACK_LAND:
+		return bLandMelee;
+	case AI_OPERATION_CITY_ATTACK_NAVAL:
+		return bNavalMelee;
+	case AI_OPERATION_CITY_ATTACK_COMBINED:
+		return bNavalPreferredTarget ? bNavalMelee : (bLandMelee || bNavalMelee);
+	default:
+		return false;
+	}
+}
+
+bool ArmyHasCaptureUnitForOperation(CvArmyAI* pArmy, AIOperationTypes eType, const CvCity* pTargetCity, bool bNavalPreferredTarget)
+{
+	if (!pArmy)
+		return false;
+
+	for (CvUnit* pUnit = pArmy->GetFirstUnit(); pUnit; pUnit = pArmy->GetNextUnit(pUnit))
+	{
+		if (IsValidCityCaptureUnitForOperation(pUnit, eType, pTargetCity, bNavalPreferredTarget))
+			return true;
+	}
+
+	return false;
 }
 }
 // PUBLIC FUNCTIONS
@@ -942,6 +1100,14 @@ void CvAIOperation::UnitWasRemoved(int iArmyID, int iSlotID)
 		{
 			// If down below half strength, abort
 			CvArmyAI* pThisArmy = GET_PLAYER(m_eOwner).getArmyAI(iArmyID);
+			if (!pThisArmy)
+				break;
+
+			const OperationSlot kLostSlot(m_iID, iArmyID, iSlotID);
+			const CvFormationSlotEntry kLostSlotInfo = pThisArmy->GetSlotInfo(iSlotID);
+			if (kLostSlotInfo.m_requiredSlot && !HasPendingOperationSlot(m_viListOfUnitsWeStillNeedToBuild, m_viListOfUnitsCitiesHaveCommittedToBuild, kLostSlot))
+				m_viListOfUnitsWeStillNeedToBuild.push_back(kLostSlot);
+
 			CvMultiUnitFormationInfo* pkFormation = pThisArmy->GetFormation();
 			if(pkFormation)
 			{
@@ -1507,11 +1673,62 @@ int CvAIOperationMilitary::GetMaximumRecruitTurns() const
 	return /*10*/ GD_INT_GET(AI_OPERATIONAL_MAX_RECRUIT_TURNS_ENEMY_TERRITORY);
 }
 
-AIOperationAbortReason CvAIOperationMilitary::VerifyOrAdjustTarget(CvArmyAI*)
+AIOperationAbortReason CvAIOperationMilitary::VerifyOrAdjustTarget(CvArmyAI* pArmy)
 {
 	//somebody unexpected owning the target? abort. don't check for war, that would break sneak attacks
 	if (GetTargetPlot()->isOwned() && GetTargetPlot()->getOwner()!=m_eEnemy)
 		return AI_ABORT_TARGET_ALREADY_CAPTURED;
+
+	if (IsCityAttackOperationType(m_eType))
+	{
+		CvCity* pTargetCity = GetOperationalTargetCity(GetTargetPlot(), m_eEnemy);
+		if (pTargetCity)
+		{
+			const bool bCrossWater = (GetMusterPlot() && GetTargetPlot() && GetMusterPlot()->getLandmass() != GetTargetPlot()->getLandmass());
+			const bool bNavalPreferredTarget = IsNavalPreferredCityAttackTarget(m_eType, pTargetCity, bCrossWater);
+			if (!ArmyHasCaptureUnitForOperation(pArmy, m_eType, pTargetCity, bNavalPreferredTarget))
+			{
+				if (GetMusterPlot() && GetTargetPlot())
+					GrabUnitsFromTheReserves(GetMusterPlot(), GetTargetPlot(), pArmy);
+
+				if (ArmyHasCaptureUnitForOperation(pArmy, m_eType, pTargetCity, bNavalPreferredTarget))
+				{
+					if (GC.getLogging() && GC.getAILogging())
+						LogOperationSpecialMessage("Continuing city attack - replacement capture unit recruited from reserves");
+					return NO_ABORT_REASON;
+				}
+
+				bool bPendingCaptureReinforcement = false;
+				for (std::deque<OperationSlot>::const_iterator it = m_viListOfUnitsWeStillNeedToBuild.begin(); it != m_viListOfUnitsWeStillNeedToBuild.end() && !bPendingCaptureReinforcement; ++it)
+				{
+					if (it->m_iArmyID == pArmy->GetID() && IsCityCaptureSlotEntry(pArmy->GetSlotInfo(it->m_iSlotID), m_eType, bNavalPreferredTarget))
+						bPendingCaptureReinforcement = true;
+				}
+
+				for (std::vector<OperationSlot>::const_iterator it = m_viListOfUnitsCitiesHaveCommittedToBuild.begin(); it != m_viListOfUnitsCitiesHaveCommittedToBuild.end() && !bPendingCaptureReinforcement; ++it)
+				{
+					if (it->m_iArmyID == pArmy->GetID() && IsCityCaptureSlotEntry(pArmy->GetSlotInfo(it->m_iSlotID), m_eType, bNavalPreferredTarget))
+						bPendingCaptureReinforcement = true;
+				}
+
+				if (bPendingCaptureReinforcement)
+				{
+					if (pArmy->GetArmyAIState() != ARMYAISTATE_WAITING_FOR_UNITS_TO_REINFORCE)
+						pArmy->SetArmyAIState(ARMYAISTATE_WAITING_FOR_UNITS_TO_REINFORCE);
+
+					if (GC.getLogging() && GC.getAILogging())
+						LogOperationSpecialMessage("Holding city attack pressure - replacement capture unit is pending");
+
+					return NO_ABORT_REASON;
+				}
+
+				if (GC.getLogging() && GC.getAILogging())
+					LogOperationSpecialMessage("Aborting city attack - no credible capture unit remains for target");
+
+				return bNavalPreferredTarget ? AI_ABORT_TOO_DANGEROUS : AI_ABORT_NO_UNITS;
+			}
+		}
+	}
 
 	return NO_ABORT_REASON;
 }
@@ -3660,6 +3877,10 @@ bool CvAIOperation::PreconditionsAreMet(CvPlot* pMusterPlot, CvPlot* pTargetPlot
 		turnsFromMuster = GC.GetStepFinder().GetPlotsInReach(pMusterPlot, data);
 	}
 
+	CvCity* pTargetCity = IsCityAttackOperationType(m_eType) ? GetOperationalTargetCity(pTargetPlot, m_eEnemy) : NULL;
+	const bool bNavalPreferredTarget = IsNavalPreferredCityAttackTarget(m_eType, pTargetCity, bOcean);
+	int iCaptureUnitsAvailable = 0;
+
 	CvPlayer& kOwnerRef = GET_PLAYER(m_eOwner);
 	int iLoop = 0;
 	for (CvUnit* pLoopUnit = kOwnerRef.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwnerRef.nextUnit(&iLoop))
@@ -3669,6 +3890,8 @@ bool CvAIOperation::PreconditionsAreMet(CvPlot* pMusterPlot, CvPlot* pTargetPlot
 		if (iIndex >= 0)
 		{
 			fakeStatus[freeSlots[iIndex].first] = CvArmyFormationSlot( pLoopUnit->GetID(), freeSlots[iIndex].second.m_requiredSlot );
+			if (pTargetCity && IsValidCityCaptureUnitForOperation(pLoopUnit, m_eType, pTargetCity, bNavalPreferredTarget))
+				iCaptureUnitsAvailable++;
 			freeSlots.erase(freeSlots.begin() + iIndex);
 			if (freeSlots.empty())
 				break;
@@ -3678,5 +3901,25 @@ bool CvAIOperation::PreconditionsAreMet(CvPlot* pMusterPlot, CvPlot* pTargetPlot
 	//todo: check path for danger? eg embarkation in enemy-dominated water?
 	//	or check if there is enough room to deploy at the target? --> no visibility
 
-	return OperationalAIHelpers::HaveEnoughUnits(fakeStatus,iMaxMissingUnits);
+	if (!OperationalAIHelpers::HaveEnoughUnits(fakeStatus,iMaxMissingUnits))
+		return false;
+
+	if (pTargetCity)
+	{
+		if (m_eType == AI_OPERATION_CITY_ATTACK_LAND && bOcean && bNavalPreferredTarget)
+		{
+			if (GC.getLogging() && GC.getAILogging())
+				LogOperationSpecialMessage("Preconditions failed - cross-water land city attack requires a navy-led assault");
+			return false;
+		}
+
+		if (iCaptureUnitsAvailable == 0)
+		{
+			if (GC.getLogging() && GC.getAILogging())
+				LogOperationSpecialMessage("Preconditions failed - no viable city capture unit available for target");
+			return false;
+		}
+	}
+
+	return true;
 }

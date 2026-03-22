@@ -200,6 +200,7 @@ void CvTacticalAI::Init(CvPlayer* pPlayer)
 
 	m_tacticalMap.Reset(m_pPlayer ? m_pPlayer->GetID() : NO_PLAYER);
 	m_bImminentAttack = false;
+	m_coastalLandAssaultCooldownUntilTurn.clear();
 
 	// Initialize AI constants from XML
 	m_iRecruitRange = /*8*/ GD_INT_GET(AI_TACTICAL_RECRUIT_RANGE);
@@ -305,11 +306,30 @@ void CvTacticalAI::RecruitUnits()
 
 /// Update the AI for units
 // Forward declaration - defined later in this file
+enum CoalitionLiberationCase
+{
+	COALITION_LIBERATION_NONE,
+	COALITION_LIBERATION_CITY_STATE,
+	COALITION_LIBERATION_DEAD_MAJOR,
+	COALITION_LIBERATION_ORIGINAL_CAPITAL,
+	COALITION_LIBERATION_OTHER_MAJOR,
+};
+
 static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer);
+static void GetCoastalApproachCounts(const CvCity* pCity, int& iLandApproaches, int& iWaterApproaches);
+static bool IsNavyLedCoastalAssaultTarget(const CvCity* pCity, bool& bIslandCity, bool& bNavalDominatedCity, int& iLandApproaches, int& iWaterApproaches);
+static bool CanReachLandAttackPositionWithoutEmbark(const CvUnit* pUnit, const CvCity* pCity, bool bAllowOneTurnSetup);
+static bool ShouldSkipLandUnitForCoastalCapture(const CvUnit* pUnit, const CvCity* pCity, bool bPreferNavalCapture, bool bLandAssaultCooldownActive);
+static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner);
+static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget);
+static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity);
+static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* pCity, int& iHelpfulPressure, int& iHarmfulPressure);
+static bool ShouldAvoidRiskyCoalitionCapture(const CvPlayer* pPlayer, const CvCity* pCity, bool bCaptureOpportunityThisTurn, int iOurMeleeCount, int iHelpfulPressure, int iHarmfulPressure);
 
 void CvTacticalAI::Update()
 {
 	m_bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+	ExpireCoastalAssaultLandCooldowns();
 
 	UpdateVisibility();
 	DropOldFocusAreas();
@@ -833,6 +853,348 @@ static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer)
 	return false;
 }
 
+static void GetCoastalApproachCounts(const CvCity* pCity, int& iLandApproaches, int& iWaterApproaches)
+{
+	iLandApproaches = 0;
+	iWaterApproaches = 0;
+
+	if (!pCity)
+		return;
+
+	for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+	{
+		CvPlot* pAdjacentPlot = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+		if (!pAdjacentPlot)
+			continue;
+
+		if (pAdjacentPlot->isWater())
+			iWaterApproaches++;
+		else if (!pAdjacentPlot->isImpassable(pCity->getTeam()))
+			iLandApproaches++;
+	}
+}
+
+static bool IsNavyLedCoastalAssaultTarget(const CvCity* pCity, bool& bIslandCity, bool& bNavalDominatedCity, int& iLandApproaches, int& iWaterApproaches)
+{
+	bIslandCity = false;
+	bNavalDominatedCity = false;
+	iLandApproaches = 0;
+	iWaterApproaches = 0;
+
+	if (!pCity || !pCity->isCoastal())
+		return false;
+
+	GetCoastalApproachCounts(pCity, iLandApproaches, iWaterApproaches);
+	bIslandCity = (iLandApproaches == 0);
+	bNavalDominatedCity = (iWaterApproaches > iLandApproaches * 2);
+
+	return bIslandCity || bNavalDominatedCity;
+}
+
+static bool CanReachLandAttackPositionWithoutEmbark(const CvUnit* pUnit, const CvCity* pCity, bool bAllowOneTurnSetup)
+{
+	if (!pUnit || !pCity || pUnit->getDomainType() != DOMAIN_LAND)
+		return false;
+
+	const int iMaxTurns = bAllowOneTurnSetup ? 1 : 0;
+	const int iMoveFlags = CvUnit::MOVEFLAG_NO_EMBARK | CvUnit::MOVEFLAG_IGNORE_STACKING_SELF;
+	CvPlot* pCityPlot = pCity->plot();
+	CvUnit* pMutableUnit = const_cast<CvUnit*>(pUnit);
+
+	if (pUnit->IsCanAttackRanged())
+	{
+		if (pUnit->canRangeStrikeAt(pCity->getX(), pCity->getY()))
+			return true;
+
+		for (int iRange = pUnit->GetRange(); iRange > 0; iRange--)
+		{
+			std::vector<CvPlot*> vPlots = TacticalAIHelpers::GetPlotsForRangedAttack(pCityPlot, pUnit, iRange, false);
+			for (size_t i = 0; i < vPlots.size(); i++)
+			{
+				CvPlot* pAttackPlot = vPlots[i];
+				if (!pAttackPlot || pAttackPlot->isWater())
+					continue;
+
+				if (pMutableUnit->TurnsToReachTarget(pAttackPlot, iMoveFlags, iMaxTurns) <= iMaxTurns)
+					return true;
+			}
+		}
+	}
+	else
+	{
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdjacentPlot = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
+			if (!pAdjacentPlot || pAdjacentPlot->isWater() || pAdjacentPlot->isImpassable(pUnit->getTeam()))
+				continue;
+
+			if (pMutableUnit->TurnsToReachTarget(pAdjacentPlot, iMoveFlags, iMaxTurns) <= iMaxTurns)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+static bool ShouldSkipLandUnitForCoastalCapture(const CvUnit* pUnit, const CvCity* pCity, bool bPreferNavalCapture, bool bLandAssaultCooldownActive)
+{
+	if (!pUnit || !pCity || pUnit->getDomainType() != DOMAIN_LAND || !pCity->isCoastal())
+		return false;
+
+	if (bLandAssaultCooldownActive && !CanReachLandAttackPositionWithoutEmbark(pUnit, pCity, true))
+		return true;
+
+	if (CanReachLandAttackPositionWithoutEmbark(pUnit, pCity, true))
+		return false;
+
+	const bool bCrossWaterExposure = pUnit->isEmbarked() || pUnit->plot()->isWater() || !CanReachLandAttackPositionWithoutEmbark(pUnit, pCity, false);
+	if (!bCrossWaterExposure)
+		return false;
+
+	if (!bPreferNavalCapture && !pUnit->isEmbarked() && !pUnit->plot()->isWater())
+		return false;
+
+	if (pUnit->IsCanAttackRanged() || pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
+		return true;
+
+	if (pUnit->isAmphibious())
+		return false;
+
+	const int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / max(1, pCity->GetMaxHitPoints());
+	return iCityHPPercent > 15;
+}
+
+static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner)
+{
+	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
+		return false;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return false;
+
+	if (pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING)
+		return true;
+
+	if (pDiploAI->IsFriendOrAlly(eOtherPlayer) || pDiploAI->IsDoFAccepted(eOtherPlayer))
+		return true;
+
+	return false;
+}
+static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget)
+{
+	if (!pCity || eLiberationTarget == NO_PLAYER)
+		return COALITION_LIBERATION_NONE;
+
+	const CvPlayer& kLiberationTarget = GET_PLAYER(eLiberationTarget);
+	if (kLiberationTarget.isMinorCiv())
+		return COALITION_LIBERATION_CITY_STATE;
+
+	if (!kLiberationTarget.isMajorCiv())
+		return COALITION_LIBERATION_NONE;
+
+	if (!kLiberationTarget.isAlive())
+		return COALITION_LIBERATION_DEAD_MAJOR;
+
+	if (pCity->IsOriginalCapitalForPlayer(eLiberationTarget) || (pCity->IsOriginalMajorCapital() && pCity->getOriginalOwner() == eLiberationTarget))
+		return COALITION_LIBERATION_ORIGINAL_CAPITAL;
+
+	return COALITION_LIBERATION_OTHER_MAJOR;
+}
+
+static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity)
+{
+	if (!pPlayer || !pCity || eOtherPlayer == NO_PLAYER)
+		return 0;
+
+	PlayerTypes eTargetOwner = pCity->getOwner();
+	if (eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+		return 0;
+
+	CvDiplomacyAI* pOurDiplo = pPlayer->GetDiplomacyAI();
+	CvDiplomacyAI* pTheirDiplo = GET_PLAYER(eOtherPlayer).GetDiplomacyAI();
+	if (!pOurDiplo || !pTheirDiplo)
+		return 0;
+
+	CvCity* pMutableCity = const_cast<CvCity*>(pCity);
+	PlayerTypes eLiberationTarget = GET_PLAYER(eOtherPlayer).GetPlayerToLiberate(pMutableCity);
+	CoalitionLiberationCase eLiberationCase = GetCoalitionLiberationCase(pCity, eLiberationTarget);
+	if (eLiberationTarget != NO_PLAYER && pTheirDiplo->IsTryingToLiberate(pMutableCity))
+	{
+		int iWeight = 1;
+		switch (eLiberationCase)
+		{
+		case COALITION_LIBERATION_CITY_STATE:
+			iWeight = 4;
+			break;
+		case COALITION_LIBERATION_DEAD_MAJOR:
+			iWeight = 5;
+			break;
+		case COALITION_LIBERATION_ORIGINAL_CAPITAL:
+			iWeight = 3;
+			break;
+		case COALITION_LIBERATION_OTHER_MAJOR:
+			iWeight = 2;
+			break;
+		default:
+			break;
+		}
+
+		if (GET_PLAYER(eLiberationTarget).getTeam() == pPlayer->getTeam())
+			iWeight += 1;
+
+		if (IsTrustedCoalitionPartner(pPlayer, eOtherPlayer, eTargetOwner))
+			iWeight += 1;
+
+		return iWeight;
+	}
+
+	int iWeight = IsTrustedCoalitionPartner(pPlayer, eOtherPlayer, eTargetOwner) ? 1 : -1;
+	switch (eLiberationCase)
+	{
+	case COALITION_LIBERATION_CITY_STATE:
+		iWeight -= 3;
+		break;
+	case COALITION_LIBERATION_DEAD_MAJOR:
+		iWeight -= 4;
+		break;
+	case COALITION_LIBERATION_ORIGINAL_CAPITAL:
+		iWeight -= 2;
+		break;
+	case COALITION_LIBERATION_OTHER_MAJOR:
+		iWeight -= 1;
+		break;
+	default:
+		break;
+	}
+
+	if (GET_PLAYER(eOtherPlayer).GetPlayerTraits()->IsNoAnnexing())
+		iWeight += 1;
+
+	if (pTheirDiplo->IsGoingForWorldConquest() || pTheirDiplo->IsCloseToWorldConquest() || pOurDiplo->GetWarmongerThreat(eOtherPlayer) >= THREAT_MAJOR)
+		iWeight -= 2;
+
+	if (GET_PLAYER(eOtherPlayer).GetEconomicMight() > pPlayer->GetEconomicMight() * 11 / 10)
+		iWeight -= 1;
+
+	return iWeight;
+}
+
+static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* pCity, int& iHelpfulPressure, int& iHarmfulPressure)
+{
+	iHelpfulPressure = 0;
+	iHarmfulPressure = 0;
+
+	if (!pPlayer || !pCity)
+		return;
+
+	PlayerTypes eTargetOwner = pCity->getOwner();
+	if (eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+		return;
+
+	for (int iPlotLoop = 0; iPlotLoop < RING3_PLOTS; iPlotLoop++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCity->plot(), iPlotLoop);
+		if (!pLoopPlot)
+			continue;
+
+		for (int iUnit = 0; iUnit < pLoopPlot->getNumUnits(); iUnit++)
+		{
+			CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnit);
+			if (!pLoopUnit || pLoopUnit->isDelayedDeath())
+				continue;
+
+			PlayerTypes eOtherPlayer = pLoopUnit->getOwner();
+			if (eOtherPlayer == pPlayer->GetID() || eOtherPlayer == eTargetOwner)
+				continue;
+
+			if (!GET_PLAYER(eOtherPlayer).isMajorCiv() || !GET_PLAYER(eOtherPlayer).isAlive())
+				continue;
+
+			if (!GET_PLAYER(eOtherPlayer).IsAtWarWith(eTargetOwner) || GET_PLAYER(eOtherPlayer).IsAtWarWith(pPlayer->GetID()))
+				continue;
+
+			if (!(pLoopUnit->IsCombatUnit() || pLoopUnit->IsCanAttackRanged()))
+				continue;
+
+			int iUnitPressure = pLoopUnit->IsCanAttackRanged() ? 1 : 2;
+			if (plotDistance(*pLoopPlot, *pCity->plot()) <= 1)
+				iUnitPressure++;
+
+			if (GetCoalitionOutcomeWeight(pPlayer, eOtherPlayer, pCity) > 0)
+				iHelpfulPressure += iUnitPressure;
+			else
+				iHarmfulPressure += iUnitPressure;
+		}
+	}
+}
+
+static bool ShouldAvoidRiskyCoalitionCapture(const CvPlayer* pPlayer, const CvCity* pCity, bool bCaptureOpportunityThisTurn, int iOurMeleeCount, int iHelpfulPressure, int iHarmfulPressure)
+{
+	if (!pPlayer || !pCity || !bCaptureOpportunityThisTurn)
+		return false;
+
+	if (!GET_PLAYER(pCity->getOwner()).isMajorCiv())
+		return false;
+
+	if (pCity->IsOriginalCapital() || pCity->getOriginalOwner() == pPlayer->GetID())
+		return false;
+
+	if (pCity->getDamage() * 2 < pCity->GetMaxHitPoints())
+		return false;
+
+	if (iHarmfulPressure >= 3)
+		return true;
+
+	if (iHelpfulPressure >= 4 && iHarmfulPressure > 0 && iOurMeleeCount <= 1)
+		return true;
+
+	return false;
+}
+
+bool CvTacticalAI::IsCoastalAssaultLandCooldownActive(const CvCity* pCity) const
+{
+	if (!pCity)
+		return false;
+
+	std::map<int, int>::const_iterator it = m_coastalLandAssaultCooldownUntilTurn.find(pCity->plot()->GetPlotIndex());
+	if (it == m_coastalLandAssaultCooldownUntilTurn.end())
+		return false;
+
+	return it->second >= GC.getGame().getGameTurn();
+}
+
+void CvTacticalAI::SetCoastalAssaultLandCooldown(const CvCity* pCity, int iCooldownTurns, const char* szReason)
+{
+	if (!pCity || iCooldownTurns <= 0)
+		return;
+
+	const int iExpiryTurn = GC.getGame().getGameTurn() + iCooldownTurns;
+	m_coastalLandAssaultCooldownUntilTurn[pCity->plot()->GetPlotIndex()] = iExpiryTurn;
+
+	if (GC.getLogging() && GC.getAILogging())
+	{
+		CvString strLogString;
+		strLogString.Format("Coastal land assault cooldown set for %s until turn %d%s%s",
+			pCity->getNameNoSpace().c_str(), iExpiryTurn,
+			szReason ? ": " : "",
+			szReason ? szReason : "");
+		LogTacticalMessage(strLogString);
+	}
+}
+
+void CvTacticalAI::ExpireCoastalAssaultLandCooldowns()
+{
+	const int iCurrentTurn = GC.getGame().getGameTurn();
+	for (std::map<int, int>::iterator it = m_coastalLandAssaultCooldownUntilTurn.begin(); it != m_coastalLandAssaultCooldownUntilTurn.end(); )
+	{
+		if (it->second < iCurrentTurn)
+			m_coastalLandAssaultCooldownUntilTurn.erase(it++);
+		else
+			++it;
+	}
+}
+
 bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 {
 	if(vUnits.empty())
@@ -1228,6 +1590,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 			// Always recruit both naval and land based forces if available!
 			if(FindUnitsWithinStrikingDistance(pPlot))
 			{
+				const int iCityDamageBeforeAttack = pCity->getDamage();
 				int iRequiredDamage = pCity->GetMaxHitPoints() - pCity->getDamage();
 				int iExpectedDamagePerTurn = ComputeTotalExpectedDamage(*pTarget);
 				// Dynamic siege threshold based on situation assessment
@@ -1334,20 +1697,10 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				// Count land vs water approaches to the city
 				int iLandApproaches = 0;
 				int iWaterApproaches = 0;
-				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
-				{
-					CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
-					if (pAdj)
-					{
-						if (pAdj->isWater())
-							iWaterApproaches++;
-						else if (!pAdj->isImpassable(m_pPlayer->getTeam()))
-							iLandApproaches++;
-					}
-				}
-				
+				GetCoastalApproachCounts(pCity, iLandApproaches, iWaterApproaches);
 				bool bIslandCity = (iLandApproaches == 0);
 				bool bNavalDominatedCity = (iWaterApproaches > iLandApproaches * 2); // Water approaches are dominant
+				bool bPreferNavalCapture = pCity->isCoastal() && (bIslandCity || bNavalDominatedCity);
 				
 				// Naval-only siege bonus: if city is primarily naval-accessible and we have naval melee,
 				// boost the expected damage to encourage the siege
@@ -1380,6 +1733,14 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				
 				if (bCityNearDeath && iMeleeCount > 0)
 					bCaptureOpportunityThisTurn = true;
+
+				bool bLikelyNavalCaptureNextTurn = false;
+				if (bPreferNavalCapture && iNavalMeleeCount > 0 && !bCaptureOpportunityThisTurn)
+				{
+					int iNetExpectedDamagePerTurn = max(0, iExpectedDamagePerTurn - iCityHealingPerTurn);
+					bLikelyNavalCaptureNextTurn = (iNetExpectedDamagePerTurn > 0) &&
+						((iNetExpectedDamagePerTurn * 2 >= iRequiredDamage) || (iCityCurrentHP <= iNetExpectedDamagePerTurn + pCity->GetMaxHitPoints() / 6));
+				}
 
 				// Special case: City is at 0 HP with no garrison - try paradrop to capture!
 				// Paratroopers can't attack after dropping, but they CAN capture undefended cities
@@ -1414,14 +1775,20 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					continue;
 				}
 
+				int iHelpfulCoalitionPressure = 0;
+				int iHarmfulCoalitionPressure = 0;
+				GetCoalitionPressureNearCity(m_pPlayer, pCity, iHelpfulCoalitionPressure, iHarmfulCoalitionPressure);
+				const bool bAvoidRiskyCoalitionCapture = ShouldAvoidRiskyCoalitionCapture(m_pPlayer, pCity, bCaptureOpportunityThisTurn, iMeleeCount, iHelpfulCoalitionPressure, iHarmfulCoalitionPressure);
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d (naval %d, land %d), melee dmg %d, ranged dmg %d, capture opportunity: %s%s%s",
+					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d (naval %d, land %d), melee dmg %d, ranged dmg %d, capture opportunity: %s, coalition pressure helpful=%d harmful=%d%s%s%s",
 						pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
 						iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded",
 						iMeleeCount, iNavalMeleeCount, iLandMeleeCount, iTotalMeleeDamage, iRangedDamageThisTurn,
-						bCaptureOpportunityThisTurn ? "YES" : "no",
+						bCaptureOpportunityThisTurn ? "YES" : "no", iHelpfulCoalitionPressure, iHarmfulCoalitionPressure,
+						bAvoidRiskyCoalitionCapture ? " [AVOID RISKY FINISHER]" : "",
 						bIslandCity ? " [ISLAND CITY]" : "",
 						bNavalDominatedCity ? " [NAVAL-DOMINATED]" : "");
 					LogTacticalMessage(strLogString);
@@ -1524,12 +1891,25 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				// Use higher aggression when capture is achievable this turn - we want to press the advantage
 				// AL_BRAVEHEART allows riskier attacks, appropriate when the city can be captured
 				eAggressionLevel aggLevel = AL_MEDIUM;
-				if (bCaptureOpportunityThisTurn)
+				if (bCaptureOpportunityThisTurn && !bAvoidRiskyCoalitionCapture)
 					aggLevel = AL_BRAVEHEART; // Go all-in for the capture
+				else if (bAvoidRiskyCoalitionCapture)
+					aggLevel = (iMeleeCount <= 1) ? AL_LOW : AL_MEDIUM;
 				else if (iMeleeCount > 2)
 					aggLevel = AL_HIGH;
 				
 				ExecuteAttackWithUnits(pPlot, aggLevel);
+
+				if (pPlot->getOwner() != m_pPlayer->GetID() && bLikelyNavalCaptureNextTurn)
+					ExecutePreCaptureEmbarkedSupportStaging(pPlot);
+
+				if (pPlot->getOwner() != m_pPlayer->GetID() && bPreferNavalCapture)
+				{
+					int iCityDamageAfterAttack = pCity->getDamage();
+					int iDamageDelta = iCityDamageAfterAttack - iCityDamageBeforeAttack;
+					if (iDamageDelta < max(8, iExpectedDamagePerTurn / 4))
+						SetCoastalAssaultLandCooldown(pCity, 2, "limited progress after coastal assault");
+				}
 
 				// Did it work?  If so, don't need a temporary dominance zone if had one here
 				if (pPlot->getOwner() == m_pPlayer->GetID())
@@ -4521,6 +4901,86 @@ struct PrSortByUnitId
 };
 
 /// Queues up attacks on enemy units on or adjacent to army's desired center
+
+bool CvTacticalAI::ExecutePreCaptureEmbarkedSupportStaging(CvPlot* pTargetPlot)
+{
+	if (!pTargetPlot || !pTargetPlot->isCity())
+		return false;
+
+	CvCity* pTargetCity = pTargetPlot->getPlotCity();
+	if (!pTargetCity || !pTargetCity->isCoastal())
+		return false;
+
+	if (m_pPlayer->GetPlayerTraits()->GetFreeUnitOnConquest() != NO_UNIT)
+		return false;
+
+	struct SStageChoice
+	{
+		SStageChoice(CvUnit* pUnit_, CvPlot* pPlot_, int iScore_) : pUnit(pUnit_), pPlot(pPlot_), iScore(iScore_) {}
+		CvUnit* pUnit;
+		CvPlot* pPlot;
+		int iScore;
+		bool operator<(const SStageChoice& rhs) const { return iScore > rhs.iScore; }
+	};
+
+	std::vector<SStageChoice> choices;
+	for (std::list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+	{
+		CvUnit* pUnit = m_pPlayer->getUnit(*it);
+		if (!pUnit || pUnit->TurnProcessed() || pUnit->getArmyID() != -1)
+			continue;
+
+		if (pUnit->getDomainType() != DOMAIN_LAND || !pUnit->canMove())
+			continue;
+
+		if (!(pUnit->IsCanAttackRanged() || pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD))
+			continue;
+
+		if (pUnit->GetCurrHitPoints() < pUnit->GetMaxHitPoints() * 2 / 3)
+			continue;
+
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pStagePlot = plotDirection(pTargetCity->getX(), pTargetCity->getY(), (DirectionTypes)iDir);
+			if (!pStagePlot || !pStagePlot->isWater())
+				continue;
+
+			const int iMoveFlags = CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY | CvUnit::MOVEFLAG_IGNORE_STACKING_SELF;
+			if (pUnit->TurnsToReachTarget(pStagePlot, iMoveFlags, 0) > 0)
+				continue;
+
+			int iDanger = pUnit->GetDanger(pStagePlot);
+			if (iDanger > pUnit->GetCurrHitPoints() / 3)
+				continue;
+
+			int iScore = pUnit->GetCurrHitPoints() - iDanger;
+			iScore += pUnit->IsCanAttackRanged() ? 80 : 30;
+			iScore += pStagePlot->GetNumFriendlyUnitsAdjacent(m_pPlayer->getTeam(), DOMAIN_SEA, true) * 25;
+			iScore += pStagePlot->IsFriendlyUnitAdjacent(m_pPlayer->getTeam(), true) ? 10 : 0;
+
+			choices.push_back(SStageChoice(pUnit, pStagePlot, iScore));
+		}
+	}
+
+	if (choices.empty())
+		return false;
+
+	std::stable_sort(choices.begin(), choices.end());
+	SStageChoice best = choices.front();
+	int iTurnsLeft = ExecuteMoveToPlot(best.pUnit, best.pPlot, true, CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY | CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+	if (iTurnsLeft == INT_MAX)
+		return false;
+
+	if (GC.getLogging() && GC.getAILogging())
+	{
+		CvString strLogString;
+		strLogString.Format("Pre-capture staging: %s moved to safe embark plot (%d,%d) for likely naval capture of %s",
+			best.pUnit->getName().GetCString(), best.pPlot->getX(), best.pPlot->getY(), pTargetCity->getNameNoSpace().c_str());
+		LogTacticalMessage(strLogString);
+	}
+
+	return true;
+}
 bool CvTacticalAI::CheckForEnemiesNearArmy(CvArmyAI* pArmy)
 {
 	if (!pArmy)
@@ -6343,6 +6803,13 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 	if (!pTargetPlot)
 		return;
 
+	CvCity* pCapturedCity = (pTargetPlot->getOwner() == m_pPlayer->GetID() && pTargetPlot->isCity()) ? pTargetPlot->getPlotCity() : NULL;
+	CvUnit* pExistingGarrison = pCapturedCity ? pCapturedCity->GetGarrisonedUnit() : NULL;
+	CvUnit* pImmediateDefender = pCapturedCity ? pTargetPlot->getBestDefender(m_pPlayer->GetID()) : NULL;
+	const bool bHasLandGarrison = (pExistingGarrison && pExistingGarrison->getDomainType() == DOMAIN_LAND);
+	const bool bHasRangedLandGarrison = (bHasLandGarrison && pExistingGarrison->IsCanAttackRanged());
+	const bool bHasImmediateLandDefender = (pImmediateDefender && pImmediateDefender->getDomainType() == DOMAIN_LAND);
+
 	struct SAssignment
 	{
 		SAssignment( CvUnit* unit, CvPlot* plot, int score, bool isAttack ) : pUnit(unit), pPlot(plot), iScore(score), bAttack(isAttack) {}
@@ -6386,6 +6853,30 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 			const uint32 plotFlags = pEvalPlot->GetPlotCacheFlags();
 			
 			int iBonus = plotDistance(*pEvalPlot,*pTargetPlot) * (-10);
+			if (pCapturedCity)
+			{
+				if (pEvalPlot == pTargetPlot)
+				{
+					iBonus += 40;
+					if (pUnit->CanGarrison())
+					{
+						iBonus += 40;
+						if (pUnit->IsCanAttackRanged())
+							iBonus += 70;
+						else
+							iBonus += 15;
+					}
+
+					if (bHasRangedLandGarrison)
+						iBonus -= 90;
+					else if (bHasLandGarrison || bHasImmediateLandDefender)
+						iBonus -= 40;
+				}
+				else if (plotDistance(*pEvalPlot, *pTargetPlot) == 1 && pUnit->IsCanAttackRanged())
+				{
+					iBonus += 25;
+				}
+			}
 			if (pUnit->IsCanAttackRanged())
 			{
 				if (pEvalPlot->getArea()!=pTargetPlot->getArea() && plotDistance(*pEvalPlot,*pTargetPlot)>pUnit->GetRange())
@@ -7602,6 +8093,13 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 	bool rtnValue = false;
 	bool bIsCityTarget = pTarget->isCity();
 	bool bAirUnitsAdded = false;
+	CvCity* pTargetCity = bIsCityTarget ? pTarget->getPlotCity() : NULL;
+	bool bIslandTarget = false;
+	bool bNavalDominatedTarget = false;
+	int iLandApproaches = 0;
+	int iWaterApproaches = 0;
+	bool bPreferNavalCapture = IsNavyLedCoastalAssaultTarget(pTargetCity, bIslandTarget, bNavalDominatedTarget, iLandApproaches, iWaterApproaches);
+	bool bLandAssaultCooldownActive = bPreferNavalCapture && IsCoastalAssaultLandCooldownActive(pTargetCity);
 
 	// Detect ready dedicated bombers so we only draft fighters for strikes when needed
 	bool bBomberAvailable = false;
@@ -7638,6 +8136,21 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 		// Some units can't enter cities
 		if (pLoopUnit->isNoCapture() && bIsCityTarget)
 			continue;
+
+		if (bIsCityTarget && pTargetCity && ShouldSkipLandUnitForCoastalCapture(pLoopUnit, pTargetCity, bPreferNavalCapture, bLandAssaultCooldownActive))
+		{
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strLogString;
+				strLogString.Format("Skipping %s for coastal assault on %s: %s%s%s",
+					pLoopUnit->getName().GetCString(), pTargetCity->getNameNoSpace().c_str(),
+					bLandAssaultCooldownActive ? "coastal land assault cooldown active" : "unsafe cross-water land participation",
+					bIslandTarget ? " [ISLAND CITY]" : "",
+					bNavalDominatedTarget ? " [NAVAL-DOMINATED]" : "");
+				LogTacticalMessage(strLogString);
+			}
+			continue;
+		}
 
 		// Don't bother with pathfinding if we're very far away
 		if (plotDistance(*pLoopUnit->plot(), *pTarget) > pLoopUnit->baseMoves(false) * 4 && !pLoopUnit->getUnitInfo().IsCanChangePort())
@@ -7820,24 +8333,11 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 				bool bCoastalCity = pCity->isCoastal();
 				int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
 				
-				// Check if this is an island city (no land approaches)
-				bool bIslandCity = true;
+				bool bIslandCity = false;
 				int iLandApproaches = 0;
 				int iWaterApproaches = 0;
-				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
-				{
-					CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
-					if (pAdj)
-					{
-						if (pAdj->isWater())
-							iWaterApproaches++;
-						else if (!pAdj->isImpassable(pLoopUnit->getTeam()))
-						{
-							iLandApproaches++;
-							bIslandCity = false;
-						}
-					}
-				}
+				GetCoastalApproachCounts(pCity, iLandApproaches, iWaterApproaches);
+				bIslandCity = (iLandApproaches == 0);
 				
 				if (pLoopUnit->getDomainType() == DOMAIN_SEA)
 				{

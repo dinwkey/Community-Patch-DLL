@@ -12,6 +12,8 @@
 
 #include "CvAStar.h"
 
+#include <map>
+
 class FDataStream;
 
 //for tactical combat
@@ -499,6 +501,10 @@ private:
 	bool IsExpectedToDamageWithRangedAttack(CvUnit* pAttacker, CvPlot* pTarget, int iMinDamage=0);
 
 	bool MoveToEmptySpaceNearTarget(CvUnit* pUnit, CvPlot* pTargetPlot, DomainTypes eDomain, int iMaxTurns, bool bMustBeSafePath = false);
+	bool ExecutePreCaptureEmbarkedSupportStaging(CvPlot* pTargetPlot);
+	bool IsCoastalAssaultLandCooldownActive(const CvCity* pCity) const;
+	void SetCoastalAssaultLandCooldown(const CvCity* pCity, int iCooldownTurns, const char* szReason = NULL);
+	void ExpireCoastalAssaultLandCooldowns();
 
 	CvPlot* FindBestBarbarianLandTarget(CvUnit* pUnit);
 	CvPlot* FindBestBarbarianSeaTarget(CvUnit* pUnit);
@@ -530,6 +536,7 @@ private:
 
 	// Cached per-turn state
 	bool m_bImminentAttack; // computed once in Update(), true if any nearby major has IsAttackLikelyImminent
+	std::map<int, int> m_coastalLandAssaultCooldownUntilTurn;
 
 	// Dominance zone info
 	int m_eCurrentTargetType;

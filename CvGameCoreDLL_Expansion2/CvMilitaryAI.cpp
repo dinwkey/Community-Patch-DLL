@@ -24,6 +24,15 @@
 
 namespace
 {
+enum CoalitionLiberationCase
+{
+	COALITION_LIBERATION_NONE,
+	COALITION_LIBERATION_CITY_STATE,
+	COALITION_LIBERATION_DEAD_MAJOR,
+	COALITION_LIBERATION_ORIGINAL_CAPITAL,
+	COALITION_LIBERATION_OTHER_MAJOR,
+};
+
 int CountUnassignedCombatNavalUnits(const CvPlayer* pPlayer)
 {
 	if (!pPlayer)
@@ -41,6 +50,182 @@ int CountUnassignedCombatNavalUnits(const CvPlayer* pPlayer)
 	}
 
 	return iCount;
+}
+
+float GetCoalitionPartnerTargetModifier(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner)
+{
+	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
+		return 1.f;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return 1.f;
+
+	float fModifier = (pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING) ? 0.96f : 0.86f;
+
+	if (pDiploAI->IsFriendOrAlly(eOtherPlayer) || pDiploAI->IsDoFAccepted(eOtherPlayer))
+		fModifier += 0.08f;
+
+	if (pDiploAI->IsDenouncedPlayer(eOtherPlayer) || pDiploAI->IsDenouncedByPlayer(eOtherPlayer))
+		fModifier -= 0.08f;
+
+	return max(0.72f, min(1.02f, fModifier));
+}
+
+CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pTargetCity, PlayerTypes eLiberationTarget)
+{
+	if (!pTargetCity || eLiberationTarget == NO_PLAYER)
+		return COALITION_LIBERATION_NONE;
+
+	const CvPlayer& kLiberationTarget = GET_PLAYER(eLiberationTarget);
+	if (kLiberationTarget.isMinorCiv())
+		return COALITION_LIBERATION_CITY_STATE;
+
+	if (!kLiberationTarget.isMajorCiv())
+		return COALITION_LIBERATION_NONE;
+
+	if (!kLiberationTarget.isAlive())
+		return COALITION_LIBERATION_DEAD_MAJOR;
+
+	if (pTargetCity->IsOriginalCapitalForPlayer(eLiberationTarget) || (pTargetCity->IsOriginalMajorCapital() && pTargetCity->getOriginalOwner() == eLiberationTarget))
+		return COALITION_LIBERATION_ORIGINAL_CAPITAL;
+
+	return COALITION_LIBERATION_OTHER_MAJOR;
+}
+
+float GetCoalitionOutcomeTargetModifier(const CvPlayer* pPlayer, const CvCity* pTargetCity, PlayerTypes eOtherPlayer)
+{
+	if (!pPlayer || !pTargetCity || eOtherPlayer == NO_PLAYER)
+		return 1.f;
+
+	CvPlayer& kOtherPlayer = GET_PLAYER(eOtherPlayer);
+	if (!kOtherPlayer.isAlive() || !kOtherPlayer.isMajorCiv())
+		return 1.f;
+
+	float fModifier = 1.f;
+	CvDiplomacyAI* pOurDiplo = pPlayer->GetDiplomacyAI();
+	CvDiplomacyAI* pTheirDiplo = kOtherPlayer.GetDiplomacyAI();
+	if (!pOurDiplo || !pTheirDiplo)
+		return fModifier;
+
+	CvCity* pMutableCity = const_cast<CvCity*>(pTargetCity);
+	PlayerTypes eLiberationTarget = kOtherPlayer.GetPlayerToLiberate(pMutableCity);
+	CoalitionLiberationCase eLiberationCase = GetCoalitionLiberationCase(pTargetCity, eLiberationTarget);
+	const bool bLikelyLiberate = (eLiberationTarget != NO_PLAYER) && pTheirDiplo->IsTryingToLiberate(pMutableCity);
+	if (bLikelyLiberate)
+	{
+		switch (eLiberationCase)
+		{
+		case COALITION_LIBERATION_CITY_STATE:
+			fModifier += 0.14f;
+			break;
+		case COALITION_LIBERATION_DEAD_MAJOR:
+			fModifier += 0.16f;
+			break;
+		case COALITION_LIBERATION_ORIGINAL_CAPITAL:
+			fModifier += 0.10f;
+			break;
+		case COALITION_LIBERATION_OTHER_MAJOR:
+			fModifier += 0.05f;
+			break;
+		default:
+			break;
+		}
+
+		int iLiberationValue = -CvDiplomacyAIHelpers::GetCityLiberationValue(pMutableCity, eOtherPlayer, eLiberationTarget, pPlayer->GetID());
+		if (iLiberationValue > 0)
+			fModifier += min(0.18f, iLiberationValue / 350.f);
+
+		if (GET_PLAYER(eLiberationTarget).getTeam() == pPlayer->getTeam())
+			fModifier += 0.06f;
+
+		return max(0.80f, min(1.25f, fModifier));
+	}
+
+	switch (eLiberationCase)
+	{
+	case COALITION_LIBERATION_CITY_STATE:
+		fModifier -= 0.10f;
+		break;
+	case COALITION_LIBERATION_DEAD_MAJOR:
+		fModifier -= 0.13f;
+		break;
+	case COALITION_LIBERATION_ORIGINAL_CAPITAL:
+		fModifier -= 0.08f;
+		break;
+	case COALITION_LIBERATION_OTHER_MAJOR:
+		fModifier -= 0.03f;
+		break;
+	default:
+		break;
+	}
+
+	if (kOtherPlayer.GetPlayerTraits()->IsNoAnnexing())
+		fModifier += 0.04f;
+
+	const bool bSnowballer = pTheirDiplo->IsGoingForWorldConquest() || pTheirDiplo->IsCloseToWorldConquest() || pOurDiplo->GetWarmongerThreat(eOtherPlayer) >= THREAT_MAJOR;
+	if (bSnowballer)
+		fModifier -= 0.08f;
+
+	if (kOtherPlayer.GetEconomicMight() > pPlayer->GetEconomicMight() * 11 / 10)
+		fModifier -= 0.04f;
+
+	if (kOtherPlayer.GetScore() > pPlayer->GetScore() * 11 / 10)
+		fModifier -= 0.04f;
+
+	if (eLiberationCase == COALITION_LIBERATION_ORIGINAL_CAPITAL && pTargetCity->getOriginalOwner() != NO_PLAYER && pTargetCity->getOriginalOwner() != eOtherPlayer)
+		fModifier -= 0.03f;
+
+	const int iCityValueForOther = pMutableCity->getEconomicValue(eOtherPlayer);
+	const int iCityValueForUs = pMutableCity->getEconomicValue(pPlayer->GetID());
+	if (iCityValueForOther > iCityValueForUs * 6 / 5)
+		fModifier -= 0.05f;
+
+	return max(0.60f, min(1.10f, fModifier));
+}
+
+float GetCoalitionWarTargetModifier(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return 1.f;
+
+	PlayerTypes eSelf = pPlayer->GetID();
+	PlayerTypes eTargetOwner = pTargetCity->getOwner();
+	if (eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+		return 1.f;
+
+	float fModifier = 1.f;
+	int iOtherAttackers = 0;
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+	{
+		PlayerTypes eLoopPlayer = static_cast<PlayerTypes>(iPlayerLoop);
+		if (eLoopPlayer == eSelf || eLoopPlayer == eTargetOwner)
+			continue;
+
+		CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
+		if (!kLoopPlayer.isAlive())
+			continue;
+
+		if (!kLoopPlayer.IsAtWarWith(eTargetOwner))
+			continue;
+
+		if (kLoopPlayer.IsAtWarWith(eSelf))
+			continue;
+
+		iOtherAttackers++;
+		fModifier *= GetCoalitionPartnerTargetModifier(pPlayer, eLoopPlayer, eTargetOwner);
+		fModifier *= GetCoalitionOutcomeTargetModifier(pPlayer, pTargetCity, eLoopPlayer);
+	}
+
+	if (iOtherAttackers <= 0)
+		return 1.f;
+
+	if (pTargetCity->getDamage() * 2 >= pTargetCity->GetMaxHitPoints())
+		fModifier += 0.08f;
+	else if (pTargetCity->getDamage() * 3 >= pTargetCity->GetMaxHitPoints())
+		fModifier += 0.04f;
+
+	return max(0.70f, min(1.00f, fModifier));
 }
 }
 
@@ -1374,6 +1559,9 @@ int CvMilitaryAI::ScoreAttackTarget(const CvAttackTarget& target)
 			}
 		}
 	}
+
+	// Shared wars still have value, but we discount targets where unrelated majors are also likely to benefit.
+	fDesirability *= GetCoalitionWarTargetModifier(m_pPlayer, pTargetCity);
 
 	// Economic value / hardness of target
 	float fEconomicValue =  sqrt( pTargetCity->getEconomicValue( GetPlayer()->GetID() ) / float(max(1,pTargetCity->GetMaxHitPoints()-pTargetCity->getDamage())) );
