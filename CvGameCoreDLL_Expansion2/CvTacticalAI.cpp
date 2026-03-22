@@ -3848,6 +3848,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			
 			// Grab units that make sense for this move type
 			CvUnit* pUnit = FindUnitForThisMove(AI_TACTICAL_GARRISON, pPlot, iSearchRange);
+			bool bNeedEmergencyParadrop = false;
 			if (pUnit)
 			{
 				//move out old garrison if necessary
@@ -3865,9 +3866,10 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				// dangerous forest/hill tiles near enemy forces when a longer road exists.
 				int iGarrisonMoveFlags = CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER;
 				int iTurnsLeft = ExecuteMoveToPlot(pUnit, pPlot, true, iGarrisonMoveFlags);
+				bool bHeadingToGarrison = (iTurnsLeft != INT_MAX) && (pUnit->GetMissionAIPlot() == pPlot);
 
 				//if everything went according to plan ...
-				if (iTurnsLeft != INT_MAX)
+				if (bHeadingToGarrison)
 				{
 					if (GC.getLogging() && GC.getAILogging())
 					{
@@ -3880,10 +3882,14 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 					//just in case we're doing this with enemy arounds and have movement left
 					TacticalAIHelpers::PerformOpportunityAttack(pUnit);
 				}
+				else
+				{
+					bNeedEmergencyParadrop = true;
+				}
 			}
 			// No ground unit available in range - try paradrop reinforcement for urgent cases
 			// Paratroopers can drop directly into a city that desperately needs a garrison
-			else if (pCity->isInDangerOfFalling() || (pCity->NeedsGarrison() && bProactiveThreat))
+			if ((bNeedEmergencyParadrop || !pUnit) && (pCity->isInDangerOfFalling() || (pCity->NeedsGarrison() && bProactiveThreat)))
 			{
 				if (FindParatroopersWithinStrikingDistance(pPlot, false)) // Don't check danger - we WANT to drop into danger
 				{
