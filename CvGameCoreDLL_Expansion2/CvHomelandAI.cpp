@@ -17,9 +17,42 @@
 #include "cvStopWatch.h"
 #include "CvTypes.h"
 #include "CvMilitaryAI.h"
+#include "CvAIOperation.h"
 
 // must be included after all other headers
 #include "LintFree.h"
+
+namespace
+{
+int GetCarrierLoadingPriority(const CvUnit* pUnit)
+{
+	if (!pUnit)
+		return 99;
+
+	switch (pUnit->getUnitInfo().GetDefaultUnitAIType())
+	{
+	case UNITAI_ATTACK_AIR:
+		return 0;
+	case UNITAI_DEFENSE_AIR:
+		return 1;
+	case UNITAI_ICBM:
+	case UNITAI_MISSILE_AIR:
+		return 2;
+	default:
+		return 3;
+	}
+}
+
+bool CarrierLoadingPrioritySort(const CvUnit* pLeft, const CvUnit* pRight)
+{
+	int iLeftPriority = GetCarrierLoadingPriority(pLeft);
+	int iRightPriority = GetCarrierLoadingPriority(pRight);
+	if (iLeftPriority != iRightPriority)
+		return iLeftPriority < iRightPriority;
+
+	return pLeft->GetID() < pRight->GetID();
+}
+}
 
 CvHomelandUnit::CvHomelandUnit() :
 	m_iID(0)
@@ -5935,14 +5968,25 @@ void CvHomelandAI::ExecuteAircraftMoves()
 	}
 
 	//Use collected statistics to guide rebasing strategy
-	//If we have more defensive than offensive aircraft, prioritize offensive aircraft to combat bases
-	bool bPrioritizeOffensiveToCarriers = (nAirUnitsOffensive < nAirUnitsDefensive);
+	//Active carrier groups always want strike aircraft loaded first; otherwise fall back to global balance.
+	bool bHasActiveCarrierGroup = false;
+	for (size_t i = 0; i < m_pPlayer->getNumAIOperations(); i++)
+	{
+		CvAIOperation* pOp = m_pPlayer->getAIOperationByIndex(i);
+		if (pOp && pOp->GetOperationType() == AI_OPERATION_CARRIER_GROUP && pOp->GetOperationState() != AI_OPERATION_STATE_ABORTED)
+		{
+			bHasActiveCarrierGroup = true;
+			break;
+		}
+	}
+	bool bPrioritizeOffensiveToCarriers = bHasActiveCarrierGroup || (nAirUnitsOffensive < nAirUnitsDefensive);
 	
 	if(GC.getLogging() && GC.getAILogging())
 	{
 		CvString strLogString;
-		strLogString.Format("Air unit distribution - Offensive: %d, Defensive: %d, InCarriers: %d, InCities: %d, CarrierSlots: %d, Prioritize Offensive to Carriers: %s",
+		strLogString.Format("Air unit distribution - Offensive: %d, Defensive: %d, InCarriers: %d, InCities: %d, CarrierSlots: %d, Active Carrier Group: %s, Prioritize Offensive to Carriers: %s",
 			nAirUnitsOffensive, nAirUnitsDefensive, nAirUnitsInCarriers, nAirUnitsInCities, nSlotsInCarriers,
+			bHasActiveCarrierGroup ? "YES" : "NO",
 			bPrioritizeOffensiveToCarriers ? "YES" : "NO");
 		LogHomelandMessage(strLogString);
 	}
@@ -5976,6 +6020,8 @@ void CvHomelandAI::ExecuteAircraftMoves()
 
 	//todo: make sure the units are not blocking each other because of max capacity
 	//todo: sort also by plot distance? right now there are many targets with the same score
+	if (bPrioritizeOffensiveToCarriers)
+		std::stable_sort(vCombatReadyUnits.begin(), vCombatReadyUnits.end(), CarrierLoadingPrioritySort);
 
 	//for now we simply try to move units to the most desirable base
 	//lowest score first for now
