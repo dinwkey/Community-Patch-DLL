@@ -844,7 +844,7 @@ int CvAIOperation::GetStepDistanceBetweenPlots(CvPlot* pCurrentPosition, CvPlot*
 /// Report percentage distance traveled from muster point to target (using army that is furthest along)
 int CvAIOperation::PercentFromMusterPointToTarget() const
 {
-	int iRtnValue = -INT_MAX;
+	int iRtnValue = 0;
 
 	switch(m_eCurrentState)
 	{
@@ -868,7 +868,12 @@ int CvAIOperation::PercentFromMusterPointToTarget() const
 			if (pArmy && pArmy->GetGoalPlot())
 			{
 				CvPlot *pCenterOfMass = pArmy->GetCenterOfMass();
+				if (!pCenterOfMass || m_iDistanceMusterToTarget <= 0)
+					continue;
+
 				int iDistanceCurrentToTarget = GetStepDistanceBetweenPlots( pCenterOfMass, pArmy->GetGoalPlot() );
+				if (iDistanceCurrentToTarget < 0)
+					continue;
 
 				// If within 2 of the final goal, consider ourselves there
 				if (iDistanceCurrentToTarget <= 2)
@@ -877,7 +882,8 @@ int CvAIOperation::PercentFromMusterPointToTarget() const
 				}
 				else
 				{
-					int iTempValue = 100 - (100 * iDistanceCurrentToTarget / MAX(1,m_iDistanceMusterToTarget));
+					int iTempValue = 100 - (100 * iDistanceCurrentToTarget / m_iDistanceMusterToTarget);
+					iTempValue = range(iTempValue, 0, 99);
 					if(iTempValue > iRtnValue)
 					{
 						iRtnValue = iTempValue;
