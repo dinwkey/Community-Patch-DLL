@@ -346,6 +346,7 @@ public:
 	// Public turn update routines
 	void Update();
 	void CleanUp();
+	void UpdateForHomelandSupport();
 	bool IsImminentAttackCached() const { return m_bImminentAttack; }
 
 	// temporary focus of attention

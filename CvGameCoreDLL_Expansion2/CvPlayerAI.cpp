@@ -273,7 +273,7 @@ void CvPlayerAI::AI_unitUpdate(bool bUpdateHomelandAI)
 	if(isHuman(ISHUMAN_AI_UNITS))
 	{
 		CvUnit::dispatchingNetMessage(true);
-		GetTacticalAI()->UpdateVisibility();
+		GetTacticalAI()->UpdateForHomelandSupport();
 		GetHomelandAI()->Update(bUpdateHomelandAI);
 		GetTacticalAI()->CleanUp();
 		CvUnit::dispatchingNetMessage(false);

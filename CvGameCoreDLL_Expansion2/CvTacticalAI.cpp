@@ -348,6 +348,16 @@ void CvTacticalAI::Update()
 	ProcessDominanceZones();
 }
 
+void CvTacticalAI::UpdateForHomelandSupport()
+{
+	m_bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
+	ExpireCoastalAssaultLandCooldowns();
+
+	UpdateVisibility();
+	DropOldFocusAreas();
+	FindTacticalTargets();
+}
+
 /// Clear up memory usage
 void CvTacticalAI::CleanUp()
 {
