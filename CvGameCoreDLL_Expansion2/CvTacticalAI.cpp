@@ -3025,7 +3025,8 @@ void CvTacticalAI::PlotConvoyEscortMoves()
 		for (size_t i = 0; i < vAssigned.size(); i++)
 		{
 			CvUnit* pEscort = vAssigned[i];
-			ExecuteMoveToPlot(pEscort, pConvoyOrigin, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
+			if (ExecuteMoveToPlot(pEscort, pConvoyOrigin, false, CvUnit::MOVEFLAG_APPROX_TARGET_RING1) != INT_MAX)
+				UnitProcessed(pEscort->GetID());
 		}
 	}
 }
@@ -3158,7 +3159,13 @@ void CvTacticalAI::PlotAntiInvasionMoves()
 			}
 
 			// Move toward target
-			ExecuteMoveToPlot(pUnit, pBestTarget, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
+			if (ExecuteMoveToPlot(pUnit, pBestTarget, false, CvUnit::MOVEFLAG_APPROX_TARGET_RING1) == INT_MAX)
+			{
+				iUnit++;
+				continue;
+			}
+
+			UnitProcessed(pUnit->GetID());
 
 			if (GC.getLogging() && GC.getAILogging())
 			{
