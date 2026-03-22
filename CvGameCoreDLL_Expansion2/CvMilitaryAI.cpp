@@ -4248,7 +4248,7 @@ void CvMilitaryAI::CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity
 	}
 
 	//first a quick one if necessary
-	bool bHasOperationUnderway = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_RAPID_RESPONSE, NO_PLAYER, pThreatenedCity->plot()) != NULL;
+	bool bHasOperationUnderway = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_RAPID_RESPONSE, eEnemy, pThreatenedCity->plot()) != NULL;
 	CvPlot* pStartPlot = OperationalAIHelpers::FindEnemiesNearHomelandPlot(m_pPlayer->GetID(), eEnemy, DOMAIN_LAND, pThreatenedCity->plot(), 8);
 	if (!bHasOperationUnderway && pStartPlot != NULL && pStartPlot->getOwningCity() != NULL)
 		m_pPlayer->addAIOperation(AI_OPERATION_RAPID_RESPONSE, 1, eEnemy, pStartPlot->getOwningCity());
@@ -4290,7 +4290,7 @@ void CvMilitaryAI::CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity
 	if(pCoastalPlot != NULL)
 	{
 		bool bIsEnemyZone = m_pPlayer->GetTacticalAI()->GetTacticalAnalysisMap()->IsInEnemyDominatedZone(pThreatenedCity->plot());
-		bool bHasOperationUnderway = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_NAVAL_SUPERIORITY, NO_PLAYER, pThreatenedCity->plot()) != NULL;
+		bool bHasOperationUnderway = m_pPlayer->getFirstAIOperationOfType(AI_OPERATION_NAVAL_SUPERIORITY, ePlayer, pThreatenedCity->plot()) != NULL;
 		if (!bHasOperationUnderway || bIsEnemyZone || bSevereBlockade)
 			m_pPlayer->addAIOperation(AI_OPERATION_NAVAL_SUPERIORITY, 1, ePlayer, pThreatenedCity);
 	}
