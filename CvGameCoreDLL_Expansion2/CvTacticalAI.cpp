@@ -7867,7 +7867,10 @@ void CvTacticalAI::ExecuteEscortEmbarkedMoves(std::vector<CvUnit*> vTargets)
 
 			if (pBestTarget)
 			{
-				ExecuteMoveToPlot(pUnit, pBestTarget->plot(), true, iBestMoveFlag);
+				if (ExecuteMoveToPlot(pUnit, pBestTarget->plot(), false, iBestMoveFlag) == INT_MAX)
+					continue;
+
+				UnitProcessed(m_CurrentMoveUnits[iI].GetID());
 
 				//If we can shoot while doing this, do it!
 				if (TacticalAIHelpers::PerformRangedOpportunityAttack(pUnit))
