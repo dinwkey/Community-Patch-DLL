@@ -5951,7 +5951,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				}
 			}
 
-			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnitPlot,m_pPlayer->GetID(), false, iAssumedRange);
+			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnitPlot,m_pPlayer->GetID(), false, iAssumedRange, NULL);
 			vPotentialBases.push_back( SPlotWithScore( pLoopUnitPlot, iScore) );
 			scoreLookup[pLoopUnitPlot->GetPlotIndex()] = iScore;
 		}
@@ -5962,7 +5962,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 	{
 		CvPlot* pTarget = pLoopCity->plot();
 
-		int iScore = HomelandAIHelpers::ScoreAirBase(pTarget, m_pPlayer->GetID(), false, iAssumedRange); //estimate a range
+		int iScore = HomelandAIHelpers::ScoreAirBase(pTarget, m_pPlayer->GetID(), false, iAssumedRange, NULL); //estimate a range
 		vPotentialBases.push_back( SPlotWithScore( pTarget, iScore ) );
 		scoreLookup[pTarget->GetPlotIndex()] = iScore;
 	}
@@ -6125,6 +6125,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		bool bBest = false;
 		CvUnit* pUnit = vCombatReadyUnits[i];
 		CvPlot* pNewBase = NULL;
+		int iCurrentScore = HomelandAIHelpers::ScoreAirBase(pUnit->plot(), m_pPlayer->GetID(), false, pUnit->GetRange(), pUnit);
 		
 		// For offensive air units: if we're prioritizing offensive to carriers (defensive units outnumber offensive),
 		// then bias this unit toward carrier-based locations
@@ -6294,7 +6295,6 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			// 1. No missile platform available, OR
 			// 2. Carrier score is significantly higher (40+ points better) due to positioning
 			
-			int iCurrentScore = scoreLookup[pUnit->plot()->GetPlotIndex()];
 			const int iCarrierAdvantageThreshold = 40; // Carrier must be this much better to override
 			
 			if (pBestMissilePlatform && iBestMissilePlatformScore > iCurrentScore)
@@ -6359,10 +6359,11 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		
 		for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
 		{
+			int iCandidateScore = HomelandAIHelpers::ScoreAirBase(it->pPlot, m_pPlayer->GetID(), false, pUnit->GetRange(), pUnit);
 			//unsuitable - we want to fight!
 			//Exception: if prioritizing offensive to carriers, allow carrier bases even with marginal scores
 			bool bIsCarrierBase = !it->pPlot->isCity();
-			if (it->score<0 && !(bPrioritizeOffensiveToCarriers && bIsOffensiveAir && bIsCarrierBase))
+			if (iCandidateScore<0 && !(bPrioritizeOffensiveToCarriers && bIsOffensiveAir && bIsCarrierBase))
 				continue;
 
 			//make sure the unit fits the destination (ie missile to cruiser, fighter to carrier)
@@ -6370,7 +6371,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				continue;
 
 			//apparently we're already in the best possible base?
-			if (scoreLookup[pUnit->plot()->GetPlotIndex()] >= it->score)
+			if (iCurrentScore >= iCandidateScore)
 			{
 				bBest = true;
 				break;
@@ -6406,6 +6407,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 
 		if (pNewBase)
 		{
+			int iNewBaseScore = HomelandAIHelpers::ScoreAirBase(pNewBase, m_pPlayer->GetID(), false, pUnit->GetRange(), pUnit);
 			if(GC.getLogging() && GC.getAILogging())
 			{
 				CvString strLogString;
@@ -6426,15 +6428,15 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				if (bToCarrier && bIsOffensiveAir && bPrioritizeOffensiveToCarriers)
 					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d) [STRATEGY: prioritizing offensive to carriers]", 
 						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
-						pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
+						pNewBase->getX(), pNewBase->getY(), iNewBaseScore);
 				else if (bToCarrier)
 					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d)", 
 						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
-						pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
+						pNewBase->getX(), pNewBase->getY(), iNewBaseScore);
 				else
 					strLogString.Format("Rebasing %s (%d) from %d,%d to %d,%d for combat (score %d)", 
 						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
-						pNewBase->getX(), pNewBase->getY(), scoreLookup[pNewBase->GetPlotIndex()]);
+						pNewBase->getX(), pNewBase->getY(), iNewBaseScore);
 				LogHomelandMessage(strLogString);
 			}
 
@@ -7688,10 +7690,16 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 
 int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool bDesperate, int iRange)
 {
+	return ScoreAirBase(pBasePlot, ePlayer, bDesperate, iRange, NULL);
+}
+
+int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool bDesperate, int iRange, const CvUnit* pUnit)
+{
 	if (!pBasePlot || ePlayer==NO_PLAYER)
 		return false;
 
 	CvPlayer& kPlayer = GET_PLAYER(ePlayer);
+	const UnitAITypes eUnitAI = pUnit ? pUnit->getUnitInfo().GetDefaultUnitAIType() : NO_UNITAI;
 
 	int iBaseScore = 1;
 	if (pBasePlot->isCity())
@@ -7759,19 +7767,37 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 		switch (allTargets[iI].GetTargetType())
 		{
 		case AI_TACTICAL_TARGET_ENEMY_COMBAT_UNIT:
-			iBaseScore += 8;
+			if (eUnitAI == UNITAI_DEFENSE_AIR)
+				iBaseScore += 2;
+			else
+				iBaseScore += 8;
 			break;
 		case AI_TACTICAL_TARGET_ENEMY_CITY:
 			{
 				//for nukes we want only cities, but ones we haven't recently nuked. for conventional air force cities are optional
 				CvPlot* pTargetPlot = GC.getMap().plot(allTargets[iI].GetTargetX(), allTargets[iI].GetTargetY());
 				if (!pTargetPlot->getPlotCity()->isInDangerOfFalling())
-					iBaseScore += 20; 
+				{
+					if (eUnitAI == UNITAI_DEFENSE_AIR)
+						iBaseScore += 4;
+					else
+						iBaseScore += 20;
+				}
 				break;
 			}
 		default:
 			break;
 		}
+	}
+
+	if (eUnitAI == UNITAI_DEFENSE_AIR)
+	{
+		int iEnemyAirPressure = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, true, true);
+		iBaseScore += iEnemyAirPressure * 6;
+
+		CvUnit* pMutableUnit = const_cast<CvUnit*>(pUnit);
+		if (pMutableUnit && kPlayer.GetMilitaryAI()->GetBestAirSweepTarget(pMutableUnit))
+			iBaseScore += 20;
 	}
 
 	// Bonus for visibility: fighters can provide early warning and scouting (typical fighter vision range is 2)
@@ -7830,8 +7856,11 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 		}
 	}
 
-	// Add visibility bonus to base score (cap at reasonable value to not overwhelm combat scoring)
-	iBaseScore += min(iVisibilityBonus, 15);
+	// Add visibility bonus to base score (fighters benefit most from scouting bases)
+	if (eUnitAI == UNITAI_DEFENSE_AIR)
+		iBaseScore += min(iVisibilityBonus, 15);
+	else
+		iBaseScore += min(iVisibilityBonus, 5);
 
 	return iBaseScore;
 }
