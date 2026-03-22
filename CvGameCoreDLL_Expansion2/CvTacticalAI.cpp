@@ -4717,7 +4717,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 							ExecuteMoveToPlot(pEscort, pOperation->GetTargetPlot(),true,CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
 
 							//try again next turn
-							pOperation->SetMusterPlot(pCivilian->plot());
+							pOperation->SetMusterPlot(pOperation->GetTargetPlot());
 
 							if(GC.getLogging() && GC.getAILogging())
 							{
