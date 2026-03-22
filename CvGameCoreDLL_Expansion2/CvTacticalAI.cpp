@@ -6920,7 +6920,8 @@ bool CvTacticalAI::PositionUnitsAroundTarget(const vector<CvUnit*>& vUnits, CvPl
 		if (pZone && pZone->GetOverallDominanceFlag() != TACTICAL_DOMINANCE_FRIENDLY && !pUnit->isEmbarked())
 			iFlags |= CvUnit::MOVEFLAG_NO_EMBARK;
 
-		ExecuteMoveToPlot(pUnit, pTarget, true, iFlags);
+		if (ExecuteMoveToPlot(pUnit, pTarget, false, iFlags) != INT_MAX)
+			UnitProcessed(pUnit->GetID());
 	}
 
 	//third round: if the unit is in an army (no tactical moves) and did not move yet, move it to safety now
