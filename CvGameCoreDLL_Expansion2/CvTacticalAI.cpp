@@ -2909,7 +2909,8 @@ void CvTacticalAI::PlotNavalPatrolStationMoves()
 		}
 		else
 		{
-			ExecuteMoveToPlot(pUnit, pBestTarget, true, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+			if (ExecuteMoveToPlot(pUnit, pBestTarget, false, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF) != INT_MAX)
+				UnitProcessed(pUnit->GetID());
 		}
 
 		vTargets.erase(std::remove(vTargets.begin(), vTargets.end(), pBestTarget), vTargets.end());
@@ -3292,7 +3293,8 @@ void CvTacticalAI::PlotStraitDefenseMoves()
 		}
 		else
 		{
-			ExecuteMoveToPlot(pUnit, pTarget, true, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+			if (ExecuteMoveToPlot(pUnit, pTarget, false, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF) != INT_MAX)
+				UnitProcessed(pUnit->GetID());
 		}
 
 		if (GC.getLogging() && GC.getAILogging())
