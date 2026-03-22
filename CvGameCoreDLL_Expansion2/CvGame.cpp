@@ -2064,8 +2064,9 @@ bool CvGame::hasTurnTimerExpired(PlayerTypes playerID)
 					}
 				}
 
-				if((!curPlayer.isTurnActive() || gDLL->HasReceivedTurnComplete(playerID)) //Active player has finished their turn.
-					&& getNumSequentialHumans() > 1)	//or sequential turn mode
+				// updateTimers() runs before CheckPlayerTurnDeactivate(), so a received turn-complete signal can arrive
+				// while this player is still technically turn-active. Keep showing the active-turn timer until deactivation.
+				if(!curPlayer.isTurnActive() && getNumSequentialHumans() > 1)	//or sequential turn mode
 				{//It's not our turn and there are sequential turn human players in the game.
 
 					//In this case, the turn timer shows progress in terms of the max possible time until our next turn.
