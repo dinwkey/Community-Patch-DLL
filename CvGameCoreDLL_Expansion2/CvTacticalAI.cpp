@@ -320,6 +320,7 @@ static void GetCoastalApproachCounts(const CvCity* pCity, int& iLandApproaches, 
 static bool IsNavyLedCoastalAssaultTarget(const CvCity* pCity, bool& bIslandCity, bool& bNavalDominatedCity, int& iLandApproaches, int& iWaterApproaches);
 static bool CanReachLandAttackPositionWithoutEmbark(const CvUnit* pUnit, const CvCity* pCity, bool bAllowOneTurnSetup);
 static bool ShouldSkipLandUnitForCoastalCapture(const CvUnit* pUnit, const CvCity* pCity, bool bPreferNavalCapture, bool bLandAssaultCooldownActive);
+static bool IsCoalitionRelevantCityTargetOwner(PlayerTypes eTargetOwner);
 static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner);
 static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget);
 static bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pCity);
@@ -986,6 +987,15 @@ static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOthe
 
 	return false;
 }
+
+static bool IsCoalitionRelevantCityTargetOwner(PlayerTypes eTargetOwner)
+{
+	if (eTargetOwner == NO_PLAYER || eTargetOwner == BARBARIAN_PLAYER)
+		return false;
+
+	const CvPlayer& kTargetOwner = GET_PLAYER(eTargetOwner);
+	return kTargetOwner.isAlive() && (kTargetOwner.isMajorCiv() || kTargetOwner.isMinorCiv());
+}
 static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget)
 {
 	if (!pCity || eLiberationTarget == NO_PLAYER)
@@ -1098,7 +1108,7 @@ static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOther
 		return 0;
 
 	PlayerTypes eTargetOwner = pCity->getOwner();
-	if (eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+	if (!IsCoalitionRelevantCityTargetOwner(eTargetOwner))
 		return 0;
 
 	CvDiplomacyAI* pOurDiplo = pPlayer->GetDiplomacyAI();
@@ -1179,7 +1189,7 @@ static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* 
 		return;
 
 	PlayerTypes eTargetOwner = pCity->getOwner();
-	if (eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+	if (!IsCoalitionRelevantCityTargetOwner(eTargetOwner))
 		return;
 
 	for (int iPlotLoop = 0; iPlotLoop < RING3_PLOTS; iPlotLoop++)
@@ -1224,19 +1234,23 @@ static bool ShouldAvoidRiskyCoalitionCapture(const CvPlayer* pPlayer, const CvCi
 	if (!pPlayer || !pCity || !bCaptureOpportunityThisTurn)
 		return false;
 
-	if (!GET_PLAYER(pCity->getOwner()).isMajorCiv())
+	if (!IsCoalitionRelevantCityTargetOwner(pCity->getOwner()))
 		return false;
 
-	if (pCity->IsOriginalCapital() || pCity->getOriginalOwner() == pPlayer->GetID())
+	if (GET_PLAYER(pCity->getOwner()).isMajorCiv() && (pCity->IsOriginalCapital() || pCity->getOriginalOwner() == pPlayer->GetID()))
 		return false;
 
 	if (pCity->getDamage() * 2 < pCity->GetMaxHitPoints())
 		return false;
 
-	if (iHarmfulPressure >= 3)
+	const bool bMinorTarget = GET_PLAYER(pCity->getOwner()).isMinorCiv();
+	const int iHarmfulPressureThreshold = bMinorTarget ? 4 : 3;
+	const int iHelpfulPressureThreshold = bMinorTarget ? 5 : 4;
+
+	if (iHarmfulPressure >= iHarmfulPressureThreshold)
 		return true;
 
-	if (iHelpfulPressure >= 4 && iHarmfulPressure > 0 && iOurMeleeCount <= 1)
+	if (iHelpfulPressure >= iHelpfulPressureThreshold && iHarmfulPressure > 0 && iOurMeleeCount <= 1)
 		return true;
 
 	return false;
@@ -1253,7 +1267,9 @@ static bool ShouldDeferCaptureToCoalitionPartner(const CvPlayer* pPlayer, const 
 	if (!IsSelfCaptureBurdensome(pPlayer, pCity))
 		return false;
 
-	return iHelpfulPressure >= 2 && iHelpfulPressure > iHarmfulPressure;
+	const bool bMinorTarget = GET_PLAYER(pCity->getOwner()).isMinorCiv();
+	const int iHelpfulPressureThreshold = bMinorTarget ? 3 : 2;
+	return iHelpfulPressure >= iHelpfulPressureThreshold && iHelpfulPressure > iHarmfulPressure;
 }
 
 bool CvTacticalAI::IsCoastalAssaultLandCooldownActive(const CvCity* pCity) const

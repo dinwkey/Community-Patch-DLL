@@ -52,6 +52,15 @@ int CountUnassignedCombatNavalUnits(const CvPlayer* pPlayer)
 	return iCount;
 }
 
+bool IsCoalitionRelevantCityTargetOwner(PlayerTypes eTargetOwner)
+{
+	if (eTargetOwner == NO_PLAYER || eTargetOwner == BARBARIAN_PLAYER)
+		return false;
+
+	const CvPlayer& kTargetOwner = GET_PLAYER(eTargetOwner);
+	return kTargetOwner.isAlive() && (kTargetOwner.isMajorCiv() || kTargetOwner.isMinorCiv());
+}
+
 float GetCoalitionPartnerTargetModifier(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner)
 {
 	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
@@ -61,7 +70,9 @@ float GetCoalitionPartnerTargetModifier(const CvPlayer* pPlayer, PlayerTypes eOt
 	if (!pDiploAI)
 		return 1.f;
 
-	float fModifier = (pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING) ? 0.96f : 0.86f;
+	float fModifier = GET_PLAYER(eTargetOwner).isMajorCiv() ?
+		((pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING) ? 0.96f : 0.86f) :
+		0.90f;
 
 	if (pDiploAI->IsFriendOrAlly(eOtherPlayer) || pDiploAI->IsDoFAccepted(eOtherPlayer))
 		fModifier += 0.08f;
@@ -302,7 +313,7 @@ float GetCoalitionWarTargetModifier(const CvPlayer* pPlayer, const CvCity* pTarg
 
 	PlayerTypes eSelf = pPlayer->GetID();
 	PlayerTypes eTargetOwner = pTargetCity->getOwner();
-	if (eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+	if (!IsCoalitionRelevantCityTargetOwner(eTargetOwner))
 		return 1.f;
 
 	float fModifier = 1.f;
