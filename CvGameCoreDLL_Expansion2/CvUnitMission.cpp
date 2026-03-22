@@ -664,7 +664,12 @@ void CvUnitMission::ContinueMission(CvUnit* hUnit, int iSteps)
 
 			else if(kMissionData.eMissionType == CvTypes::getMISSION_RANGE_ATTACK())
 			{
-				if(CvUnitCombat::AttackRanged(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
+				CvPlot* pTargetPlot = GC.getMap().plot(kMissionData.iData1, kMissionData.iData2);
+				if(!pTargetPlot || !hUnit->canRangeStrikeAt(kMissionData.iData1, kMissionData.iData2))
+				{
+					bDone = true;
+				}
+				else if(CvUnitCombat::AttackRanged(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
 				{
 					bDone = true;
 				}
@@ -672,7 +677,12 @@ void CvUnitMission::ContinueMission(CvUnit* hUnit, int iSteps)
 
 			else if(kMissionData.eMissionType == CvTypes::getMISSION_NUKE())
 			{
-				if(CvUnitCombat::AttackNuclear(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
+				CvPlot* pTargetPlot = GC.getMap().plot(kMissionData.iData1, kMissionData.iData2);
+				if(!pTargetPlot || !hUnit->canNukeAt(hUnit->plot(), kMissionData.iData1, kMissionData.iData2))
+				{
+					bDone = true;
+				}
+				else if(CvUnitCombat::AttackNuclear(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
 				{
 					bDone = true;
 				}
@@ -1021,6 +1031,10 @@ bool CvUnitMission::CanStartMission(CvUnit* hUnit, int iMission, int iData1, int
 		if (iData1 != NO_PLAYER && iData2 != NO_UNIT)
 		{
 			pTargetUnit = GET_PLAYER((PlayerTypes)iData1).getUnit(iData2);
+			if (!pTargetUnit)
+			{
+				return false;
+			}
 
 			if (pTargetUnit->IsImmobile())
 			{
@@ -1506,7 +1520,16 @@ void CvUnitMission::StartMission(CvUnit* hUnit)
 				pkQueueData->eMissionType == CvTypes::getMISSION_ROUTE_TO())
 			{
 				//make sure the path cache is current (not for air units, their movement is actually an airstrike)
-				CvPlot* pDestPlot = GC.getMap().plot(pkQueueData->iData1, pkQueueData->iData2);
+				CvPlot* pDestPlot = NULL;
+				if (pkQueueData->eMissionType == CvTypes::getMISSION_MOVE_TO_UNIT())
+				{
+					CvUnit* pTargetUnit = GET_PLAYER((PlayerTypes)pkQueueData->iData1).getUnit(pkQueueData->iData2);
+					pDestPlot = pTargetUnit ? pTargetUnit->plot() : NULL;
+				}
+				else
+				{
+					pDestPlot = GC.getMap().plot(pkQueueData->iData1, pkQueueData->iData2);
+				}
 				if (hUnit->getDomainType()!=DOMAIN_AIR)
 				{
 					hUnit->GeneratePath(pDestPlot, pkQueueData->iFlags);
