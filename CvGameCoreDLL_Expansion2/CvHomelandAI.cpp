@@ -70,6 +70,40 @@ int GetDesiredCarrierFighterReserve(int iPlatformSlots, int iEnemyBombers, int i
 	// Always leave at least one slot available for strike aircraft on full carriers.
 	return min(iDesiredFighters, max(0, iPlatformSlots - 1));
 }
+
+int GetCarrierFighterDeficit(CvPlot* pBasePlot, PlayerTypes ePlayer, int iRange, int* piDesiredFighters)
+{
+	if (!pBasePlot || pBasePlot->isCity() || ePlayer == NO_PLAYER)
+		return 0;
+
+	CvUnit* pPlatform = pBasePlot->getBestDefender(ePlayer);
+	if (!pPlatform || pPlatform->domainCargo() != DOMAIN_AIR)
+		return 0;
+
+	static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
+	if (pPlatform->specialCargo() == eMissileSpecial)
+		return 0;
+
+	int iCurrentFighters = 0;
+	IDInfo* pUnitNode = pBasePlot->headUnitNode();
+	while (pUnitNode != NULL)
+	{
+		CvUnit* pLoopUnit = ::GetPlayerUnit(*pUnitNode);
+		pUnitNode = pBasePlot->nextUnitNode(pUnitNode);
+
+		if (pLoopUnit && pLoopUnit->getOwner() == ePlayer && pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_DEFENSE_AIR)
+			iCurrentFighters++;
+	}
+
+	int iScanRange = iRange > 0 ? iRange : 8;
+	int iEnemyBombers = GET_PLAYER(ePlayer).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iScanRange, false, true);
+	int iEnemyFighters = GET_PLAYER(ePlayer).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iScanRange, true, false);
+	int iDesiredFighters = GetDesiredCarrierFighterReserve(pPlatform->cargoSpace(), iEnemyBombers, iEnemyFighters);
+	if (piDesiredFighters)
+		*piDesiredFighters = iDesiredFighters;
+
+	return max(0, iDesiredFighters - iCurrentFighters);
+}
 }
 
 CvHomelandUnit::CvHomelandUnit() :
@@ -7783,12 +7817,15 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 		{
 			int iEnemyBombers = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, false, true);
 			int iEnemyFighters = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, true, false);
-			int iDesiredFighters = GetDesiredCarrierFighterReserve(pDefender->cargoSpace(), iEnemyBombers, iEnemyFighters);
+			int iDesiredFighters = 0;
+			int iFighterDeficit = GetCarrierFighterDeficit(pBasePlot, ePlayer, iRange, &iDesiredFighters);
 			iBaseScore += iEnemyBombers * 6 + iEnemyFighters * 2;
 			if (iDesiredFighters >= 2)
 				iBaseScore += 12;
 			if (iDesiredFighters >= 3)
 				iBaseScore += 8;
+			if (iFighterDeficit > 0)
+				iBaseScore += iFighterDeficit * 25;
 		}
 	}
 
