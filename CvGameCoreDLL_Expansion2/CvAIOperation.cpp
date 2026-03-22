@@ -1992,7 +1992,8 @@ bool CvAIOperationPillageEnemy::PreconditionsAreMet(CvPlot* pMusterPlot, CvPlot*
 AIOperationAbortReason CvAIOperationPillageEnemy::VerifyOrAdjustTarget(CvArmyAI* pArmy)
 {
 	// Find best pillage target
-	CvPlot* pBetterTarget = FindBestTarget(NULL);
+	CvPlot* pBetterMuster = NULL;
+	CvPlot* pBetterTarget = FindBestTarget(&pBetterMuster);
 
 	// No targets at all!  Abort
 	if(pBetterTarget == NULL)
@@ -2000,11 +2001,15 @@ AIOperationAbortReason CvAIOperationPillageEnemy::VerifyOrAdjustTarget(CvArmyAI*
 		return AI_ABORT_NO_TARGET;
 	}
 
-	// If this is a new target, switch to it
-	if(pBetterTarget != GetTargetPlot())
+	if (pBetterTarget != GetTargetPlot())
 	{
 		SetTargetPlot(pBetterTarget);
 		pArmy->SetGoalPlot(pBetterTarget);
+	}
+
+	if (pBetterMuster != NULL && pArmy->GetArmyAIState() != ARMYAISTATE_MOVING_TO_DESTINATION && pArmy->GetArmyAIState() != ARMYAISTATE_AT_DESTINATION && pBetterMuster != GetMusterPlot())
+	{
+		SetMusterPlot(pBetterMuster);
 	}
 
 	return NO_ABORT_REASON;
@@ -2580,12 +2585,22 @@ void CvAIOperationNavalSuperiority::Init(CvCity* pTarget, CvCity* pMuster)
 /// Returns true when we should abort the operation totally (besides when we have lost all units in it)
 AIOperationAbortReason CvAIOperationNavalSuperiority::VerifyOrAdjustTarget(CvArmyAI* pArmy)
 {
-	CvPlot* pNewTarget = FindBestTarget(NULL);
+	CvPlot* pNewMuster = NULL;
+	CvPlot* pNewTarget = FindBestTarget(&pNewMuster);
 
 	if (pNewTarget)
 	{
-		SetTargetPlot(pNewTarget);
-		pArmy->SetGoalPlot(pNewTarget);
+		if (pNewTarget != GetTargetPlot())
+		{
+			SetTargetPlot(pNewTarget);
+			pArmy->SetGoalPlot(pNewTarget);
+		}
+
+		if (pNewMuster != NULL && pArmy->GetArmyAIState() != ARMYAISTATE_MOVING_TO_DESTINATION && pArmy->GetArmyAIState() != ARMYAISTATE_AT_DESTINATION && pNewMuster != GetMusterPlot())
+		{
+			SetMusterPlot(pNewMuster);
+		}
+
 		return NO_ABORT_REASON;
 	}
 
@@ -2922,12 +2937,18 @@ AIOperationAbortReason CvAIOperationDefendCity::VerifyOrAdjustTarget(CvArmyAI* /
 AIOperationAbortReason CvAIOperationDefenseRapidResponse::VerifyOrAdjustTarget(CvArmyAI* pArmy)
 {
 	// Find most threatened city
-	CvPlot* pBetterTarget = FindBestTarget(NULL);
+	CvPlot* pBetterMuster = NULL;
+	CvPlot* pBetterTarget = FindBestTarget(&pBetterMuster);
 
 	// No targets at all!  Abort
 	if(pBetterTarget == NULL)
 	{
 		return AI_ABORT_NO_TARGET;
+	}
+
+	if (pBetterMuster != NULL && pArmy->GetArmyAIState() != ARMYAISTATE_MOVING_TO_DESTINATION && pArmy->GetArmyAIState() != ARMYAISTATE_AT_DESTINATION && pBetterMuster != GetMusterPlot())
+	{
+		SetMusterPlot(pBetterMuster);
 	}
 
 	// If this is a significantly different target, switch to it (else tactical AI should do the rest)
@@ -3094,6 +3115,7 @@ CvPlot* CvAIOperationNukeAttack::FindBestTarget(CvPlot** ppMuster) const
 			continue;
 
 		// for all cities of this enemy
+		iCityLoop = 0;
 		for(CvCity* pLoopCity = enemyPlayer.firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = enemyPlayer.nextCity(&iCityLoop))
 		{
 			//in range?
