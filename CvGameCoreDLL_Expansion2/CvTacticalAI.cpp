@@ -2390,7 +2390,6 @@ void CvTacticalAI::PlotNavalPatrolStationMoves()
 		else
 		{
 			ExecuteMoveToPlot(pUnit, pBestTarget, true, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
-			UnitProcessed(pUnit->GetID());
 		}
 
 		vTargets.erase(std::remove(vTargets.begin(), vTargets.end(), pBestTarget), vTargets.end());
@@ -2506,7 +2505,6 @@ void CvTacticalAI::PlotConvoyEscortMoves()
 		{
 			CvUnit* pEscort = vAssigned[i];
 			ExecuteMoveToPlot(pEscort, pConvoyOrigin, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
-			UnitProcessed(pEscort->GetID());
 		}
 	}
 }
@@ -2640,7 +2638,6 @@ void CvTacticalAI::PlotAntiInvasionMoves()
 
 			// Move toward target
 			ExecuteMoveToPlot(pUnit, pBestTarget, true, CvUnit::MOVEFLAG_APPROX_TARGET_RING1);
-			UnitProcessed(pUnit->GetID());
 
 			if (GC.getLogging() && GC.getAILogging())
 			{
@@ -2776,7 +2773,6 @@ void CvTacticalAI::PlotStraitDefenseMoves()
 		else
 		{
 			ExecuteMoveToPlot(pUnit, pTarget, true, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
-			UnitProcessed(pUnit->GetID());
 		}
 
 		if (GC.getLogging() && GC.getAILogging())
