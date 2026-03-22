@@ -1862,10 +1862,15 @@ bool CvAIOperationMilitary::CheckTransitionToNextStage()
 			CvPlot* pCoM = pThisArmy->GetCenterOfMass(true,&fX,&fY);
 			if (pCoM && fX < iGatherTolerance && fY < iGatherTolerance && GetMusterPlot() && GetTargetPlot())
 			{
+				int iCoMDistanceToTarget = GetStepDistanceBetweenPlots(pCoM, GetTargetPlot());
+				int iMusterDistanceToTarget = GetStepDistanceBetweenPlots(GetMusterPlot(), GetTargetPlot());
+				int iCoMDistanceToMuster = GetStepDistanceBetweenPlots(pCoM, GetMusterPlot());
+
 				//be a bit careful, don't have units hanging around just anywhere
 				//also don't update too frequently, because it interferes with the "progress to checkpoint" logic
-				if (plotDistance(*pCoM,*GetTargetPlot())<plotDistance(*GetMusterPlot(),*GetTargetPlot()) &&	
-					plotDistance(*pCoM,*GetMusterPlot())>2 &&	
+				if (iCoMDistanceToTarget >= 0 && iMusterDistanceToTarget >= 0 && iCoMDistanceToMuster >= 0 &&
+					iCoMDistanceToTarget < iMusterDistanceToTarget &&
+					iCoMDistanceToMuster > 2 &&
 					pCoM->getOwner() == m_eOwner)
 					SetMusterPlot(pCoM);
 			}
