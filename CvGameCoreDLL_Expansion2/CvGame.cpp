@@ -9123,7 +9123,7 @@ void CvGame::updateMoves()
 					}
 					else
 					{
-						if(!player.hasBusyUnitUpdatesRemaining())
+						if(!player.hasBusyUnitUpdatesRemaining() && !bActivePlayerHasReadyUnits)
 						{
 							NET_MESSAGE_DEBUG_OSTR_ALWAYS("Received turn complete for player "  << player.GetID() << " " << player.getName() << " but there is a busy unit. Forcing the turn to advance");
 							player.setEndTurn(true);
