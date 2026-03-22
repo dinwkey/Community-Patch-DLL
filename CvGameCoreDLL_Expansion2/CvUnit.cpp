@@ -5562,7 +5562,7 @@ bool CvUnit::EmergencyRebase()
 	{
 		if (canRebaseAt(pLoopCity->getX(), pLoopCity->getY(), true))
 		{
-			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), false, GetRange());
+			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), false, GetRange(), this);
 			if (iScore > 0)
 			{
 				vRebaseTargets.push_back(std::make_pair(pLoopCity->plot(), iScore));
@@ -5588,7 +5588,7 @@ bool CvUnit::EmergencyRebase()
 
 			if (!bAlreadyAdded)
 			{
-				int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), true, GetRange());
+				int iScore = HomelandAIHelpers::ScoreAirBase(pLoopCity->plot(), getOwner(), true, GetRange(), this);
 				if (iScore > 0)
 				{
 					vRebaseTargets.push_back(std::make_pair(pLoopCity->plot(), iScore));
@@ -5606,7 +5606,7 @@ bool CvUnit::EmergencyRebase()
 
 		if (canRebaseAt(pLoopUnit->getX(), pLoopUnit->getY(), true))
 		{
-			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnit->plot(), getOwner(), true, GetRange());
+			int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnit->plot(), getOwner(), true, GetRange(), this);
 			if (iScore > 0)
 			{
 				vRebaseTargets.push_back(std::make_pair(pLoopUnit->plot(), iScore));
