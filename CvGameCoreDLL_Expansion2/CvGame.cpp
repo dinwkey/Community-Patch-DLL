@@ -1697,8 +1697,9 @@ void CvGame::CheckPlayerTurnDeactivate()
 					bool bAutoMovesComplete = false;
 					// Allow pending-deal notifications to not block turn deactivation in simultaneous turns (multiplayer).
 					// This prevents a freeze when a proposal is sent to a player who has already ended their turn.
-					bool bIsBlockingTypeAllowed = (kPlayer.GetEndTurnBlockingType() == NO_ENDTURN_BLOCKING_TYPE) ||
-						(kPlayer.GetEndTurnBlockingType() == ENDTURN_BLOCKING_PENDING_DEAL && kPlayer.isSimultaneousTurns());
+					bool bIsBlockingTypeAllowed = (kPlayer.GetEndTurnBlockingType() == NO_ENDTURN_BLOCKING_TYPE);
+					bool bAllowPendingDealOverride = (kPlayer.GetEndTurnBlockingType() == ENDTURN_BLOCKING_PENDING_DEAL) &&
+						kPlayer.isSimultaneousTurns() && gDLL->HasReceivedTurnComplete(kPlayer.GetID());
 
 					if (bIsBlockingTypeAllowed)
 					{
@@ -1709,7 +1710,7 @@ void CvGame::CheckPlayerTurnDeactivate()
 							NET_MESSAGE_DEBUG_OSTR_ALWAYS("CheckPlayerTurnDeactivate() : auto-moves complete for " << kPlayer.getName());
 						}
 					}
-					else if (gDLL->HasReceivedTurnComplete(kPlayer.GetID()))
+					else if (bAllowPendingDealOverride)
 					{
 						bAutoMovesComplete = true;
 					}
