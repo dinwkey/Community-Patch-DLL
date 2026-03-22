@@ -5118,9 +5118,11 @@ bool CvTacticalAI::ExecutePreCaptureEmbarkedSupportStaging(CvPlot* pTargetPlot)
 
 	std::stable_sort(choices.begin(), choices.end());
 	SStageChoice best = choices.front();
-	int iTurnsLeft = ExecuteMoveToPlot(best.pUnit, best.pPlot, true, CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY | CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+	int iTurnsLeft = ExecuteMoveToPlot(best.pUnit, best.pPlot, false, CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY | CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
 	if (iTurnsLeft == INT_MAX)
 		return false;
+
+	UnitProcessed(best.pUnit->GetID());
 
 	if (GC.getLogging() && GC.getAILogging())
 	{
