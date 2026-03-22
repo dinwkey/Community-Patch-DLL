@@ -2153,6 +2153,11 @@ void CvGame::updateTestEndTurn()
 	CvPlayer& activePlayer = GET_PLAYER(activePlayerID);
 
 	ICvUserInterface2* pkIface = GC.GetEngineUserInterface();
+	if (pkIface != NULL)
+	{
+		pkIface->setCanEndTurn(false);
+	}
+
 	if (activePlayer.isTurnActive())
 	{
 		// check notifications
