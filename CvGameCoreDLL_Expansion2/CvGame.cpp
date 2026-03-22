@@ -1716,6 +1716,12 @@ void CvGame::CheckPlayerTurnDeactivate()
 
 					if(bAutoMovesComplete)
 					{
+						if(!kPlayer.isSimultaneousTurns() && !isSimultaneousTeamTurns() && GC.GetEngineUserInterface()->isDiploActive())
+						{
+							NET_MESSAGE_DEBUG_OSTR_ALWAYS("CheckPlayerTurnDeactivate() : deferring sequential turn handoff for player " << kPlayer.GetID() << " " << kPlayer.getName() << " because diplomacy is active");
+							continue;
+						}
+
 						kPlayer.setTurnActive(false);
 
 						// Activate the next player
@@ -1779,11 +1785,6 @@ void CvGame::CheckPlayerTurnDeactivate()
 											}
 										}
 									}
-								}
-								else
-								{
-									// KWG: This doesn't actually do anything other than print to the debug log
-									changeNumGameTurnActive(1, std::string("Because the diplo screen is blocking I am bumping this up for player ") + getName());
 								}
 							}
 						}
