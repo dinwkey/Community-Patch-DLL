@@ -402,11 +402,11 @@ CvPlot* CvHomelandAI::GetBestExploreTarget(const CvUnit* pUnit, int iMaxTurns) c
 
 		int iLoopX = pLoopUnit->getX();
 		int iLoopY = pLoopUnit->getY();
-		const MissionData* pMissionData = pLoopUnit->GetHeadMissionData();
-		if (pMissionData && pMissionData->eMissionType == CvTypes::getMISSION_MOVE_TO())
+		CvPlot* pMissionAIPlot = (pLoopUnit->GetMissionAIType() == MISSIONAI_EXPLORE) ? pLoopUnit->GetMissionAIPlot() : NULL;
+		if (pMissionAIPlot)
 		{
-			iLoopX = pMissionData->iData1;
-			iLoopY = pMissionData->iData2;
+			iLoopX = pMissionAIPlot->getX();
+			iLoopY = pMissionAIPlot->getY();
 		}
 		vOtherExplorerCoordinates.push_back(make_pair(iLoopX, iLoopY));
 	}
