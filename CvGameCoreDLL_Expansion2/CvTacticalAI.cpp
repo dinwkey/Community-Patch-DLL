@@ -2286,12 +2286,10 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			
 			if (pBestPlot)
 			{
-				// Move to the defensive position
-				if (pUnit->plot() != pBestPlot)
-				{
-					pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pBestPlot->getX(), pBestPlot->getY());
-				}
-				
+				int iMoveResult = ExecuteMoveToPlot(pUnit, pBestPlot, false, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
+				if (iMoveResult == INT_MAX)
+					continue;
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
@@ -2300,13 +2298,13 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 						bBlockaded ? " [BLOCKADED]" : "", bEnemyDominated ? " [ENEMY DOMINATED]" : "");
 					LogTacticalMessage(strLogString);
 				}
-				
-				// Remove this position from available list
+
+				// Remove this position from available list once a ship has actually taken or committed to it.
 				vDefensePositions.erase(std::remove(vDefensePositions.begin(), vDefensePositions.end(), pBestPlot), vDefensePositions.end());
 
 				// Reserve the ship for this defensive assignment even if it still has movement left.
 				UnitProcessed(pUnit->GetID());
-				
+
 				// Stop if all positions filled
 				if (vDefensePositions.empty())
 					break;
