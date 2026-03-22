@@ -8970,7 +8970,7 @@ void CvGame::updateMoves()
 							pLoopUnit->AutoMission();
 
 							// Does the unit still have movement points left over?
-							if(player.isHuman(ISHUMAN_AI_UNITS) && CvUnitMission::HasCompletedMoveMission(pLoopUnit) && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated())
+							if(player.isHuman(ISHUMAN_AI_UNITS) && CvUnitMission::HasCompletedMoveMission(pLoopUnit) && !pLoopUnit->isDelayedDeath() && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated())
 							{
 								if(player.isEndTurn())
 								{
@@ -9001,7 +9001,7 @@ void CvGame::updateMoves()
 							// jrandall sez: In MP matches, let's not OOS or stall the game.
 							if(!isNetworkMultiPlayer() && !isOption(GAMEOPTION_END_TURN_TIMER_ENABLED))
 							{
-								if(pLoopUnit && player.isEndTurn() && pLoopUnit->GetLengthMissionQueue() == 0 && pLoopUnit->GetActivityType() == ACTIVITY_AWAKE && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated() && !MOD_AI_CONTROL_UNITS)
+								if(pLoopUnit && player.isEndTurn() && pLoopUnit->GetLengthMissionQueue() == 0 && pLoopUnit->GetActivityType() == ACTIVITY_AWAKE && !pLoopUnit->isDelayedDeath() && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated() && !MOD_AI_CONTROL_UNITS)
 								{
 									if(IsForceEndingTurn())
 									{
@@ -9038,7 +9038,7 @@ void CvGame::updateMoves()
 									{
 										if (!pLoopUnit->canEndTurnAtPlot(pLoopUnit->plot()))
 										{
-											if(pLoopUnitInner->IsFortified() && !pLoopUnit->IsFortified())
+											if(!pLoopUnitInner->isDelayedDeath() && pLoopUnitInner->IsFortified() && !pLoopUnit->IsFortified())
 											{
 												bMoveMe = true;
 											}
