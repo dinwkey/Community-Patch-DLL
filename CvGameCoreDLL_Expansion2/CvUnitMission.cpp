@@ -150,7 +150,8 @@ void CvUnitMission::PushMission(CvUnit* hUnit, MissionTypes eMission, int iData1
 							removeMission.iFlags = iFlags;
 							removeMission.iPushTurn = GC.getGame().getGameTurn();
 							
-							hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
+							if (!bAppend)
+								hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
 							InsertAtEndMissionQueue(hUnit, removeMission, !bAppend);
 							UnitClassTypes eArchaeologistClass = (UnitClassTypes)GC.getInfoTypeForString("UNITCLASS_ARCHAEOLOGIST", true);
 							if (hUnit != NULL && hUnit->getUnitClassType() != eArchaeologistClass)
@@ -170,7 +171,8 @@ void CvUnitMission::PushMission(CvUnit* hUnit, MissionTypes eMission, int iData1
 	mission.iFlags = iFlags;
 	mission.iPushTurn = GC.getGame().getGameTurn();
 
-	hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
+	if (!bAppend)
+		hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
 
 	InsertAtEndMissionQueue(hUnit, mission, !bAppend);
 
@@ -2136,12 +2138,17 @@ MissionData* CvUnitMission::DeleteMissionData(CvUnit* hUnit, MissionData* pNode)
 	PRECONDITION(hUnit->getOwner() != NO_PLAYER);
 
 	MissionQueue& kQueue = hUnit->m_missionQueue;
-	if(pNode == HeadMissionData(kQueue))
+	const bool bDeletedHeadMission = (pNode == HeadMissionData(kQueue));
+	if(bDeletedHeadMission)
 	{
 		DeactivateHeadMission(hUnit, /*iUnitCycleTimer*/ 1);
 	}
 
 	pNextMissionNode = kQueue.deleteNode(pNode);
+	if(kQueue.getLength() == 0 || bDeletedHeadMission)
+	{
+		hUnit->SetMissionAI(NO_MISSIONAI, NULL, NULL);
+	}
 	if(pNextMissionNode == HeadMissionData(kQueue))
 	{
 		ActivateHeadMission(hUnit);
@@ -2170,6 +2177,8 @@ void CvUnitMission::ClearMissionQueue(CvUnit* hUnit, bool bKeepPathCache, int iU
 	{
 		PopMission(hUnit);
 	}
+
+	hUnit->SetMissionAI(NO_MISSIONAI, NULL, NULL);
 
 	if (!bKeepPathCache)
 	{
