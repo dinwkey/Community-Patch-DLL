@@ -2202,7 +2202,7 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			
 			// Find best defense position this unit can reach
 			CvPlot* pBestPlot = NULL;
-			int iBestScore = 0;
+			int iBestScore = -1;
 			
 			// COMBINED ARMS DEFENSE: Check what city/garrison can attack for coordination
 			CvUnit* pCityTarget = NULL;
@@ -3648,7 +3648,7 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 			if (!MOD_BALANCE_UNIT_INVESTMENTS)
 			{
 				// Buy naval melee (can capture cities) if we don't have naval presence
-				if (pZone->GetFriendlyNavalUnitCount() < pZone->GetEnemyNavalUnitCount() + 1)
+				if (bBlockaded || pZone->GetFriendlyNavalUnitCount() < pZone->GetEnemyNavalUnitCount() + 1)
 				{
 					m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
 					
@@ -3701,7 +3701,7 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 				(pWaterZone->GetEnemyNavalUnitCount() > pWaterZone->GetFriendlyNavalUnitCount());
 			bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
 			
-			if ((bNavalThreat || bBlockaded) && pWaterZone->GetFriendlyNavalUnitCount() < 2)
+			if ((bNavalThreat || bBlockaded) && (bBlockaded || pWaterZone->GetFriendlyNavalUnitCount() < 2))
 			{
 				m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
 				
