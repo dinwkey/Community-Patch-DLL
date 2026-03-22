@@ -8826,7 +8826,7 @@ void CvGame::updateMoves()
 		if(gDLL->allAICivsProcessedThisTurn())
 		{//everyone is finished processing the AI civs.
 			PlayerTypes eActivePlayer = getActivePlayer();
-			if(eActivePlayer != NO_PLAYER && CvPreGame::slotStatus(eActivePlayer) == SS_OBSERVER)
+			if(eActivePlayer != NO_PLAYER && CvPreGame::slotStatus(eActivePlayer) == SS_OBSERVER && !gDLL->HasSentTurnComplete())
 			{//if the active player is an observer, send a turn complete so we don't hold up the game.
 				//We wait until allAICivsProcessedThisTurn to prevent a race condition where an observer could send turn complete,
 				//before all clients have cleared the netbarrier locally.
