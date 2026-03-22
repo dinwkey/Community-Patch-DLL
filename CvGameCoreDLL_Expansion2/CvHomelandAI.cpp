@@ -71,7 +71,7 @@ int GetDesiredCarrierFighterReserve(int iPlatformSlots, int iEnemyBombers, int i
 	return min(iDesiredFighters, max(0, iPlatformSlots - 1));
 }
 
-int GetCarrierFighterDeficit(CvPlot* pBasePlot, PlayerTypes ePlayer, int iRange, int* piDesiredFighters)
+int GetCarrierFighterDeficit(CvPlot* pBasePlot, PlayerTypes ePlayer, int iRange, int* piDesiredFighters, int* piCurrentFighters)
 {
 	if (!pBasePlot || pBasePlot->isCity() || ePlayer == NO_PLAYER)
 		return 0;
@@ -94,6 +94,8 @@ int GetCarrierFighterDeficit(CvPlot* pBasePlot, PlayerTypes ePlayer, int iRange,
 		if (pLoopUnit && pLoopUnit->getOwner() == ePlayer && pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_DEFENSE_AIR)
 			iCurrentFighters++;
 	}
+	if (piCurrentFighters)
+		*piCurrentFighters = iCurrentFighters;
 
 	int iScanRange = iRange > 0 ? iRange : 8;
 	int iEnemyBombers = GET_PLAYER(ePlayer).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iScanRange, false, true);
@@ -7816,7 +7818,9 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 			int iEnemyBombers = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, false, true);
 			int iEnemyFighters = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, true, false);
 			int iDesiredFighters = 0;
-			int iFighterDeficit = GetCarrierFighterDeficit(pBasePlot, ePlayer, iRange, &iDesiredFighters);
+			int iCurrentFighters = 0;
+			int iFighterDeficit = GetCarrierFighterDeficit(pBasePlot, ePlayer, iRange, &iDesiredFighters, &iCurrentFighters);
+			int iFighterSurplus = max(0, iCurrentFighters - iDesiredFighters);
 			iBaseScore += iEnemyBombers * 6 + iEnemyFighters * 2;
 			if (iDesiredFighters >= 2)
 				iBaseScore += 12;
@@ -7824,6 +7828,13 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 				iBaseScore += 8;
 			if (iFighterDeficit > 0)
 				iBaseScore += iFighterDeficit * 25;
+			if (iFighterSurplus > 0)
+			{
+				if (iDesiredFighters == 0)
+					iBaseScore -= iFighterSurplus * 18;
+				else
+					iBaseScore -= iFighterSurplus * 10;
+			}
 		}
 	}
 
