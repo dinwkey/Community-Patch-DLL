@@ -3694,7 +3694,7 @@ void CvGame::doControl(ControlTypes eControl)
 		// DEBUG: Assert if UI interface is null to debug DLL call stack
 		ASSERT(GC.GetEngineUserInterface() != NULL);
 		
-		if(GC.GetEngineUserInterface()->canEndTurn() && gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed())
+		if(GC.GetEngineUserInterface()->canEndTurn() && gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed() && !gDLL->HasSentTurnComplete())
 		{
 			CvPlayerAI& kActivePlayer = GET_PLAYER(getActivePlayer());
 
@@ -3729,7 +3729,7 @@ void CvGame::doControl(ControlTypes eControl)
 	case CONTROL_FORCEENDTURN:
 	{
 		EndTurnBlockingTypes eBlock = GET_PLAYER(getActivePlayer()).GetEndTurnBlockingType();
-		if(gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed() && (eBlock == NO_ENDTURN_BLOCKING_TYPE || eBlock == ENDTURN_BLOCKING_UNITS))
+		if(gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed() && !gDLL->HasSentTurnComplete() && (eBlock == NO_ENDTURN_BLOCKING_TYPE || eBlock == ENDTURN_BLOCKING_UNITS))
 		{
 			if (MOD_ENABLE_ACHIEVEMENTS)
 			{
