@@ -322,9 +322,14 @@ static bool CanReachLandAttackPositionWithoutEmbark(const CvUnit* pUnit, const C
 static bool ShouldSkipLandUnitForCoastalCapture(const CvUnit* pUnit, const CvCity* pCity, bool bPreferNavalCapture, bool bLandAssaultCooldownActive);
 static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner);
 static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget);
+static bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pCity);
+static bool IsStrategicallyImportantCapture(const CvPlayer* pPlayer, const CvCity* pCity);
+static int GetCaptureCityValuePercent(const CvPlayer* pPlayer, const CvCity* pCity);
+static bool IsSelfCaptureBurdensome(const CvPlayer* pPlayer, const CvCity* pCity);
 static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity);
 static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* pCity, int& iHelpfulPressure, int& iHarmfulPressure);
 static bool ShouldAvoidRiskyCoalitionCapture(const CvPlayer* pPlayer, const CvCity* pCity, bool bCaptureOpportunityThisTurn, int iOurMeleeCount, int iHelpfulPressure, int iHarmfulPressure);
+static bool ShouldDeferCaptureToCoalitionPartner(const CvPlayer* pPlayer, const CvCity* pCity, bool bCaptureOpportunityThisTurn, int iHelpfulPressure, int iHarmfulPressure);
 
 void CvTacticalAI::Update()
 {
@@ -1002,6 +1007,91 @@ static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, P
 	return COALITION_LIBERATION_OTHER_MAJOR;
 }
 
+static bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pCity)
+{
+	if (!pPlayer || !pCity)
+		return false;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return false;
+
+	CvPlayer* pMutablePlayer = const_cast<CvPlayer*>(pPlayer);
+	CvCity* pMutableCity = const_cast<CvCity*>(pCity);
+	PlayerTypes eLiberationTarget = pMutablePlayer->GetPlayerToLiberate(pMutableCity);
+	return (eLiberationTarget != NO_PLAYER) && pDiploAI->IsTryingToLiberate(pMutableCity);
+}
+
+static bool IsStrategicallyImportantCapture(const CvPlayer* pPlayer, const CvCity* pCity)
+{
+	if (!pPlayer || !pCity)
+		return false;
+
+	if (pCity->HasAnyWonder() || pCity->GetCityReligions()->IsHolyCityAnyReligion())
+		return true;
+
+	if (pCity->IsOriginalMajorCapital() || pCity->getOriginalOwner() == pPlayer->GetID())
+		return true;
+
+	CvLandmass* pLandmass = GC.getMap().getLandmassById(pCity->plot()->getLandmass());
+	if (pLandmass != NULL && pLandmass->getCitiesPerPlayer(pPlayer->GetID()) <= 1)
+		return true;
+
+	return false;
+}
+
+static int GetCaptureCityValuePercent(const CvPlayer* pPlayer, const CvCity* pCity)
+{
+	if (!pPlayer || !pCity)
+		return 0;
+
+	CvCity* pMutableCity = const_cast<CvCity*>(pCity);
+	int iMedianEconomicPower = GC.getGame().getMedianEconomicValue();
+	int iLocalEconomicPower = pMutableCity->getEconomicValue(pPlayer->GetID());
+	int iCityValue = (iLocalEconomicPower * 100) / max(1, iMedianEconomicPower);
+
+	iCityValue *= GD_INT_GET(AI_CITY_VALUE_MULTIPLIER);
+	iCityValue /= 100;
+
+	if (pCity->IsOriginalMajorCapital())
+	{
+		iCityValue *= GD_INT_GET(AI_CAPITAL_VALUE_MULTIPLIER);
+		iCityValue /= 100;
+	}
+
+	return iCityValue;
+}
+
+static bool IsSelfCaptureBurdensome(const CvPlayer* pPlayer, const CvCity* pCity)
+{
+	if (!pPlayer || !pCity)
+		return false;
+
+	if (ShouldPreferSelfLiberationCapture(pPlayer, pCity) || IsStrategicallyImportantCapture(pPlayer, pCity))
+		return false;
+
+	if (GetCaptureCityValuePercent(pPlayer, pCity) >= GD_INT_GET(AI_CITY_SOME_VALUE_THRESHOLD))
+		return false;
+
+	int iBurdenScore = 0;
+	if (pPlayer->IsEmpireVeryUnhappy())
+		iBurdenScore += 3;
+	else if (pPlayer->IsEmpireUnhappy())
+		iBurdenScore += 2;
+
+	if (pPlayer->GetExcessHappiness() < 0)
+		iBurdenScore += 1;
+
+	if (pPlayer->GetPlayerTraits()->IsNoAnnexing())
+		iBurdenScore += 1;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (pDiploAI && pCity->IsOriginalMajorCapital() && !(pDiploAI->IsGoingForWorldConquest() || pDiploAI->IsCloseToWorldConquest()))
+		iBurdenScore += 1;
+
+	return iBurdenScore >= 3;
+}
+
 static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity)
 {
 	if (!pPlayer || !pCity || eOtherPlayer == NO_PLAYER)
@@ -1150,6 +1240,20 @@ static bool ShouldAvoidRiskyCoalitionCapture(const CvPlayer* pPlayer, const CvCi
 		return true;
 
 	return false;
+}
+
+static bool ShouldDeferCaptureToCoalitionPartner(const CvPlayer* pPlayer, const CvCity* pCity, bool bCaptureOpportunityThisTurn, int iHelpfulPressure, int iHarmfulPressure)
+{
+	if (!pPlayer || !pCity || !bCaptureOpportunityThisTurn)
+		return false;
+
+	if (ShouldPreferSelfLiberationCapture(pPlayer, pCity))
+		return false;
+
+	if (!IsSelfCaptureBurdensome(pPlayer, pCity))
+		return false;
+
+	return iHelpfulPressure >= 2 && iHelpfulPressure > iHarmfulPressure;
 }
 
 bool CvTacticalAI::IsCoastalAssaultLandCooldownActive(const CvCity* pCity) const
@@ -1779,15 +1883,17 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				int iHarmfulCoalitionPressure = 0;
 				GetCoalitionPressureNearCity(m_pPlayer, pCity, iHelpfulCoalitionPressure, iHarmfulCoalitionPressure);
 				const bool bAvoidRiskyCoalitionCapture = ShouldAvoidRiskyCoalitionCapture(m_pPlayer, pCity, bCaptureOpportunityThisTurn, iMeleeCount, iHelpfulCoalitionPressure, iHarmfulCoalitionPressure);
+				const bool bDeferCaptureToCoalition = ShouldDeferCaptureToCoalitionPartner(m_pPlayer, pCity, bCaptureOpportunityThisTurn, iHelpfulCoalitionPressure, iHarmfulCoalitionPressure);
 
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
-					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d (naval %d, land %d), melee dmg %d, ranged dmg %d, capture opportunity: %s, coalition pressure helpful=%d harmful=%d%s%s%s",
+					strLogString.Format("Zone %d, attempting capture of %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, melee count %d (naval %d, land %d), melee dmg %d, ranged dmg %d, capture opportunity: %s, coalition pressure helpful=%d harmful=%d%s%s%s%s",
 						pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
 						iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded",
 						iMeleeCount, iNavalMeleeCount, iLandMeleeCount, iTotalMeleeDamage, iRangedDamageThisTurn,
 						bCaptureOpportunityThisTurn ? "YES" : "no", iHelpfulCoalitionPressure, iHarmfulCoalitionPressure,
+						bDeferCaptureToCoalition ? " [DEFER TO ALLY]" : "",
 						bAvoidRiskyCoalitionCapture ? " [AVOID RISKY FINISHER]" : "",
 						bIslandCity ? " [ISLAND CITY]" : "",
 						bNavalDominatedCity ? " [NAVAL-DOMINATED]" : "");
@@ -1885,6 +1991,18 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 							}
 						}
 					}
+				}
+
+				if (bDeferCaptureToCoalition)
+				{
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						strLogString.Format("Zone %d, deferring capture of %s to coalition partner due to low self-capture value/burden", pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str());
+						LogTacticalMessage(strLogString);
+					}
+
+					continue;
 				}
 
 				//finally do the attack

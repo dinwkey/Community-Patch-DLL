@@ -93,6 +93,117 @@ CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pTargetCity, Pl
 	return COALITION_LIBERATION_OTHER_MAJOR;
 }
 
+bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return false;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return false;
+
+	CvPlayer* pMutablePlayer = const_cast<CvPlayer*>(pPlayer);
+	CvCity* pMutableCity = const_cast<CvCity*>(pTargetCity);
+	PlayerTypes eLiberationTarget = pMutablePlayer->GetPlayerToLiberate(pMutableCity);
+	return (eLiberationTarget != NO_PLAYER) && pDiploAI->IsTryingToLiberate(pMutableCity);
+}
+
+bool IsStrategicallyImportantCapture(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return false;
+
+	if (pTargetCity->HasAnyWonder() || pTargetCity->GetCityReligions()->IsHolyCityAnyReligion())
+		return true;
+
+	if (pTargetCity->IsOriginalMajorCapital() || pTargetCity->getOriginalOwner() == pPlayer->GetID())
+		return true;
+
+	CvLandmass* pLandmass = GC.getMap().getLandmassById(pTargetCity->plot()->getLandmass());
+	if (pLandmass != NULL && pLandmass->getCitiesPerPlayer(pPlayer->GetID()) <= 1)
+		return true;
+
+	return false;
+}
+
+int GetCaptureCityValuePercent(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return 0;
+
+	CvCity* pMutableCity = const_cast<CvCity*>(pTargetCity);
+	int iMedianEconomicPower = GC.getGame().getMedianEconomicValue();
+	int iLocalEconomicPower = pMutableCity->getEconomicValue(pPlayer->GetID());
+	int iCityValue = (iLocalEconomicPower * 100) / max(1, iMedianEconomicPower);
+
+	iCityValue *= GD_INT_GET(AI_CITY_VALUE_MULTIPLIER);
+	iCityValue /= 100;
+
+	if (pTargetCity->IsOriginalMajorCapital())
+	{
+		iCityValue *= GD_INT_GET(AI_CAPITAL_VALUE_MULTIPLIER);
+		iCityValue /= 100;
+	}
+
+	return iCityValue;
+}
+
+bool IsSelfCaptureBurdensome(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return false;
+
+	if (ShouldPreferSelfLiberationCapture(pPlayer, pTargetCity) || IsStrategicallyImportantCapture(pPlayer, pTargetCity))
+		return false;
+
+	const int iCityValue = GetCaptureCityValuePercent(pPlayer, pTargetCity);
+	const bool bLowValue = iCityValue < GD_INT_GET(AI_CITY_SOME_VALUE_THRESHOLD);
+	if (!bLowValue)
+		return false;
+
+	int iBurdenScore = 0;
+	if (pPlayer->IsEmpireVeryUnhappy())
+		iBurdenScore += 3;
+	else if (pPlayer->IsEmpireUnhappy())
+		iBurdenScore += 2;
+
+	if (pPlayer->GetExcessHappiness() < 0)
+		iBurdenScore += 1;
+
+	if (pPlayer->GetPlayerTraits()->IsNoAnnexing())
+		iBurdenScore += 1;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (pDiploAI && pTargetCity->IsOriginalMajorCapital() && !(pDiploAI->IsGoingForWorldConquest() || pDiploAI->IsCloseToWorldConquest()))
+		iBurdenScore += 1;
+
+	return iBurdenScore >= 3;
+}
+
+float GetSelfCaptureTargetModifier(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return 1.f;
+
+	if (ShouldPreferSelfLiberationCapture(pPlayer, pTargetCity))
+		return 1.16f;
+
+	if (!IsSelfCaptureBurdensome(pPlayer, pTargetCity))
+		return 1.f;
+
+	float fModifier = 0.84f;
+	if (pPlayer->IsEmpireVeryUnhappy())
+		fModifier -= 0.08f;
+
+	if (pPlayer->GetExcessHappiness() < 0)
+		fModifier -= 0.04f;
+
+	if (pPlayer->GetPlayerTraits()->IsNoAnnexing())
+		fModifier -= 0.03f;
+
+	return max(0.68f, fModifier);
+}
+
 float GetCoalitionOutcomeTargetModifier(const CvPlayer* pPlayer, const CvCity* pTargetCity, PlayerTypes eOtherPlayer)
 {
 	if (!pPlayer || !pTargetCity || eOtherPlayer == NO_PLAYER)
@@ -1559,6 +1670,9 @@ int CvMilitaryAI::ScoreAttackTarget(const CvAttackTarget& target)
 			}
 		}
 	}
+
+	// Cities that are low-value burdens to keep should be less attractive unless we want to take them specifically to liberate them.
+	fDesirability *= GetSelfCaptureTargetModifier(m_pPlayer, pTargetCity);
 
 	// Shared wars still have value, but we discount targets where unrelated majors are also likely to benefit.
 	fDesirability *= GetCoalitionWarTargetModifier(m_pPlayer, pTargetCity);
