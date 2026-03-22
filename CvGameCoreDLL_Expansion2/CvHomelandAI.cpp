@@ -7623,11 +7623,24 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 			{
 				// FULL CARRIERS (can carry fighters, bombers, missiles)
 				// Need to balance bomber/missile ratio
+				int iEnemyAirPressure = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, true, true);
+				int iDesiredFighters = 0;
+				if (iEnemyAirPressure >= 6)
+					iDesiredFighters = min(2, max(1, iPlatformSlots / 2));
+				else if (iEnemyAirPressure >= 2)
+					iDesiredFighters = 1;
 				
 				// Check distance to nearest friendly city for resupply
 				CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
 				int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
 				bool bCanResupplyMissiles = (iDistToCity <= 10); // Within reasonable rebase range
+
+				if ((eUnitAI == UNITAI_ATTACK_AIR || eUnitAI == UNITAI_MISSILE_AIR || eUnitAI == UNITAI_ICBM)
+					&& iDefensive < iDesiredFighters && iCurrentCargo < iPlatformSlots)
+				{
+					// Hold threatened carrier slots open for fighter cover before adding more strike aircraft.
+					return false;
+				}
 				
 				if (eUnitAI == UNITAI_MISSILE_AIR)
 				{
@@ -7750,6 +7763,14 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 		// Lightly damaged carrier (60-80%): reduce score by 25%
 		if (iHealthPercent < 80)
 			iBaseScore = (iBaseScore * 3) / 4;
+
+		if (eUnitAI == UNITAI_DEFENSE_AIR)
+		{
+			int iEnemyAirPressure = kPlayer.GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, iRange > 0 ? iRange : 8, true, true);
+			iBaseScore += iEnemyAirPressure * 4;
+			if (iEnemyAirPressure >= 4)
+				iBaseScore += 12;
+		}
 	}
 
 	//check current targets during wartime
