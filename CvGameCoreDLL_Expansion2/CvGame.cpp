@@ -9112,7 +9112,8 @@ void CvGame::updateMoves()
 				// KWG: This code should go into CheckPlayerTurnDeactivate
 				if(!player.isEndTurn() && gDLL->HasReceivedTurnComplete(player.GetID()) && player.isHuman() /* && (isNetworkMultiPlayer() || (!isNetworkMultiPlayer() && player.GetID() != getActivePlayer())) */)
 				{
-					if(!player.hasBusyUnitOrCity())
+					bool bActivePlayerHasReadyUnits = (player.GetID() == getActivePlayer()) && player.hasReadyUnit();
+					if(!player.hasBusyUnitOrCity() && !bActivePlayerHasReadyUnits)
 					{
 						player.setEndTurn(true);
 						if(player.isEndTurn())
