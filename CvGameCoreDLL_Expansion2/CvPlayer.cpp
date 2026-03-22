@@ -33776,8 +33776,10 @@ void CvPlayer::setTurnActive(bool bNewValue, bool bDoTurn) // R: bDoTurn default
 				//no tactical AI for human, only make sure we have current postures in case we want the AI to take over (debugging)
 				if (isHuman(ISHUMAN_AI_UNITS) || /* if MP, invalidate for AI too */ kGame.isNetworkMultiPlayer()) {
 					GetTacticalAI()->GetTacticalAnalysisMap()->Invalidate();
-					GetHomelandAI()->Invalidate();
 				}
+
+				// HomelandAI uses NeedsUpdate() for both human automation and full AI players.
+				GetHomelandAI()->Invalidate();
 
 				if(kGame.isFinalInitialized())
 				{
