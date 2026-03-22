@@ -6174,10 +6174,11 @@ void CvHomelandAI::ExecuteAircraftMoves()
 	std::reverse(vPotentialBases.begin(),vPotentialBases.end());
 	for (size_t i=0; i<vCombatReadyUnits.size(); ++i)
 	{
-		bool bBest = false;
+		bool bBest = true;
 		CvUnit* pUnit = vCombatReadyUnits[i];
 		CvPlot* pNewBase = NULL;
 		int iCurrentScore = HomelandAIHelpers::ScoreAirBase(pUnit->plot(), m_pPlayer->GetID(), false, pUnit->GetRange(), pUnit);
+		int iBestCandidateScore = iCurrentScore;
 		
 		// For offensive air units: if we're prioritizing offensive to carriers (defensive units outnumber offensive),
 		// then bias this unit toward carrier-based locations
@@ -6422,12 +6423,8 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			if (!pUnit->canRebase() || !pUnit->canLoad(*(it->pPlot)))
 				continue;
 
-			//apparently we're already in the best possible base?
-			if (iCurrentScore >= iCandidateScore)
-			{
-				bBest = true;
-				break;
-			}
+			if (iCandidateScore <= iBestCandidateScore)
+				continue;
 
 			//sometimes you just don't fit in
 			if (!HomelandAIHelpers::IsGoodUnitMix(it->pPlot,pUnit))
@@ -6437,21 +6434,22 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			if (pUnit->canRebaseAt(it->pPlot->getX(),it->pPlot->getY()))
 			{
 				pNewBase = it->pPlot;
-				break;
+				iBestCandidateScore = iCandidateScore;
+				bBest = false;
 			}
 			else
 			{
-				//Carrier-to-carrier rebasing: check if target is a carrier with available slots
-				if (pUnit->getDomainType() == DOMAIN_AIR && !pUnit->canLoad(*(it->pPlot)))
+				// Use multi-step rebasing when the best destination is out of direct range.
+				if (pUnit->getDomainType() == DOMAIN_AIR)
 				{
-					//Unit can't load directly - try pathfinding for multi-step rebasing
 					SPathFinderUserData data(pUnit, 0, 6);
 					data.ePath = PT_AIR_REBASE;
 					SPath path = GC.GetStepFinder().GetPath(pUnit->getX(),pUnit->getY(),it->pPlot->getX(),it->pPlot->getY(),data);
 					if (!!path)
 					{
 						pNewBase = PathHelpers::GetPathFirstPlot(path);
-						break;
+						iBestCandidateScore = iCandidateScore;
+						bBest = false;
 					}
 				}
 			}
