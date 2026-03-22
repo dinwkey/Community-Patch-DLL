@@ -2700,7 +2700,7 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			
 			// Find best defense position this unit can reach
 			CvPlot* pBestPlot = NULL;
-			int iBestScore = -1;
+			int iBestScore = INT_MIN;
 			
 			// COMBINED ARMS DEFENSE: Check what city/garrison can attack for coordination
 			CvUnit* pCityTarget = NULL;
@@ -2718,6 +2718,30 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 				
 				// Score: closer is better, prefer positions that block likely attack vectors
 				int iScore = 100 - iTurns * 20;
+
+				// Penalize tiles that are already covered by real enemy attack vectors.
+				// Adjacent contact alone misses naval ranged fire and multi-tile approach lanes.
+				int iDanger = min(500, pUnit->GetDanger(pDefPlot));
+				iScore -= min(60, iDanger / 3);
+
+				std::vector<CvUnit*> vAttackers = m_pPlayer->GetPossibleAttackers(*pDefPlot, m_pPlayer->getTeam());
+				int iRangedThreats = 0;
+				int iNavalThreats = 0;
+				for (size_t iAttacker = 0; iAttacker < vAttackers.size(); iAttacker++)
+				{
+					CvUnit* pAttacker = vAttackers[iAttacker];
+					if (!pAttacker || !m_pPlayer->IsAtWarWith(pAttacker->getOwner()))
+						continue;
+					if (pAttacker->getDomainType() == DOMAIN_SEA)
+						iNavalThreats++;
+					if (pAttacker->IsCanAttackRanged() && plotDistance(*pAttacker->plot(), *pDefPlot) > 1)
+						iRangedThreats++;
+				}
+
+				iScore -= iNavalThreats * 6;
+				iScore -= iRangedThreats * 10;
+				if (vAttackers.empty())
+					iScore += 10;
 				
 				// Bonus for positions that face enemy territory
 				for (int iDir2 = 0; iDir2 < NUM_DIRECTION_TYPES; iDir2++)
