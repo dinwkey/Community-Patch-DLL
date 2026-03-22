@@ -2412,8 +2412,6 @@ void CvTacticalAI::PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediat
 					}
 					LogTacticalMessage(strLogString);
 				}
-
-				UnitProcessed(pUnit->GetID());
 			}
 		}
 	}
@@ -3881,9 +3879,6 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 
 					//just in case we're doing this with enemy arounds and have movement left
 					TacticalAIHelpers::PerformOpportunityAttack(pUnit);
-
-					//the new garrison came from the tactical AI current turn units, so need to mark it
-					UnitProcessed(pUnit->GetID());
 				}
 			}
 			// No ground unit available in range - try paradrop reinforcement for urgent cases
@@ -3960,7 +3955,7 @@ void CvTacticalAI::PlotBastionMoves(int iNumTurnsAway)
 		CvUnit* pUnit = FindUnitForThisMove(AI_TACTICAL_GUARD, pPlot, iNumTurnsAway);
 
 		//move may fail if the plot is already occupied (can happen if another unit moved there during this turn)
-		if (pUnit && ExecuteMoveToPlot(pUnit, pPlot, true, CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY)==0)
+		if (pUnit && ExecuteMoveToPlot(pUnit, pPlot, true, CvUnit::MOVEFLAG_SAFE_EMBARK_ONLY)==0 && pUnit->plot() == pPlot)
 		{
 			if (pUnit->CanUpgradeRightNow(false) && !pUnit->IsHurt())
 			{
@@ -3994,7 +3989,7 @@ void CvTacticalAI::PlotGuardImprovementMoves(int iNumTurnsAway)
 		CvUnit* pUnit = FindUnitForThisMove(AI_TACTICAL_GUARD, pPlot, iNumTurnsAway);
 
 		//move may fail if the plot is already occupied (can happen if another unit moved there during this turn)
-		if (pUnit && ExecuteMoveToPlot(pUnit, pPlot, true, CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER)==0)
+		if (pUnit && ExecuteMoveToPlot(pUnit, pPlot, true, CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER)==0 && pUnit->plot() == pPlot)
 		{
 			if (pUnit->CanUpgradeRightNow(false) && !pUnit->IsHurt())
 			{
