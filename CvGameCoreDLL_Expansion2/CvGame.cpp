@@ -9057,6 +9057,43 @@ void CvGame::updateMoves()
 						}
 					}
 
+					int iReadyUnitsAfterAuto = player.GetCountReadyUnits();
+
+					// AutoMission runs outside the main AI_unitUpdate block, so it needs its own progress checkpoint and hang fallback.
+					if(iReadyUnitsAfterAuto < iReadyUnitsBeforeMoves || player.GetCountReadyUnits(true) > 0)
+					{
+						player.SetLastSliceMoved(m_iTurnSlice);
+					}
+
+					if(!player.isHuman() && !player.hasBusyUnitOrCity() && iReadyUnitsAfterAuto > 0)
+					{
+						const CvUnit* pReadyUnit = player.GetFirstReadyUnit();
+						if (pReadyUnit)
+						{
+							int iWaitTime = 1000;
+							if(!isNetworkMultiPlayer())
+							{
+								iWaitTime = 10;
+							}
+
+							if(m_iTurnSlice - player.GetLastSliceMoved() > iWaitTime)
+							{
+								CvUnitEntry* entry = GC.getUnitInfo(pReadyUnit->getUnitType());
+								if(entry)
+								{
+									CvString strTemp = entry->GetDescription();
+									CvString szAssertMessage;
+									szAssertMessage.Format(
+										"GAME HANG - Stuck automoves will have their turn ended so game can advance. [DETAILS: Player %i %s. First stuck unit is %s at (%d, %d)]",
+										player.GetID(), player.getName(), strTemp.GetCString(), pReadyUnit->getX(), pReadyUnit->getY());
+									ASSERT(false, szAssertMessage);
+									NET_MESSAGE_DEBUG_OSTR_ALWAYS(szAssertMessage);
+								}
+								player.EndTurnsForReadyUnits();
+							}
+						}
+					}
+
 					// If we completed the processing of the auto-moves, flag it.
 					if(player.isEndTurn() || !player.isHuman())
 					{
