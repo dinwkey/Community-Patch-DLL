@@ -18,6 +18,8 @@
 #include "CvMilitaryAI.h"
 #include "CvTypes.h"
 #include "CvDiplomacyAI.h"
+#include "CvArmyAI.h"
+#include "CvAIOperation.h"
 #include "CvBarbarians.h"
 #include "CvUnitSightingManager.h"
 #include "CvUnitMovement.h"
@@ -86,6 +88,33 @@ void CheckDebugTrigger(int iUnitID)
 		//put a breakpoint here if required
 		OutputDebugString("match\n");
 	}
+}
+
+bool IsAirUnitCommittedToActiveCarrierGroup(const CvUnit* pUnit)
+{
+	if (!pUnit || pUnit->getDomainType() != DOMAIN_AIR)
+		return false;
+
+	const CvUnit* pCarrier = pUnit->getTransportUnit();
+	if (!pCarrier)
+		return false;
+
+	if (pCarrier->getArmyID() < 0)
+		return false;
+
+	CvPlayer& kOwner = GET_PLAYER(pUnit->getOwner());
+	CvArmyAI* pArmy = kOwner.getArmyAI(pCarrier->getArmyID());
+	if (!pArmy)
+		return false;
+
+	CvAIOperation* pOperation = kOwner.getAIOperation(pArmy->GetOperationID());
+	if (!pOperation)
+		return false;
+
+	if (pOperation->GetOperationType() != AI_OPERATION_CARRIER_GROUP)
+		return false;
+
+	return pOperation->GetOperationState() != AI_OPERATION_STATE_ABORTED;
 }
 
 //=====================================
@@ -8503,6 +8532,9 @@ bool CvTacticalAI::ShouldRebase(CvUnit* pUnit) const
 
 		if (pUnit->shouldHeal(true) && pCarrier->GetDanger(pUnitPlot)>0)
 			return true;
+
+		if (IsAirUnitCommittedToActiveCarrierGroup(pUnit))
+			return false;
 	}
 
 	bool bIsNeeded = false;
