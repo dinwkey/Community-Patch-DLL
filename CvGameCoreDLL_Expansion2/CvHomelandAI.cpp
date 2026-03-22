@@ -71,13 +71,17 @@ int GetDesiredCarrierFighterReserve(int iPlatformSlots, int iEnemyBombers, int i
 	return min(iDesiredFighters, max(0, iPlatformSlots - 1));
 }
 
-int GetDesiredCarrierRecoveryHeadroom(int iPlatformSlots, int iDesiredFighters, int iEnemyBombers)
+int GetDesiredCarrierRecoveryHeadroom(int iPlatformSlots, int iDesiredFighters, int iEnemyBombers, int iDistToCity)
 {
 	int iHeadroom = 0;
 	if (iDesiredFighters > 0 && iPlatformSlots - iDesiredFighters >= 2)
 		iHeadroom = 1;
 	if (iPlatformSlots >= 6 && iEnemyBombers >= 4 && iPlatformSlots - iDesiredFighters >= 3)
 		iHeadroom = 2;
+
+	// Carriers operating close to friendly cities can refill CAP quickly, so they do not need as much empty deck slack.
+	if (iDistToCity <= 8)
+		iHeadroom = max(0, iHeadroom - 1);
 
 	return iHeadroom;
 }
@@ -7689,12 +7693,12 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 				int iEnemyBombers = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, false, true);
 				int iEnemyFighters = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, true, false);
 				int iDesiredFighters = GetDesiredCarrierFighterReserve(iPlatformSlots, iEnemyBombers, iEnemyFighters);
-				int iRecoveryHeadroom = GetDesiredCarrierRecoveryHeadroom(iPlatformSlots, iDesiredFighters, iEnemyBombers);
 				
 				// Check distance to nearest friendly city for resupply
 				CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
 				int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
 				bool bCanResupplyMissiles = (iDistToCity <= 10); // Within reasonable rebase range
+				int iRecoveryHeadroom = GetDesiredCarrierRecoveryHeadroom(iPlatformSlots, iDesiredFighters, iEnemyBombers, iDistToCity);
 
 				if ((eUnitAI == UNITAI_ATTACK_AIR || eUnitAI == UNITAI_MISSILE_AIR || eUnitAI == UNITAI_ICBM)
 					&& iDefensive < iDesiredFighters && iCurrentCargo < iPlatformSlots)
