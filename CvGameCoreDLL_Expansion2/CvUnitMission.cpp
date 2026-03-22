@@ -199,9 +199,11 @@ void CvUnitMission::PushMission(CvUnit* hUnit, MissionTypes eMission, int iData1
 void CvUnitMission::PopMission(CvUnit* hUnit)
 {
 	PRECONDITION(hUnit->getOwner() != NO_PLAYER);
+	MissionData* pTailNode = TailMissionData(hUnit->m_missionQueue);
+	const bool bPoppingActiveMission = (pTailNode != NULL && pTailNode == HeadMissionData(hUnit->m_missionQueue));
 
 	// Update Resource info
-	if(hUnit->getBuildType() != NO_BUILD)
+	if(bPoppingActiveMission && hUnit->getBuildType() != NO_BUILD)
 	{
 		ImprovementTypes eImprovement = NO_IMPROVEMENT;
 		RouteTypes eRoute = NO_ROUTE;
@@ -252,8 +254,6 @@ void CvUnitMission::PopMission(CvUnit* hUnit)
 		CvInterfacePtr<ICvUnit1> pDllUnit(new CvDllUnit(hUnit));
 		gDLL->GameplayUnitWork(pDllUnit.get(), -1);
 	}
-
-	MissionData* pTailNode = TailMissionData(hUnit->m_missionQueue);
 
 	if(pTailNode != NULL)
 	{
