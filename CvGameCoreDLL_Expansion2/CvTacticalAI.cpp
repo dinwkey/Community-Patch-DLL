@@ -1950,6 +1950,7 @@ void CvTacticalAI::PlotBlockadeMoves()
 void CvTacticalAI::PlotCounterBlockadeMoves()
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_BLOCKADE);
+	const int iNavalBlockadeRange = range(GD_INT_GET(NAVAL_PLOT_BLOCKADE_RANGE), 0, 3);
 	
 	// Find all our blockaded cities
 	int iCityLoop = 0;
@@ -1961,112 +1962,147 @@ void CvTacticalAI::PlotCounterBlockadeMoves()
 		// Higher urgency if city is damaged (can't heal while blockaded)
 		bool bCityDamaged = pCity->getDamage() > 0;
 		bool bCityUnderSiege = pCity->isUnderSiege();
-		
-		// Find enemy naval units adjacent to this city that are causing the blockade
+
+		CvPlot* pBestBlockadedPlot = NULL;
+		CvPlot* pBestBlockaderPlot = NULL;
+		CvUnit* pBestBlockader = NULL;
+		int iBestBlockadeScore = -1;
+
+		// Find the actual enemy naval unit causing a blockade on one of this city's workable sea plots.
 		CvPlot* pCityPlot = pCity->plot();
-		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		for (int iI = 0; iI < pCity->GetNumWorkablePlots(); iI++)
 		{
-			CvPlot* pAdj = plotDirection(pCityPlot->getX(), pCityPlot->getY(), (DirectionTypes)iDir);
-			if (!pAdj || !pAdj->isWater())
+			CvPlot* pBlockedPlot = pCity->GetCityCitizens()->GetCityPlotFromIndex(iI);
+			if (!pBlockedPlot || !pBlockedPlot->isEffectiveOwner(pCity) || !pBlockedPlot->isWater())
 				continue;
-				
-			// Check if this plot is blockaded (has enemy unit)
-			if (!pAdj->isBlockaded(m_pPlayer->GetID()))
+
+			if (!pBlockedPlot->isBlockaded(m_pPlayer->GetID()))
 				continue;
-				
-			CvUnit* pBlockader = pAdj->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true, true);
-			if (!pBlockader || pBlockader->getDomainType() != DOMAIN_SEA)
-				continue;
-			
-			// Found a blockading naval unit! Try to attack it with our naval units
-			// Use higher range for damaged/besieged cities
-			int iSearchRange = bCityUnderSiege ? 6 : (bCityDamaged ? 5 : 4);
-			
-			if (FindUnitsForHarassing(pAdj, iSearchRange, GD_INT_GET(MAX_HIT_POINTS) / 3, -1, DOMAIN_SEA, false, false, 3))
+
+			for (int iRing = RING0_PLOTS; iRing < RING_PLOTS[iNavalBlockadeRange]; iRing++)
 			{
-				// Prefer melee units over ranged - melee can also capture the city if opportunity arises
-				// Sort candidates: melee first, then by health
-				CvUnit* pBestMelee = NULL;
-				CvUnit* pBestRanged = NULL;
-				
-				for (size_t i = 0; i < m_CurrentMoveUnits.size(); i++)
+				CvPlot* pEnemyPlot = iterateRingPlots(pBlockedPlot, iRing);
+				if (!pEnemyPlot || pEnemyPlot->getLandmass() != pBlockedPlot->getLandmass())
+					continue;
+
+				IDInfo* pUnitNode = pEnemyPlot->headUnitNode();
+				while (pUnitNode != NULL)
 				{
-					CvUnit* pAttacker = m_pPlayer->getUnit(m_CurrentMoveUnits[i].GetID());
-					if (!pAttacker || pAttacker->TurnProcessed())
+					CvUnit* pEnemy = ::GetPlayerUnit(*pUnitNode);
+					pUnitNode = pEnemyPlot->nextUnitNode(pUnitNode);
+
+					if (!pEnemy || !m_pPlayer->IsAtWarWith(pEnemy->getOwner()))
 						continue;
-					
-					if (pAttacker->IsCanAttackRanged())
+					if (pEnemy->getDomainType() != DOMAIN_SEA || !pEnemy->isNativeDomain(pEnemyPlot))
+						continue;
+					if (!pEnemy->canEndTurnAtPlot(pBlockedPlot))
+						continue;
+
+					int iBlockadeScore = 100;
+					iBlockadeScore += (pEnemyPlot == pBlockedPlot) ? 25 : 0;
+					iBlockadeScore -= plotDistance(*pEnemyPlot, *pCityPlot) * 10;
+					iBlockadeScore -= plotDistance(*pEnemyPlot, *pBlockedPlot) * 4;
+					iBlockadeScore += pEnemy->IsCanAttackRanged() ? 5 : 0;
+
+					if (iBlockadeScore > iBestBlockadeScore)
 					{
-						// Check if ranged unit can actually attack
-						if (pAttacker->canRangeStrikeAt(pAdj->getX(), pAdj->getY()))
-						{
-							if (!pBestRanged || pAttacker->GetCurrHitPoints() > pBestRanged->GetCurrHitPoints())
-								pBestRanged = pAttacker;
-						}
-					}
-					else
-					{
-						// Melee unit - check if it can move to attack
-						if (pAttacker->canMoveInto(*pAdj, CvUnit::MOVEFLAG_ATTACK))
-						{
-							if (!pBestMelee || pAttacker->GetCurrHitPoints() > pBestMelee->GetCurrHitPoints())
-								pBestMelee = pAttacker;
-						}
+						iBestBlockadeScore = iBlockadeScore;
+						pBestBlockadedPlot = pBlockedPlot;
+						pBestBlockaderPlot = pEnemyPlot;
+						pBestBlockader = pEnemy;
 					}
 				}
-				
-				// Prefer melee (can capture city too) unless it would die from the attack
-				CvUnit* pAttacker = NULL;
-				if (pBestMelee)
+			}
+		}
+
+		if (!pBestBlockader || !pBestBlockaderPlot)
+			continue;
+
+		// Found a blockading naval unit! Try to attack it with our naval units.
+		// Use higher range for damaged/besieged cities.
+		int iSearchRange = bCityUnderSiege ? 6 : (bCityDamaged ? 5 : 4);
+
+		if (FindUnitsForHarassing(pBestBlockaderPlot, iSearchRange, GD_INT_GET(MAX_HIT_POINTS) / 3, -1, DOMAIN_SEA, false, false, 3))
+		{
+			// Prefer melee units over ranged - melee can also capture the city if opportunity arises.
+			CvUnit* pBestMelee = NULL;
+			CvUnit* pBestRanged = NULL;
+
+			for (size_t i = 0; i < m_CurrentMoveUnits.size(); i++)
+			{
+				CvUnit* pAttacker = m_pPlayer->getUnit(m_CurrentMoveUnits[i].GetID());
+				if (!pAttacker || pAttacker->TurnProcessed())
+					continue;
+
+				if (pAttacker->IsCanAttackRanged())
 				{
-					// Check if melee attack is safe enough (won't lose the unit)
-					int iSelfDamage = 0;
-					TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(pBlockader, pBestMelee, pAdj, pBestMelee->plot(), iSelfDamage, true, 0, true);
-					
-					// Use melee if it won't die or if no ranged alternative
-					if (pBestMelee->GetCurrHitPoints() > iSelfDamage || !pBestRanged)
-						pAttacker = pBestMelee;
-					else
-						pAttacker = pBestRanged;
+					if (pAttacker->canRangeStrikeAt(pBestBlockaderPlot->getX(), pBestBlockaderPlot->getY()))
+					{
+						if (!pBestRanged || pAttacker->GetCurrHitPoints() > pBestRanged->GetCurrHitPoints())
+							pBestRanged = pAttacker;
+					}
 				}
 				else
 				{
+					if (pAttacker->canMoveInto(*pBestBlockaderPlot, CvUnit::MOVEFLAG_ATTACK))
+					{
+						if (!pBestMelee || pAttacker->GetCurrHitPoints() > pBestMelee->GetCurrHitPoints())
+							pBestMelee = pAttacker;
+					}
+				}
+			}
+
+			// Prefer melee (can also clear the tile) unless it would die from the attack.
+			CvUnit* pAttacker = NULL;
+			if (pBestMelee)
+			{
+				int iSelfDamage = 0;
+				TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(pBestBlockader, pBestMelee, pBestBlockaderPlot, pBestMelee->plot(), iSelfDamage, true, 0, true);
+
+				if (pBestMelee->GetCurrHitPoints() > iSelfDamage || !pBestRanged)
+					pAttacker = pBestMelee;
+				else
 					pAttacker = pBestRanged;
-				}
-				
-				if (pAttacker)
+			}
+			else
+			{
+				pAttacker = pBestRanged;
+			}
+
+			if (pAttacker)
+			{
+				bool bIsMelee = !pAttacker->IsCanAttackRanged();
+
+				if (bIsMelee)
 				{
-					bool bIsMelee = !pAttacker->IsCanAttackRanged();
-					
-					if (bIsMelee)
+					pAttacker->PushMission(CvTypes::getMISSION_MOVE_TO(), pBestBlockaderPlot->getX(), pBestBlockaderPlot->getY(), CvUnit::MOVEFLAG_ATTACK);
+
+					if (GC.getLogging() && GC.getAILogging())
 					{
-						pAttacker->PushMission(CvTypes::getMISSION_MOVE_TO(), pAdj->getX(), pAdj->getY(), CvUnit::MOVEFLAG_ATTACK);
-						
-						if (GC.getLogging() && GC.getAILogging())
-						{
-							CvString strLogString;
-							strLogString.Format("Counter-blockade: Melee unit %d attacking blockader near %s at (%d,%d)%s%s [can capture]",
-								pAttacker->GetID(), pCity->getName().GetCString(), pAdj->getX(), pAdj->getY(),
-								bCityDamaged ? " [CITY DAMAGED]" : "", bCityUnderSiege ? " [UNDER SIEGE]" : "");
-							LogTacticalMessage(strLogString);
-						}
+						CvString strLogString;
+						strLogString.Format("Counter-blockade: Melee unit %d attacking blockader near %s at (%d,%d) via blockaded plot (%d,%d)%s%s [can clear tile]",
+							pAttacker->GetID(), pCity->getName().GetCString(), pBestBlockaderPlot->getX(), pBestBlockaderPlot->getY(),
+							pBestBlockadedPlot ? pBestBlockadedPlot->getX() : -1, pBestBlockadedPlot ? pBestBlockadedPlot->getY() : -1,
+							bCityDamaged ? " [CITY DAMAGED]" : "", bCityUnderSiege ? " [UNDER SIEGE]" : "");
+						LogTacticalMessage(strLogString);
 					}
-					else
-					{
-						pAttacker->PushMission(CvTypes::getMISSION_RANGE_ATTACK(), pAdj->getX(), pAdj->getY());
-						
-						if (GC.getLogging() && GC.getAILogging())
-						{
-							CvString strLogString;
-							strLogString.Format("Counter-blockade: Ranged unit %d bombarding blockader near %s at (%d,%d)",
-								pAttacker->GetID(), pCity->getName().GetCString(), pAdj->getX(), pAdj->getY());
-							LogTacticalMessage(strLogString);
-						}
-					}
-					
-					if (!pAttacker->canMove())
-						UnitProcessed(pAttacker->GetID());
 				}
+				else
+				{
+					pAttacker->PushMission(CvTypes::getMISSION_RANGE_ATTACK(), pBestBlockaderPlot->getX(), pBestBlockaderPlot->getY());
+
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						strLogString.Format("Counter-blockade: Ranged unit %d bombarding blockader near %s at (%d,%d) via blockaded plot (%d,%d)",
+							pAttacker->GetID(), pCity->getName().GetCString(), pBestBlockaderPlot->getX(), pBestBlockaderPlot->getY(),
+							pBestBlockadedPlot ? pBestBlockadedPlot->getX() : -1, pBestBlockadedPlot ? pBestBlockadedPlot->getY() : -1);
+						LogTacticalMessage(strLogString);
+					}
+				}
+
+				if (!pAttacker->canMove())
+					UnitProcessed(pAttacker->GetID());
 			}
 		}
 	}
@@ -4778,28 +4814,39 @@ void CvTacticalAI::UpdateTargetScores()
 			// Breaking blockades is critical - it restores city healing and trade income
 			if (pTargetUnit->getDomainType() == DOMAIN_SEA && pPlot->isBlockaded(m_pPlayer->GetID()))
 			{
-				// Check if this unit is adjacent to one of our cities (actively blockading)
+				const int iMaxBlockadeCityDistance = 3 + range(GD_INT_GET(NAVAL_PLOT_BLOCKADE_RANGE), 0, 3);
+
+				// Check if this unit can actively blockade one of our cities' workable sea plots.
 				bool bBlockadingOurCity = false;
-				for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+				int iCityLoop = 0;
+				for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL && !bBlockadingOurCity; pCity = m_pPlayer->nextCity(&iCityLoop))
 				{
-					CvPlot* pAdj = plotDirection(pPlot->getX(), pPlot->getY(), (DirectionTypes)iDir);
-					if (pAdj && pAdj->isCity() && pAdj->getPlotCity()->getOwner() == m_pPlayer->GetID())
+					if (plotDistance(*pPlot, *pCity->plot()) > iMaxBlockadeCityDistance)
+						continue;
+					if (!pCity->GetCityCitizens()->AnyPlotBlockaded())
+						continue;
+
+					for (int iI = 0; iI < pCity->GetNumWorkablePlots(); iI++)
 					{
-						CvCity* pCity = pAdj->getPlotCity();
-						if (pCity->GetCityCitizens()->AnyPlotBlockaded())
-						{
-							bBlockadingOurCity = true;
-							
-							// Higher priority if city is damaged (needs healing)
-							if (pCity->getDamage() > 0)
-								it->SetAuxIntData(it->GetAuxIntData() + 15);
-							
-							// Even higher if city is under siege
-							if (pCity->isUnderSiege())
-								it->SetAuxIntData(it->GetAuxIntData() + 20);
-								
-							break;
-						}
+						CvPlot* pBlockedPlot = pCity->GetCityCitizens()->GetCityPlotFromIndex(iI);
+						if (!pBlockedPlot || !pBlockedPlot->isEffectiveOwner(pCity) || !pBlockedPlot->isWater())
+							continue;
+						if (!pBlockedPlot->isBlockaded(m_pPlayer->GetID()))
+							continue;
+						if (!pTargetUnit->isNativeDomain(pPlot) || !pTargetUnit->canEndTurnAtPlot(pBlockedPlot))
+							continue;
+
+						bBlockadingOurCity = true;
+
+						// Higher priority if city is damaged (needs healing)
+						if (pCity->getDamage() > 0)
+							it->SetAuxIntData(it->GetAuxIntData() + 15);
+
+						// Even higher if city is under siege
+						if (pCity->isUnderSiege())
+							it->SetAuxIntData(it->GetAuxIntData() + 20);
+
+						break;
 					}
 				}
 				
