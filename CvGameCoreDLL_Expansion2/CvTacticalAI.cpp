@@ -4552,19 +4552,24 @@ void CvTacticalAI::PlotReinforcementMoves(CvTacticalDominanceZone* pTargetZone)
 		}
 	}
 
-	//if we only have a single unit to work with in total, this is a case for pillage moves or the like
-	if (pTargetZone->GetTotalFriendlyUnitCount() + m_CurrentMoveUnits.size() - iMoveUnitsAlreadyInZone < 2)
-		return;
-
 	if (m_CurrentMoveUnits.size() > 0)
 	{
 		vector<CvUnit*> vUnits;
+		int iAvailableMoveUnitsAlreadyInZone = 0;
 		for (size_t i = 0; i < m_CurrentMoveUnits.size(); i++)
 		{
 			CvUnit* pUnit = m_pPlayer->getUnit( m_CurrentMoveUnits[i].GetID() );
 			if (pUnit->canUseNow())
+			{
 				vUnits.push_back(pUnit);
+				if (m_pPlayer->GetTacticalAI()->GetTacticalAnalysisMap()->GetZoneByPlot(pUnit->plot()) == pTargetZone)
+					iAvailableMoveUnitsAlreadyInZone++;
+			}
 		}
+
+		//if we only have a single unit to work with in total, this is a case for pillage moves or the like
+		if (pTargetZone->GetTotalFriendlyUnitCount() + (int)vUnits.size() - iAvailableMoveUnitsAlreadyInZone < 2)
+			return;
 
 		PositionUnitsAroundTarget(vUnits,pTargetPlot);
 	}
