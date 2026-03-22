@@ -71,6 +71,17 @@ int GetDesiredCarrierFighterReserve(int iPlatformSlots, int iEnemyBombers, int i
 	return min(iDesiredFighters, max(0, iPlatformSlots - 1));
 }
 
+int GetDesiredCarrierRecoveryHeadroom(int iPlatformSlots, int iDesiredFighters, int iEnemyBombers)
+{
+	int iHeadroom = 0;
+	if (iDesiredFighters > 0 && iPlatformSlots - iDesiredFighters >= 2)
+		iHeadroom = 1;
+	if (iPlatformSlots >= 6 && iEnemyBombers >= 4 && iPlatformSlots - iDesiredFighters >= 3)
+		iHeadroom = 2;
+
+	return iHeadroom;
+}
+
 int GetCarrierFighterDeficit(CvPlot* pBasePlot, PlayerTypes ePlayer, int iRange, int* piDesiredFighters, int* piCurrentFighters)
 {
 	if (!pBasePlot || pBasePlot->isCity() || ePlayer == NO_PLAYER)
@@ -7678,6 +7689,7 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 				int iEnemyBombers = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, false, true);
 				int iEnemyFighters = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, true, false);
 				int iDesiredFighters = GetDesiredCarrierFighterReserve(iPlatformSlots, iEnemyBombers, iEnemyFighters);
+				int iRecoveryHeadroom = GetDesiredCarrierRecoveryHeadroom(iPlatformSlots, iDesiredFighters, iEnemyBombers);
 				
 				// Check distance to nearest friendly city for resupply
 				CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
@@ -7688,6 +7700,13 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 					&& iDefensive < iDesiredFighters && iCurrentCargo < iPlatformSlots)
 				{
 					// Hold threatened carrier slots open for fighter cover before adding more strike aircraft.
+					return false;
+				}
+
+				if ((eUnitAI == UNITAI_ATTACK_AIR || eUnitAI == UNITAI_MISSILE_AIR || eUnitAI == UNITAI_ICBM)
+					&& iRecoveryHeadroom > 0 && iCurrentCargo >= iPlatformSlots - iRecoveryHeadroom)
+				{
+					// Keep some flexible deck space on air-contested carriers so future CAP swings can be refilled.
 					return false;
 				}
 				
