@@ -2125,16 +2125,16 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 		CvTacticalDominanceZone* pWaterZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
 		if (!pWaterZone)
 			continue;
-		
-		// Skip if we already dominate the water zone
-		if (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY)
-			continue;
-		
+
 		// Prioritize cities under threat
 		bool bEnemyNavalPresence = (pWaterZone->GetEnemyNavalUnitCount() > 0);
 		bool bEnemyDominated = (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY);
 		bool bCityDamaged = (pCity->getDamage() > 0);
 		bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+
+		// A locally blockaded city still needs help even if the zone remains net-friendly.
+		if (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY && !bBlockaded)
+			continue;
 		
 		// Skip if no naval threat
 		if (!bEnemyNavalPresence && !bEnemyDominated && !bBlockaded)
