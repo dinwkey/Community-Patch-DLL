@@ -1695,10 +1695,17 @@ void CvGame::CheckPlayerTurnDeactivate()
 				if(kPlayer.hasProcessedAutoMoves())
 				{
 					bool bAutoMovesComplete = false;
+					EndTurnBlockingTypes eCurrentBlockingType = kPlayer.GetEndTurnBlockingType();
+					int iCurrentBlockingNotificationIndex = kPlayer.GetEndTurnBlockingNotificationIndex();
+					if (kPlayer.GetNotifications())
+					{
+						kPlayer.GetNotifications()->GetEndTurnBlockedType(eCurrentBlockingType, iCurrentBlockingNotificationIndex);
+						kPlayer.SetEndTurnBlocking(eCurrentBlockingType, iCurrentBlockingNotificationIndex);
+					}
 					// Allow pending-deal notifications to not block turn deactivation in simultaneous turns (multiplayer).
 					// This prevents a freeze when a proposal is sent to a player who has already ended their turn.
-					bool bIsBlockingTypeAllowed = (kPlayer.GetEndTurnBlockingType() == NO_ENDTURN_BLOCKING_TYPE);
-					bool bAllowPendingDealOverride = (kPlayer.GetEndTurnBlockingType() == ENDTURN_BLOCKING_PENDING_DEAL) &&
+					bool bIsBlockingTypeAllowed = (eCurrentBlockingType == NO_ENDTURN_BLOCKING_TYPE);
+					bool bAllowPendingDealOverride = (eCurrentBlockingType == ENDTURN_BLOCKING_PENDING_DEAL) &&
 						kPlayer.isSimultaneousTurns() && gDLL->HasReceivedTurnComplete(kPlayer.GetID());
 
 					if (bIsBlockingTypeAllowed)
@@ -5482,6 +5489,10 @@ void CvGame::setAIAutoPlay(int iNewValue, PlayerTypes eReturnAsPlayer)
 				CvPreGame::setSlotStatus(eReturnAsPlayer, SS_TAKEN);
 				CvPreGame::VerifyHandicap(eReturnAsPlayer, true);
 				setActivePlayer(eReturnAsPlayer, false /*bForceHotSeat*/, true /*bAutoplaySwitch*/);
+				if (getObserverUIOverridePlayer() == eReturnAsPlayer)
+				{
+					setObserverUIOverridePlayer(NO_PLAYER);
+				}
 				GET_PLAYER(eReturnAsPlayer).GetDiplomacyAI()->SlotStateChange();
 			}
 		}
