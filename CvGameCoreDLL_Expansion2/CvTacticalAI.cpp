@@ -16,6 +16,7 @@
 #include "CvGrandStrategyAI.h"
 #include "cvStopWatch.h"
 #include "CvMilitaryAI.h"
+#include "CvCityTargetingAIHelpers.h"
 #include "CvTypes.h"
 #include "CvDiplomacyAI.h"
 #include "CvArmyAI.h"
@@ -306,27 +307,14 @@ void CvTacticalAI::RecruitUnits()
 
 /// Update the AI for units
 // Forward declaration - defined later in this file
-enum CoalitionLiberationCase
-{
-	COALITION_LIBERATION_NONE,
-	COALITION_LIBERATION_CITY_STATE,
-	COALITION_LIBERATION_DEAD_MAJOR,
-	COALITION_LIBERATION_ORIGINAL_CAPITAL,
-	COALITION_LIBERATION_OTHER_MAJOR,
-};
+using namespace CityTargetingAIHelpers;
 
 static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer);
 static void GetCoastalApproachCounts(const CvCity* pCity, int& iLandApproaches, int& iWaterApproaches);
 static bool IsNavyLedCoastalAssaultTarget(const CvCity* pCity, bool& bIslandCity, bool& bNavalDominatedCity, int& iLandApproaches, int& iWaterApproaches);
 static bool CanReachLandAttackPositionWithoutEmbark(const CvUnit* pUnit, const CvCity* pCity, bool bAllowOneTurnSetup);
 static bool ShouldSkipLandUnitForCoastalCapture(const CvUnit* pUnit, const CvCity* pCity, bool bPreferNavalCapture, bool bLandAssaultCooldownActive);
-static bool IsCoalitionRelevantCityTargetOwner(PlayerTypes eTargetOwner);
 static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner);
-static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget);
-static bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pCity);
-static bool IsStrategicallyImportantCapture(const CvPlayer* pPlayer, const CvCity* pCity);
-static int GetCaptureCityValuePercent(const CvPlayer* pPlayer, const CvCity* pCity);
-static bool IsSelfCaptureBurdensome(const CvPlayer* pPlayer, const CvCity* pCity);
 static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity);
 static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* pCity, int& iHelpfulPressure, int& iHarmfulPressure);
 static bool ShouldAvoidRiskyCoalitionCapture(const CvPlayer* pPlayer, const CvCity* pCity, bool bCaptureOpportunityThisTurn, int iOurMeleeCount, int iHelpfulPressure, int iHarmfulPressure);
@@ -996,120 +984,6 @@ static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOthe
 		return true;
 
 	return false;
-}
-
-static bool IsCoalitionRelevantCityTargetOwner(PlayerTypes eTargetOwner)
-{
-	if (eTargetOwner == NO_PLAYER || eTargetOwner == BARBARIAN_PLAYER)
-		return false;
-
-	const CvPlayer& kTargetOwner = GET_PLAYER(eTargetOwner);
-	return kTargetOwner.isAlive() && (kTargetOwner.isMajorCiv() || kTargetOwner.isMinorCiv());
-}
-static CoalitionLiberationCase GetCoalitionLiberationCase(const CvCity* pCity, PlayerTypes eLiberationTarget)
-{
-	if (!pCity || eLiberationTarget == NO_PLAYER)
-		return COALITION_LIBERATION_NONE;
-
-	const CvPlayer& kLiberationTarget = GET_PLAYER(eLiberationTarget);
-	if (kLiberationTarget.isMinorCiv())
-		return COALITION_LIBERATION_CITY_STATE;
-
-	if (!kLiberationTarget.isMajorCiv())
-		return COALITION_LIBERATION_NONE;
-
-	if (!kLiberationTarget.isAlive())
-		return COALITION_LIBERATION_DEAD_MAJOR;
-
-	if (pCity->IsOriginalCapitalForPlayer(eLiberationTarget) || (pCity->IsOriginalMajorCapital() && pCity->getOriginalOwner() == eLiberationTarget))
-		return COALITION_LIBERATION_ORIGINAL_CAPITAL;
-
-	return COALITION_LIBERATION_OTHER_MAJOR;
-}
-
-static bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pCity)
-{
-	if (!pPlayer || !pCity)
-		return false;
-
-	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
-	if (!pDiploAI)
-		return false;
-
-	CvPlayer* pMutablePlayer = const_cast<CvPlayer*>(pPlayer);
-	CvCity* pMutableCity = const_cast<CvCity*>(pCity);
-	PlayerTypes eLiberationTarget = pMutablePlayer->GetPlayerToLiberate(pMutableCity);
-	return (eLiberationTarget != NO_PLAYER) && pDiploAI->IsTryingToLiberate(pMutableCity);
-}
-
-static bool IsStrategicallyImportantCapture(const CvPlayer* pPlayer, const CvCity* pCity)
-{
-	if (!pPlayer || !pCity)
-		return false;
-
-	if (pCity->HasAnyWonder() || pCity->GetCityReligions()->IsHolyCityAnyReligion())
-		return true;
-
-	if (pCity->IsOriginalMajorCapital() || pCity->getOriginalOwner() == pPlayer->GetID())
-		return true;
-
-	CvLandmass* pLandmass = GC.getMap().getLandmassById(pCity->plot()->getLandmass());
-	if (pLandmass != NULL && pLandmass->getCitiesPerPlayer(pPlayer->GetID()) <= 1)
-		return true;
-
-	return false;
-}
-
-static int GetCaptureCityValuePercent(const CvPlayer* pPlayer, const CvCity* pCity)
-{
-	if (!pPlayer || !pCity)
-		return 0;
-
-	CvCity* pMutableCity = const_cast<CvCity*>(pCity);
-	int iMedianEconomicPower = GC.getGame().getMedianEconomicValue();
-	int iLocalEconomicPower = pMutableCity->getEconomicValue(pPlayer->GetID());
-	int iCityValue = (iLocalEconomicPower * 100) / max(1, iMedianEconomicPower);
-
-	iCityValue *= GD_INT_GET(AI_CITY_VALUE_MULTIPLIER);
-	iCityValue /= 100;
-
-	if (pCity->IsOriginalMajorCapital())
-	{
-		iCityValue *= GD_INT_GET(AI_CAPITAL_VALUE_MULTIPLIER);
-		iCityValue /= 100;
-	}
-
-	return iCityValue;
-}
-
-static bool IsSelfCaptureBurdensome(const CvPlayer* pPlayer, const CvCity* pCity)
-{
-	if (!pPlayer || !pCity)
-		return false;
-
-	if (ShouldPreferSelfLiberationCapture(pPlayer, pCity) || IsStrategicallyImportantCapture(pPlayer, pCity))
-		return false;
-
-	if (GetCaptureCityValuePercent(pPlayer, pCity) >= GD_INT_GET(AI_CITY_SOME_VALUE_THRESHOLD))
-		return false;
-
-	int iBurdenScore = 0;
-	if (pPlayer->IsEmpireVeryUnhappy())
-		iBurdenScore += 3;
-	else if (pPlayer->IsEmpireUnhappy())
-		iBurdenScore += 2;
-
-	if (pPlayer->GetExcessHappiness() < 0)
-		iBurdenScore += 1;
-
-	if (pPlayer->GetPlayerTraits()->IsNoAnnexing())
-		iBurdenScore += 1;
-
-	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
-	if (pDiploAI && pCity->IsOriginalMajorCapital() && !(pDiploAI->IsGoingForWorldConquest() || pDiploAI->IsCloseToWorldConquest()))
-		iBurdenScore += 1;
-
-	return iBurdenScore >= 3;
 }
 
 static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity)
