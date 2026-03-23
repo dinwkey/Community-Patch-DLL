@@ -33,6 +33,17 @@ enum CoalitionLiberationCase
 	COALITION_LIBERATION_OTHER_MAJOR,
 };
 
+enum SharedWarContributionPosture
+{
+	SHARED_WAR_POSTURE_FULL_CAPTURE,
+	SHARED_WAR_POSTURE_ASSIST_ALLY,
+	SHARED_WAR_POSTURE_PRESSURE_ONLY,
+};
+
+bool ShouldPreferSelfLiberationCapture(const CvPlayer* pPlayer, const CvCity* pTargetCity);
+bool IsStrategicallyImportantCapture(const CvPlayer* pPlayer, const CvCity* pTargetCity);
+bool IsSelfCaptureBurdensome(const CvPlayer* pPlayer, const CvCity* pTargetCity);
+
 int CountUnassignedCombatNavalUnits(const CvPlayer* pPlayer)
 {
 	if (!pPlayer)
@@ -59,6 +70,124 @@ bool IsCoalitionRelevantCityTargetOwner(PlayerTypes eTargetOwner)
 
 	const CvPlayer& kTargetOwner = GET_PLAYER(eTargetOwner);
 	return kTargetOwner.isAlive() && (kTargetOwner.isMajorCiv() || kTargetOwner.isMinorCiv());
+}
+
+bool IsHelpfulSharedWarPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner, bool& bStrongerPartner)
+{
+	bStrongerPartner = false;
+
+	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
+		return false;
+
+	if (!GET_PLAYER(eOtherPlayer).isAlive() || !GET_PLAYER(eOtherPlayer).isMajorCiv())
+		return false;
+
+	if (!GET_PLAYER(eOtherPlayer).IsAtWarWith(eTargetOwner) || GET_PLAYER(eOtherPlayer).IsAtWarWith(pPlayer->GetID()))
+		return false;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return false;
+
+	const bool bFriendlyPartner = pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING ||
+		pDiploAI->IsFriendOrAlly(eOtherPlayer) || pDiploAI->IsDoFAccepted(eOtherPlayer);
+	if (!bFriendlyPartner)
+		return false;
+
+	bStrongerPartner = GET_PLAYER(eOtherPlayer).GetEconomicMight() > pPlayer->GetEconomicMight() * 11 / 10 ||
+		GET_PLAYER(eOtherPlayer).GetScore() > pPlayer->GetScore() * 11 / 10;
+
+	return true;
+}
+
+SharedWarContributionPosture GetSharedWarContributionPosture(const CvPlayer* pPlayer, PlayerTypes eTargetOwner)
+{
+	if (!pPlayer || eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+		return SHARED_WAR_POSTURE_FULL_CAPTURE;
+
+	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
+	if (!pDiploAI)
+		return SHARED_WAR_POSTURE_FULL_CAPTURE;
+
+	if (pDiploAI->IsGoingForWorldConquest() || pDiploAI->IsCloseToWorldConquest())
+		return SHARED_WAR_POSTURE_FULL_CAPTURE;
+
+	int iHelpfulPartners = 0;
+	bool bHasStrongerPartner = false;
+	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+	{
+		PlayerTypes eLoopPlayer = static_cast<PlayerTypes>(iPlayerLoop);
+		if (eLoopPlayer == pPlayer->GetID() || eLoopPlayer == eTargetOwner)
+			continue;
+
+		bool bStrongerPartner = false;
+		if (IsHelpfulSharedWarPartner(pPlayer, eLoopPlayer, eTargetOwner, bStrongerPartner))
+		{
+			iHelpfulPartners++;
+			bHasStrongerPartner = bHasStrongerPartner || bStrongerPartner;
+		}
+	}
+
+	if (iHelpfulPartners <= 0)
+		return SHARED_WAR_POSTURE_FULL_CAPTURE;
+
+	int iBurden = 0;
+	if (pPlayer->IsEmpireVeryUnhappy())
+		iBurden += 3;
+	else if (pPlayer->IsEmpireUnhappy())
+		iBurden += 2;
+
+	if (pPlayer->GetExcessHappiness() < 0)
+		iBurden += 1;
+
+	if (pPlayer->GetPlayerTraits()->IsNoAnnexing())
+		iBurden += 1;
+
+	if (pPlayer->CountNumDangerousMajorsAtWarWith(true, false) >= 2)
+		iBurden += 1;
+
+	if (iBurden >= 4 && bHasStrongerPartner)
+		return SHARED_WAR_POSTURE_PRESSURE_ONLY;
+
+	if (iBurden >= 2)
+		return SHARED_WAR_POSTURE_ASSIST_ALLY;
+
+	return SHARED_WAR_POSTURE_FULL_CAPTURE;
+}
+
+float GetSharedWarContributionTargetModifier(const CvPlayer* pPlayer, const CvCity* pTargetCity)
+{
+	if (!pPlayer || !pTargetCity)
+		return 1.f;
+
+	if (ShouldPreferSelfLiberationCapture(pPlayer, pTargetCity))
+		return 1.10f;
+
+	SharedWarContributionPosture ePosture = GetSharedWarContributionPosture(pPlayer, pTargetCity->getOwner());
+	if (ePosture == SHARED_WAR_POSTURE_FULL_CAPTURE)
+		return 1.f;
+
+	if (IsStrategicallyImportantCapture(pPlayer, pTargetCity))
+		return ePosture == SHARED_WAR_POSTURE_PRESSURE_ONLY ? 0.95f : 1.f;
+
+	if (!IsSelfCaptureBurdensome(pPlayer, pTargetCity))
+		return ePosture == SHARED_WAR_POSTURE_PRESSURE_ONLY ? 0.92f : 0.97f;
+
+	return ePosture == SHARED_WAR_POSTURE_PRESSURE_ONLY ? 0.70f : 0.85f;
+}
+
+bool ShouldDeferSharedWarCityAttack(const CvPlayer* pPlayer, const CvCity* pTargetCity, bool bCareful)
+{
+	if (!pPlayer || !pTargetCity || !bCareful)
+		return false;
+
+	if (ShouldPreferSelfLiberationCapture(pPlayer, pTargetCity) || IsStrategicallyImportantCapture(pPlayer, pTargetCity))
+		return false;
+
+	if (GetSharedWarContributionPosture(pPlayer, pTargetCity->getOwner()) != SHARED_WAR_POSTURE_PRESSURE_ONLY)
+		return false;
+
+	return IsSelfCaptureBurdensome(pPlayer, pTargetCity);
 }
 
 float GetCoalitionPartnerTargetModifier(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner)
@@ -1419,6 +1548,25 @@ bool CvMilitaryAI::RequestCityAttack(PlayerTypes eIntendedTarget, int iNumUnitsW
 		if (eTargetPlayer != eIntendedTarget)
 			continue;
 
+		CvCity* pTargetCity = pTargetPlot->getPlotCity();
+		if (!pTargetCity)
+			continue;
+
+		if (ShouldDeferSharedWarCityAttack(m_pPlayer, pTargetCity, bCareful))
+		{
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString playerName = GetPlayer()->getCivilizationShortDescription();
+				FILogFile* pLog = LOGFILEMGR.GetLog(GetLogFileName(playerName), FILogFile::kDontTimeStamp);
+				CvString msg;
+				msg.Format("%03d, %s, SHARED WAR DEFER ATTACK: posture=pressure-only vs %s at %s",
+					GC.getGame().getElapsedGameTurns(), m_pPlayer->getCivilizationShortDescription(),
+					GET_PLAYER(eIntendedTarget).getCivilizationShortDescription(), pTargetCity->getName().c_str());
+				pLog->Msg(msg.c_str());
+			}
+			continue;
+		}
+
 		AIOperationTypes opType = AI_OPERATION_TYPE_UNKNOWN;
 		switch (m_potentialAttackTargets[i].m_armyType)
 		{
@@ -1465,8 +1613,12 @@ bool CvMilitaryAI::RequestCityAttack(PlayerTypes eIntendedTarget, int iNumUnitsW
 				continue;
 		}
 
+		int iUnitsToBuild = bCareful ? iNumUnitsWillingToBuild : 0;
+		if (bCareful && GetSharedWarContributionPosture(m_pPlayer, eTargetPlayer) == SHARED_WAR_POSTURE_ASSIST_ALLY && !ShouldPreferSelfLiberationCapture(m_pPlayer, pTargetCity) && !IsStrategicallyImportantCapture(m_pPlayer, pTargetCity))
+			iUnitsToBuild = min(iUnitsToBuild, 1);
+
 		//if we're being careless, just use whatever units we have and do not wait for new ones
-		if (m_pPlayer->addAIOperation(opType, bCareful ? iNumUnitsWillingToBuild : 0, eTargetPlayer, pTargetPlot->getPlotCity(), pMusterPlot->getPlotCity()) != NULL)
+		if (m_pPlayer->addAIOperation(opType, iUnitsToBuild, eTargetPlayer, pTargetCity, pMusterPlot->getPlotCity()) != NULL)
 			return true;
 		else
 		{
@@ -1684,6 +1836,9 @@ int CvMilitaryAI::ScoreAttackTarget(const CvAttackTarget& target)
 
 	// Cities that are low-value burdens to keep should be less attractive unless we want to take them specifically to liberate them.
 	fDesirability *= GetSelfCaptureTargetModifier(m_pPlayer, pTargetCity);
+
+	// In shared wars, a broader war-level posture can prefer support pressure over ownership for low-value cities.
+	fDesirability *= GetSharedWarContributionTargetModifier(m_pPlayer, pTargetCity);
 
 	// Shared wars still have value, but we discount targets where unrelated majors are also likely to benefit.
 	fDesirability *= GetCoalitionWarTargetModifier(m_pPlayer, pTargetCity);
