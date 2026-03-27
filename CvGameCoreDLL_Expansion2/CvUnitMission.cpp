@@ -1049,6 +1049,21 @@ bool CvUnitMission::CanStartMission(CvUnit* hUnit, int iMission, int iData1, int
 		else
 			return false;
 	}
+	else if(iMission == CvTypes::getMISSION_WAIT_FOR())
+	{
+		PRECONDITION(iData1 != NO_PLAYER, "iData1 should be a valid Player");
+		PRECONDITION(iData2 != NO_UNIT, "iData2 should be a valid Unit ID");
+		if(iData1 != NO_PLAYER && iData2 != NO_UNIT)
+		{
+			pTargetUnit = GET_PLAYER((PlayerTypes)iData1).getUnit(iData2);
+			if(pTargetUnit)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
 	else if(iMission == CvTypes::getMISSION_SKIP())
 	{
 		if(hUnit->canHold(pPlot, bTestVisible))

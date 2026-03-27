@@ -2523,7 +2523,7 @@ void CvMilitaryAI::SetRecommendedArmyNavySize()
 	else if (!bSeaDependentEmpire && iObservedNavalThreatTotal == 0)
 		iNavalPercent -= min(20, iCoastalDefenseSubstitutesTotal / 80);
 
-	iNavalPercent = range(iNavalFloor, 95, iNavalPercent);
+	iNavalPercent = range(iNavalPercent, iNavalFloor, 95);
 
 	// Modifiers
 	int iFlavorDefense = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_DEFENSE"));
