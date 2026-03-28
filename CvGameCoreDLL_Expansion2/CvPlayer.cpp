@@ -4656,6 +4656,9 @@ CvCity* CvPlayer::acquireCity(CvCity* pCity, bool bConquest, bool bGift, bool bO
 		}
 	}
 
+	// Recompute military might immediately so that AI strength estimates are not stale
+	updateMightStatistics();
+
 	return pNewCity;
 }
 
@@ -37717,6 +37720,9 @@ void CvPlayer::DoDistanceGift(PlayerTypes eFromPlayer, CvUnit* pUnit)
 	}
 
 	AddIncomingUnit(eFromPlayer, pUnit);
+
+	// Recompute military might immediately so that AI strength estimates are not stale
+	updateMightStatistics();
 }
 /// Someone sent us a present!
 void CvPlayer::AddIncomingUnit(PlayerTypes eFromPlayer, CvUnit* pUnit)

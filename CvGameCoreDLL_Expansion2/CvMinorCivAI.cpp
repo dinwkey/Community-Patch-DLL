@@ -15326,6 +15326,9 @@ int CvMinorCivAI::TransferUnitsAndCitiesToMajor(PlayerTypes eMajor, bool bForced
 	GC.getGame().DoUpdateDiploVictory();
 	GC.GetEngineUserInterface()->setDirty(GameData_DIRTY_BIT, true);
 
+	// Recompute the major's military might immediately so that AI strength estimates reflect the transferred units/cities
+	GET_PLAYER(eMajor).ResetMightCalcTurn();
+
 	return iNumUnits;
 }
 
