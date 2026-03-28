@@ -2545,6 +2545,10 @@ void CvUnit::kill(bool bDelay, PlayerTypes ePlayer /*= NO_PLAYER*/)
 			GET_PLAYER(ePlayer).DoDifficultyBonus(DIFFICULTY_BONUS_KILLED_BARBARIAN_UNIT);
 	}
 
+	// Invalidate the owner's military might cache so AI strength estimates reflect this death
+	if (!IsCivilianUnit())
+		GET_PLAYER(eUnitOwner).ResetMightCalcTurn();
+
 	if (bDelay)
 	{
 		startDelayedDeath();

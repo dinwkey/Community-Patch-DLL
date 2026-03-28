@@ -4659,6 +4659,10 @@ CvCity* CvPlayer::acquireCity(CvCity* pCity, bool bConquest, bool bGift, bool bO
 	// Recompute military might immediately so that AI strength estimates are not stale
 	updateMightStatistics();
 
+	// Also invalidate the old owner's cache — they lost a city (and possibly garrison units)
+	if (eOldOwner != NO_PLAYER)
+		GET_PLAYER(eOldOwner).ResetMightCalcTurn();
+
 	return pNewCity;
 }
 
@@ -9365,6 +9369,9 @@ CvUnit* CvPlayer::initUnit(UnitTypes eUnit, int iX, int iY, UnitAITypes eUnitAI,
 		m_bEverTrainedBuilder = true;
 	}
 
+	if (pkUnitInfo->IsMilitarySupport())
+		ResetMightCalcTurn();
+
 	m_kPlayerAchievements.AddUnit(pUnit);
 	return pUnit;
 }
@@ -9383,6 +9390,9 @@ CvUnit* CvPlayer::initUnitWithNameOffset(UnitTypes eUnit, int nameOffset, int iX
 	{
 		m_bEverTrainedBuilder = true;
 	}
+
+	if (pkUnitInfo->IsMilitarySupport())
+		ResetMightCalcTurn();
 
 	m_kPlayerAchievements.AddUnit(pUnit);
 
@@ -9409,6 +9419,9 @@ CvUnit* CvPlayer::initNamedUnit(UnitTypes eUnit, const char* strKey, int iX, int
 	{
 		m_bEverTrainedBuilder = true;
 	}
+
+	if (pkUnitInfo->IsMilitarySupport())
+		ResetMightCalcTurn();
 
 	pUnit->SetGreatWork(NO_GREAT_WORK);
 
