@@ -318,6 +318,49 @@ struct CvFocusArea
 	int m_iLastTurn;
 };
 
+struct STacticalPlotMemory
+{
+	STacticalPlotMemory() : iPenalty(0), iTurnRecorded(-1), eDomain(NO_DOMAIN), bRecentLoss(false) {}
+
+	int iPenalty;
+	int iTurnRecorded;
+	DomainTypes eDomain;
+	bool bRecentLoss;
+};
+
+struct STacticalUnitTurnSnapshot
+{
+	STacticalUnitTurnSnapshot() : iPlotIndex(-1), iCurrentHP(0), eDomain(NO_DOMAIN), bEmbarked(false), bCombat(false), bCivilian(false) {}
+
+	int iPlotIndex;
+	int iCurrentHP;
+	DomainTypes eDomain;
+	bool bEmbarked;
+	bool bCombat;
+	bool bCivilian;
+};
+
+struct STacticalTargetProgressSnapshot
+{
+	STacticalTargetProgressSnapshot() : iTurnRecorded(-1), bTargetIsCity(false), bTargetPresent(false), iCityDamage(0), iBestDefenderHP(0) {}
+
+	int iTurnRecorded;
+	bool bTargetIsCity;
+	bool bTargetPresent;
+	int iCityDamage;
+	int iBestDefenderHP;
+};
+
+struct STacticalZoneMemoryDiagnostics
+{
+	STacticalZoneMemoryDiagnostics() : iHighPressureTargets(0), iMaxPenalty(0), bAnyRecentProgress(false), bSuppressedByProgress(false) {}
+
+	int iHighPressureTargets;
+	int iMaxPenalty;
+	bool bAnyRecentProgress;
+	bool bSuppressedByProgress;
+};
+
 FDataStream& operator<<(FDataStream&, const CvFocusArea&);
 FDataStream& operator>>(FDataStream&, CvFocusArea&);
 
@@ -362,6 +405,7 @@ public:
 
 	// For air units
 	bool ShouldRebase(CvUnit* pUnit) const;
+	int GetRecentPlotPenaltyForUnit(const CvUnit* pUnit, const CvPlot* pPlot, bool bAllowBreakthrough = false) const;
 
 	// Public logging
 	FILogFile* GetLogFile();
@@ -439,6 +483,15 @@ private:
 	bool ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits);
 	int FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain);
 	bool FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const vector<CvUnit*>& vAlliedUnits);
+	bool IsShortTermMemoryActive() const;
+	void ReconcileShortTermMemory();
+	void SnapshotShortTermMemory();
+	void SnapshotTargetProgress();
+	void DecayShortTermMemory();
+	void RememberShortTermTacticalPenalty(int iPlotIndex, DomainTypes eDomain, int iPenalty, bool bRecentLoss);
+	bool ShouldReduceMemoryPenaltyForBreakthrough(const CvUnit* pUnit, const CvPlot* pPlot) const;
+	bool HasRecentTargetProgress(const CvUnit* pUnit, const CvPlot* pPlot) const;
+	eTacticalPosture GetSaferZonePostureFromRecentLosses(CvTacticalDominanceZone* pZone, eTacticalPosture eCurrentPosture, const vector<CvUnit*>& vZoneUnits, STacticalZoneMemoryDiagnostics* pDiagnostics = NULL) const;
 
 	// Operational AI support functions
 	bool CheckForEnemiesNearArmy(CvArmyAI* pArmy);
@@ -538,6 +591,11 @@ private:
 	// Cached per-turn state
 	bool m_bImminentAttack; // computed once in Update(), true if any nearby major has IsAttackLikelyImminent
 	std::map<int, int> m_coastalLandAssaultCooldownUntilTurn;
+	std::map<int, STacticalPlotMemory> m_recentPlotMemory;
+	std::map<int, STacticalUnitTurnSnapshot> m_previousUnitSnapshots;
+	std::map<int, STacticalTargetProgressSnapshot> m_targetProgressSnapshots;
+	int m_iLastMemoryReconcileTurn;
+	int m_iLastMemorySnapshotTurn;
 
 	// Dominance zone info
 	int m_eCurrentTargetType;

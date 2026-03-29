@@ -42,6 +42,11 @@ const short TACTICAL_COMBAT_IMPOSSIBLE_SCORE = (short) -1000;
 const int TACTSIM_UNIQUENESS_CHECK_GENERATIONS = 3; //higher means check more siblings for permutations
 const int TACTSIM_BREADTH_FIRST_GENERATIONS = 3; //switch to depth-first later
 const int TACTSIM_MAX_UNITS = 13; //we have limited storage and time ...
+const int TACTICAL_MEMORY_DAMAGE_THRESHOLD = 30;
+const int TACTICAL_MEMORY_RECENT_DAMAGE_PENALTY = 18;
+const int TACTICAL_MEMORY_RECENT_LOSS_PENALTY = 36;
+const int TACTICAL_MEMORY_MAX_PENALTY = 60;
+const int TACTICAL_MEMORY_TTL_TURNS = 2;
 
 //global memory for tactical simulation
 CvTactPosStorage gTactPosStorage(6000);
@@ -184,6 +189,10 @@ FDataStream& operator>>(FDataStream& loadFrom, CvFocusArea& writeTo)
 
 /// Constructor
 CvTacticalAI::CvTacticalAI(void)
+	: m_pPlayer(NULL)
+	, m_bImminentAttack(false)
+	, m_iLastMemoryReconcileTurn(-1)
+	, m_iLastMemorySnapshotTurn(-1)
 {
 }
 
@@ -202,6 +211,11 @@ void CvTacticalAI::Init(CvPlayer* pPlayer)
 	m_tacticalMap.Reset(m_pPlayer ? m_pPlayer->GetID() : NO_PLAYER);
 	m_bImminentAttack = false;
 	m_coastalLandAssaultCooldownUntilTurn.clear();
+	m_recentPlotMemory.clear();
+	m_previousUnitSnapshots.clear();
+	m_targetProgressSnapshots.clear();
+	m_iLastMemoryReconcileTurn = -1;
+	m_iLastMemorySnapshotTurn = -1;
 
 	// Initialize AI constants from XML
 	m_iRecruitRange = /*8*/ GD_INT_GET(AI_TACTICAL_RECRUIT_RANGE);
@@ -212,6 +226,9 @@ void CvTacticalAI::Init(CvPlayer* pPlayer)
 /// Deallocate memory created in initialize
 void CvTacticalAI::Uninit()
 {
+	m_recentPlotMemory.clear();
+	m_previousUnitSnapshots.clear();
+	m_targetProgressSnapshots.clear();
 }
 
 ///
@@ -324,6 +341,11 @@ void CvTacticalAI::Update()
 {
 	m_bImminentAttack = IsMemoryAttackImminentForPlayer(m_pPlayer);
 	ExpireCoastalAssaultLandCooldowns();
+	if (IsShortTermMemoryActive() && m_iLastMemoryReconcileTurn != GC.getGame().getGameTurn())
+	{
+		ReconcileShortTermMemory();
+		m_iLastMemoryReconcileTurn = GC.getGame().getGameTurn();
+	}
 
 	UpdateVisibility();
 	DropOldFocusAreas();
@@ -346,9 +368,417 @@ void CvTacticalAI::UpdateForHomelandSupport()
 	FindTacticalTargets();
 }
 
+bool CvTacticalAI::IsShortTermMemoryActive() const
+{
+	return m_pPlayer && !m_pPlayer->isBarbarian() && !m_pPlayer->isHuman(ISHUMAN_AI_UNITS);
+}
+
+void CvTacticalAI::RememberShortTermTacticalPenalty(int iPlotIndex, DomainTypes eDomain, int iPenalty, bool bRecentLoss)
+{
+	if (!IsShortTermMemoryActive() || iPlotIndex < 0 || iPenalty <= 0)
+		return;
+
+	const int iCurrentTurn = GC.getGame().getGameTurn();
+	std::map<int, STacticalPlotMemory>::iterator it = m_recentPlotMemory.find(iPlotIndex);
+	if (it == m_recentPlotMemory.end() || it->second.iTurnRecorded != iCurrentTurn)
+	{
+		STacticalPlotMemory entry;
+		entry.iPenalty = min(TACTICAL_MEMORY_MAX_PENALTY, iPenalty);
+		entry.iTurnRecorded = iCurrentTurn;
+		entry.eDomain = eDomain;
+		entry.bRecentLoss = bRecentLoss;
+		m_recentPlotMemory[iPlotIndex] = entry;
+	}
+	else
+	{
+		it->second.iPenalty = min(TACTICAL_MEMORY_MAX_PENALTY, max(it->second.iPenalty, iPenalty));
+		if (it->second.eDomain != eDomain)
+			it->second.eDomain = NO_DOMAIN;
+		it->second.bRecentLoss = it->second.bRecentLoss || bRecentLoss;
+	}
+}
+
+void CvTacticalAI::DecayShortTermMemory()
+{
+	const int iCurrentTurn = GC.getGame().getGameTurn();
+	for (std::map<int, STacticalPlotMemory>::iterator it = m_recentPlotMemory.begin(); it != m_recentPlotMemory.end(); )
+	{
+		if (iCurrentTurn - it->second.iTurnRecorded > TACTICAL_MEMORY_TTL_TURNS)
+			m_recentPlotMemory.erase(it++);
+		else
+			++it;
+	}
+}
+
+void CvTacticalAI::ReconcileShortTermMemory()
+{
+	DecayShortTermMemory();
+
+	if (!IsShortTermMemoryActive() || m_previousUnitSnapshots.empty())
+		return;
+
+	std::map<int, bool> currentCombatUnits;
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iLoop); pLoopUnit; pLoopUnit = m_pPlayer->nextUnit(&iLoop))
+	{
+		if (!pLoopUnit->IsCombatUnit() || pLoopUnit->IsCivilianUnit() || pLoopUnit->getDomainType() == DOMAIN_AIR)
+			continue;
+
+		currentCombatUnits[pLoopUnit->GetID()] = true;
+
+		std::map<int, STacticalUnitTurnSnapshot>::const_iterator itPrev = m_previousUnitSnapshots.find(pLoopUnit->GetID());
+		if (itPrev == m_previousUnitSnapshots.end())
+			continue;
+
+		const STacticalUnitTurnSnapshot& kPrev = itPrev->second;
+		const int iDamageTaken = kPrev.iCurrentHP - pLoopUnit->GetCurrHitPoints();
+		if (iDamageTaken >= TACTICAL_MEMORY_DAMAGE_THRESHOLD && kPrev.iPlotIndex >= 0)
+		{
+			RememberShortTermTacticalPenalty(kPrev.iPlotIndex, kPrev.eDomain, TACTICAL_MEMORY_RECENT_DAMAGE_PENALTY, false);
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvPlot* pPrevPlot = GC.getMap().plotByIndexUnchecked(kPrev.iPlotIndex);
+				CvString strMsg;
+				strMsg.Format("Tactical memory: %s took %d damage after ending turn on (%d,%d); penalty=%d",
+					pLoopUnit->getName().GetCString(), iDamageTaken,
+					pPrevPlot ? pPrevPlot->getX() : -1, pPrevPlot ? pPrevPlot->getY() : -1,
+					TACTICAL_MEMORY_RECENT_DAMAGE_PENALTY);
+				LogTacticalMessage(strMsg);
+			}
+		}
+	}
+
+	for (std::map<int, STacticalUnitTurnSnapshot>::const_iterator itPrev = m_previousUnitSnapshots.begin(); itPrev != m_previousUnitSnapshots.end(); ++itPrev)
+	{
+		if (currentCombatUnits.find(itPrev->first) != currentCombatUnits.end())
+			continue;
+
+		const STacticalUnitTurnSnapshot& kPrev = itPrev->second;
+		if (!kPrev.bCombat || kPrev.bCivilian || kPrev.iPlotIndex < 0)
+			continue;
+
+		CvPlot* pPrevPlot = GC.getMap().plotByIndexUnchecked(kPrev.iPlotIndex);
+		bool bLikelyCombatLoss = (pPrevPlot == NULL);
+		if (pPrevPlot)
+		{
+			bLikelyCombatLoss = pPrevPlot->isVisibleEnemyUnit(m_pPlayer->GetID()) ||
+				pPrevPlot->IsEnemyUnitAdjacent(m_pPlayer->getTeam()) ||
+				pPrevPlot->IsEnemyCityAdjacent(m_pPlayer->getTeam(), NULL) ||
+				pPrevPlot->IsAdjacentOwnedByEnemy(m_pPlayer->getTeam());
+		}
+
+		if (!bLikelyCombatLoss)
+			continue;
+
+		RememberShortTermTacticalPenalty(kPrev.iPlotIndex, kPrev.eDomain, TACTICAL_MEMORY_RECENT_LOSS_PENALTY, true);
+
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString strMsg;
+			strMsg.Format("Tactical memory: unit %d likely lost after ending turn on (%d,%d); penalty=%d",
+				itPrev->first, pPrevPlot ? pPrevPlot->getX() : -1, pPrevPlot ? pPrevPlot->getY() : -1,
+				TACTICAL_MEMORY_RECENT_LOSS_PENALTY);
+			LogTacticalMessage(strMsg);
+		}
+	}
+}
+
+void CvTacticalAI::SnapshotShortTermMemory()
+{
+	if (!IsShortTermMemoryActive())
+	{
+		m_previousUnitSnapshots.clear();
+		return;
+	}
+
+	std::map<int, STacticalUnitTurnSnapshot> newSnapshots;
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iLoop); pLoopUnit; pLoopUnit = m_pPlayer->nextUnit(&iLoop))
+	{
+		if (!pLoopUnit->IsCombatUnit() || pLoopUnit->IsCivilianUnit() || pLoopUnit->getDomainType() == DOMAIN_AIR)
+			continue;
+
+		STacticalUnitTurnSnapshot snapshot;
+		snapshot.iPlotIndex = pLoopUnit->plot() ? pLoopUnit->plot()->GetPlotIndex() : -1;
+		snapshot.iCurrentHP = pLoopUnit->GetCurrHitPoints();
+		snapshot.eDomain = pLoopUnit->getDomainType();
+		snapshot.bEmbarked = pLoopUnit->isEmbarked();
+		snapshot.bCombat = true;
+		snapshot.bCivilian = false;
+		newSnapshots[pLoopUnit->GetID()] = snapshot;
+	}
+
+	m_previousUnitSnapshots.swap(newSnapshots);
+}
+
+void CvTacticalAI::SnapshotTargetProgress()
+{
+	if (!IsShortTermMemoryActive())
+	{
+		m_targetProgressSnapshots.clear();
+		return;
+	}
+
+	std::map<int, STacticalTargetProgressSnapshot> newSnapshots;
+	for (size_t i = 0; i < m_AllTargets.size(); i++)
+	{
+		const CvTacticalTarget& kTarget = m_AllTargets[i];
+		if (kTarget.GetTargetType() != AI_TACTICAL_TARGET_ENEMY_CITY && kTarget.GetTargetType() != AI_TACTICAL_TARGET_ENEMY_COMBAT_UNIT)
+			continue;
+
+		CvPlot* pPlot = GC.getMap().plot(kTarget.GetTargetX(), kTarget.GetTargetY());
+		if (!pPlot)
+			continue;
+
+		STacticalTargetProgressSnapshot snapshot;
+		snapshot.iTurnRecorded = GC.getGame().getGameTurn();
+
+		CvCity* pCity = pPlot->getPlotCity();
+		if (kTarget.GetTargetType() == AI_TACTICAL_TARGET_ENEMY_CITY && pCity)
+		{
+			snapshot.bTargetIsCity = true;
+			snapshot.bTargetPresent = m_pPlayer->IsAtWarWith(pCity->getOwner());
+			snapshot.iCityDamage = pCity->getDamage();
+			CvUnit* pDefender = pPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true, true);
+			snapshot.iBestDefenderHP = pDefender ? pDefender->GetCurrHitPoints() : 0;
+		}
+		else
+		{
+			snapshot.bTargetIsCity = false;
+			CvUnit* pDefender = pPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true, true);
+			snapshot.bTargetPresent = (pDefender != NULL);
+			snapshot.iBestDefenderHP = pDefender ? pDefender->GetCurrHitPoints() : 0;
+		}
+
+		newSnapshots[pPlot->GetPlotIndex()] = snapshot;
+	}
+
+	m_targetProgressSnapshots.swap(newSnapshots);
+}
+
+bool CvTacticalAI::HasRecentTargetProgress(const CvUnit* pUnit, const CvPlot* pPlot) const
+{
+	if (!pUnit || !pPlot)
+		return false;
+
+	std::map<int, STacticalTargetProgressSnapshot>::const_iterator it = m_targetProgressSnapshots.find(pPlot->GetPlotIndex());
+	if (it == m_targetProgressSnapshots.end())
+		return false;
+
+	if (GC.getGame().getGameTurn() - it->second.iTurnRecorded > 1)
+		return false;
+
+	const STacticalTargetProgressSnapshot& kSnapshot = it->second;
+	if (kSnapshot.bTargetIsCity)
+	{
+		CvCity* pCity = pPlot->getPlotCity();
+		if (!pCity || !m_pPlayer->IsAtWarWith(pCity->getOwner()))
+			return kSnapshot.bTargetPresent;
+
+		if (pCity->getDamage() > kSnapshot.iCityDamage)
+			return true;
+
+		CvUnit* pDefender = pPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), pUnit, true, true);
+		if (!pDefender)
+			return kSnapshot.iBestDefenderHP > 0;
+
+		return kSnapshot.iBestDefenderHP > 0 && pDefender->GetCurrHitPoints() < kSnapshot.iBestDefenderHP;
+	}
+
+	CvUnit* pDefender = pPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), pUnit, true, true);
+	if (!pDefender)
+		return kSnapshot.bTargetPresent;
+
+	return kSnapshot.iBestDefenderHP > 0 && pDefender->GetCurrHitPoints() < kSnapshot.iBestDefenderHP;
+}
+
+bool CvTacticalAI::ShouldReduceMemoryPenaltyForBreakthrough(const CvUnit* pUnit, const CvPlot* pPlot) const
+{
+	if (!pUnit || !pPlot)
+		return false;
+
+	CvTacticalAI* pMutableThis = const_cast<CvTacticalAI*>(this);
+	CvTacticalDominanceZone* pZone = pMutableThis->GetTacticalAnalysisMap()->GetZoneByPlot(pPlot);
+	if (!pZone)
+		return false;
+
+	const bool bAggressivePosture = pZone->GetPosture() == TACTICAL_POSTURE_STEAMROLL || pZone->GetPosture() == TACTICAL_POSTURE_SURGICAL_CITY_STRIKE;
+	const unsigned int iFriendlyStrength = pZone->GetOverallFriendlyStrength();
+	const unsigned int iEnemyStrength = max(1u, pZone->GetOverallEnemyStrength());
+	const bool bLocalAdvantage = iFriendlyStrength >= iEnemyStrength || pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY;
+
+	CvMilitaryAI* pMilitaryAI = m_pPlayer ? m_pPlayer->GetMilitaryAI() : NULL;
+	const bool bForceSurplus = pMilitaryAI && m_pPlayer->getNumMilitaryUnits() >= pMilitaryAI->GetRecommendedMilitarySize();
+
+	PlayerTypes eTargetOwner = NO_PLAYER;
+	if (pPlot->isCity())
+	{
+		CvCity* pCity = pPlot->getPlotCity();
+		eTargetOwner = pCity ? pCity->getOwner() : NO_PLAYER;
+	}
+	else
+	{
+		CvUnit* pDefender = pPlot->getBestDefender(NO_PLAYER, m_pPlayer ? m_pPlayer->GetID() : NO_PLAYER, pUnit, true, true);
+		eTargetOwner = pDefender ? pDefender->getOwner() : NO_PLAYER;
+	}
+
+	bool bStrategicCapacity = bForceSurplus;
+	if (m_pPlayer && eTargetOwner != NO_PLAYER && GET_PLAYER(eTargetOwner).isAlive())
+	{
+		bStrategicCapacity = bStrategicCapacity ||
+			m_pPlayer->GetMilitaryMight() >= GET_PLAYER(eTargetOwner).GetMilitaryMight() ||
+			m_pPlayer->GetEconomicMight() > GET_PLAYER(eTargetOwner).GetEconomicMight() * 11 / 10;
+	}
+
+	const bool bCityBreakthrough = pPlot->isEnemyCity(*pUnit) && (bLocalAdvantage || bStrategicCapacity);
+	return bAggressivePosture && (bLocalAdvantage || bStrategicCapacity || bCityBreakthrough);
+}
+
+int CvTacticalAI::GetRecentPlotPenaltyForUnit(const CvUnit* pUnit, const CvPlot* pPlot, bool bAllowBreakthrough) const
+{
+	if (!IsShortTermMemoryActive() || !pUnit || !pPlot)
+		return 0;
+
+	std::map<int, STacticalPlotMemory>::const_iterator it = m_recentPlotMemory.find(pPlot->GetPlotIndex());
+	if (it == m_recentPlotMemory.end())
+		return 0;
+
+	const int iAge = GC.getGame().getGameTurn() - it->second.iTurnRecorded;
+	if (iAge < 0 || iAge > TACTICAL_MEMORY_TTL_TURNS)
+		return 0;
+
+	DomainTypes eRelevantDomain = pUnit->getDomainType();
+	if (eRelevantDomain == DOMAIN_HOVER)
+		eRelevantDomain = DOMAIN_LAND;
+
+	const bool bEmbarkTransition = (eRelevantDomain == DOMAIN_LAND && pPlot->isWater());
+	if (it->second.eDomain != NO_DOMAIN && it->second.eDomain != eRelevantDomain && !bEmbarkTransition)
+		return 0;
+
+	int iPenalty = it->second.iPenalty;
+	if (iAge > 0)
+		iPenalty = max(1, (iPenalty * (TACTICAL_MEMORY_TTL_TURNS + 1 - iAge)) / (TACTICAL_MEMORY_TTL_TURNS + 1));
+
+	if (bAllowBreakthrough && ShouldReduceMemoryPenaltyForBreakthrough(pUnit, pPlot))
+	{
+		const bool bHasProgress = HasRecentTargetProgress(pUnit, pPlot);
+		if (!it->second.bRecentLoss || bHasProgress)
+			iPenalty /= (bHasProgress ? 4 : 2);
+	}
+
+	return iPenalty;
+}
+
+eTacticalPosture CvTacticalAI::GetSaferZonePostureFromRecentLosses(CvTacticalDominanceZone* pZone, eTacticalPosture eCurrentPosture, const vector<CvUnit*>& vZoneUnits, STacticalZoneMemoryDiagnostics* pDiagnostics) const
+{
+	if (pDiagnostics)
+		*pDiagnostics = STacticalZoneMemoryDiagnostics();
+
+	if (!pZone || vZoneUnits.empty() || m_ZoneTargets.empty())
+		return eCurrentPosture;
+
+	bool bAnyRecentProgress = false;
+	int iHighPressureTargets = 0;
+	int iMaxPenalty = 0;
+	DomainTypes eZoneDomain = pZone->IsWater() ? DOMAIN_SEA : DOMAIN_LAND;
+
+	for (size_t i = 0; i < m_ZoneTargets.size(); i++)
+	{
+		const CvTacticalTarget* pTarget = m_ZoneTargets[i];
+		if (!pTarget)
+			continue;
+
+		if (pTarget->GetTargetType() != AI_TACTICAL_TARGET_ENEMY_COMBAT_UNIT && pTarget->GetTargetType() != AI_TACTICAL_TARGET_ENEMY_CITY)
+			continue;
+
+		CvPlot* pTargetPlot = GC.getMap().plot(pTarget->GetTargetX(), pTarget->GetTargetY());
+		if (!pTargetPlot)
+			continue;
+
+		int iBestTargetPenalty = 0;
+		bool bTargetProgress = false;
+		for (size_t iUnit = 0; iUnit < vZoneUnits.size(); iUnit++)
+		{
+			const CvUnit* pUnit = vZoneUnits[iUnit];
+			if (!pUnit)
+				continue;
+
+			DomainTypes eUnitDomain = pUnit->getDomainType();
+			if (eUnitDomain == DOMAIN_HOVER)
+				eUnitDomain = DOMAIN_LAND;
+			if (eUnitDomain != eZoneDomain && !(eZoneDomain == DOMAIN_LAND && pTargetPlot->isWater() && eUnitDomain == DOMAIN_LAND))
+				continue;
+
+			iBestTargetPenalty = max(iBestTargetPenalty, GetRecentPlotPenaltyForUnit(pUnit, pTargetPlot, true));
+			bTargetProgress = bTargetProgress || HasRecentTargetProgress(pUnit, pTargetPlot);
+		}
+
+		bAnyRecentProgress = bAnyRecentProgress || bTargetProgress;
+		if (iBestTargetPenalty >= TACTICAL_MEMORY_RECENT_DAMAGE_PENALTY)
+		{
+			iHighPressureTargets++;
+			iMaxPenalty = max(iMaxPenalty, iBestTargetPenalty);
+		}
+	}
+
+	if (pDiagnostics)
+	{
+		pDiagnostics->iHighPressureTargets = iHighPressureTargets;
+		pDiagnostics->iMaxPenalty = iMaxPenalty;
+		pDiagnostics->bAnyRecentProgress = bAnyRecentProgress;
+	}
+
+	const bool bHasPressure = (iMaxPenalty >= TACTICAL_MEMORY_RECENT_LOSS_PENALTY) || (iHighPressureTargets >= 2);
+
+	if (bAnyRecentProgress)
+	{
+		if (pDiagnostics)
+			pDiagnostics->bSuppressedByProgress = bHasPressure;
+		return eCurrentPosture;
+	}
+
+	if (!bHasPressure)
+		return eCurrentPosture;
+
+	switch (eCurrentPosture)
+	{
+	case TACTICAL_POSTURE_EXPLOIT_FLANKS:
+		if (pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY)
+			return TACTICAL_POSTURE_WITHDRAW;
+
+		if (pZone->GetTerritoryType() == TACTICAL_TERRITORY_FRIENDLY)
+			return TACTICAL_POSTURE_COUNTERATTACK;
+
+		return TACTICAL_POSTURE_ATTRITION;
+
+	case TACTICAL_POSTURE_COUNTERATTACK:
+		if (pZone->GetTerritoryType() == TACTICAL_TERRITORY_FRIENDLY)
+			return TACTICAL_POSTURE_HEDGEHOG;
+
+		return TACTICAL_POSTURE_ATTRITION;
+
+	case TACTICAL_POSTURE_ATTRITION:
+		if (pZone->GetTerritoryType() == TACTICAL_TERRITORY_FRIENDLY)
+			return TACTICAL_POSTURE_HEDGEHOG;
+
+		return TACTICAL_POSTURE_WITHDRAW;
+
+	default:
+		return eCurrentPosture;
+	}
+}
+
 /// Clear up memory usage
 void CvTacticalAI::CleanUp()
 {
+	if (IsShortTermMemoryActive() && m_iLastMemorySnapshotTurn != GC.getGame().getGameTurn())
+	{
+		SnapshotTargetProgress();
+		SnapshotShortTermMemory();
+		m_iLastMemorySnapshotTurn = GC.getGame().getGameTurn();
+	}
+
 	m_AllTargets.clear();
 	m_ZoneTargets.clear();
 
@@ -1359,6 +1789,7 @@ void CvTacticalAI::ProcessDominanceZones()
 		for(int iI = 0; iI < GetTacticalAnalysisMap()->GetNumZones(); iI++)
 		{
 			CvTacticalDominanceZone* pZone = GetTacticalAnalysisMap()->GetZoneByIndex(iI);
+			eTacticalPosture eZonePosture = pZone->GetPosture();
 
 			PlotEmergencyPurchases(pZone);
 
@@ -1367,9 +1798,9 @@ void CvTacticalAI::ProcessDominanceZones()
 				continue;
 
 			// If our presence in this zone has taken heavy damage and no nearby support exists, fall back early
-			if (pZone->GetPosture() != TACTICAL_POSTURE_WITHDRAW)
+			vector<CvUnit*> vZoneUnits;
+			if (eZonePosture != TACTICAL_POSTURE_WITHDRAW)
 			{
-				vector<CvUnit*> vZoneUnits;
 				for(list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
 				{
 					CvUnit* pZoneUnit = m_pPlayer->getUnit(*it);
@@ -1386,6 +1817,33 @@ void CvTacticalAI::ProcessDominanceZones()
 					PlotWithdrawMoves(pZone);
 					continue;
 				}
+
+				if (eZonePosture == TACTICAL_POSTURE_ATTRITION || eZonePosture == TACTICAL_POSTURE_COUNTERATTACK || eZonePosture == TACTICAL_POSTURE_EXPLOIT_FLANKS)
+				{
+					STacticalZoneMemoryDiagnostics kDiagnostics;
+					eTacticalPosture eSaferPosture = GetSaferZonePostureFromRecentLosses(pZone, eZonePosture, vZoneUnits, &kDiagnostics);
+					if (eSaferPosture != eZonePosture)
+					{
+						eZonePosture = eSaferPosture;
+
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString strLogString;
+							strLogString.Format("Tactical memory: downgrading zone %d posture from %s to %s due to recent losses without progress; maxPenalty=%d; pressuredTargets=%d; recentProgress=%d",
+								pZone ? pZone->GetZoneID() : -1, postureNames[pZone->GetPosture()], postureNames[eZonePosture],
+								kDiagnostics.iMaxPenalty, kDiagnostics.iHighPressureTargets, kDiagnostics.bAnyRecentProgress ? 1 : 0);
+							LogTacticalMessage(strLogString);
+						}
+					}
+					else if (kDiagnostics.bSuppressedByProgress && GC.getLogging() && GC.getAILogging())
+					{
+						CvString strLogString;
+						strLogString.Format("Tactical memory: retaining zone %d posture %s despite recent pressure; maxPenalty=%d; pressuredTargets=%d; recentProgress=%d",
+							pZone ? pZone->GetZoneID() : -1, postureNames[eZonePosture],
+							kDiagnostics.iMaxPenalty, kDiagnostics.iHighPressureTargets, kDiagnostics.bAnyRecentProgress ? 1 : 0);
+						LogTacticalMessage(strLogString);
+					}
+				}
 			}
 
 			if (GC.getLogging() && GC.getAILogging())
@@ -1395,11 +1853,11 @@ void CvTacticalAI::ProcessDominanceZones()
 				strLogString.Format("Zone %d, %s, city of %s, posture %s, %d targets",  
 					pZone ? pZone->GetZoneID() : -1, pZone->IsWater() ? "water" : "land",
 					pZoneCity ? pZoneCity->getNameNoSpace().c_str() : "none", 
-					postureNames[pZone->GetPosture()], iTargets);
+					postureNames[eZonePosture], iTargets);
 				LogTacticalMessage(strLogString);
 			}
 
-			switch (pZone->GetPosture())
+			switch (eZonePosture)
 			{
 			case TACTICAL_POSTURE_NONE:
 				break; //no posture assigned so do nothing; TODO: Maybe this should be unreachable?
@@ -2616,6 +3074,7 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 				
 				// Score: closer is better, prefer positions that block likely attack vectors
 				int iScore = 100 - iTurns * 20;
+				iScore -= GetRecentPlotPenaltyForUnit(pUnit, pDefPlot, false);
 
 				// Penalize tiles that are already covered by real enemy attack vectors.
 				// Adjacent contact alone misses naval ranged fire and multi-tile approach lanes.
@@ -9512,6 +9971,7 @@ bool TacticalAIHelpers::IsAttackNetPositive(CvUnit* pUnit, const CvPlot* pTarget
 {
 	if (!pUnit || !pTargetPlot)
 		return false;
+	CvTacticalAI* pTacticalAI = GET_PLAYER(pUnit->getOwner()).GetTacticalAI();
 
 	//target can be city or a unit
 	CvCity* pTargetCity = pTargetPlot->getPlotCity();
@@ -9525,12 +9985,16 @@ bool TacticalAIHelpers::IsAttackNetPositive(CvUnit* pUnit, const CvPlot* pTarget
 	{
 		//+2 to make sure it's positive if city has zero hitpoints left
 		iDamageDealt = GetSimulatedDamageFromAttackOnCity(pTargetCity, pUnit, pUnit->plot(), iDamageReceived, iGarrisonDamage, false, iSelfDamage) + 2;
-		return (iDamageDealt + iGarrisonDamage > iDamageReceived || iDamageDealt == pTargetCity->GetMaxHitPoints()-pTargetCity->getDamage());
+		iDamageDealt += iGarrisonDamage;
+		int iMemoryPenalty = pTacticalAI ? pTacticalAI->GetRecentPlotPenaltyForUnit(pUnit, pTargetPlot, true) : 0;
+		return (iDamageDealt > iDamageReceived + iMemoryPenalty || iDamageDealt == pTargetCity->GetMaxHitPoints()-pTargetCity->getDamage());
 	}
 	else if (pTargetUnit)
 	{
 		iDamageDealt = GetSimulatedDamageFromAttackOnUnit(pTargetUnit, pUnit, pTargetUnit->plot(), pUnit->plot(), iDamageReceived, false, iSelfDamage);
-		return (iDamageDealt > iDamageReceived || iDamageDealt == pTargetUnit->GetCurrHitPoints());
+		int iMemoryPenalty = pTacticalAI ? pTacticalAI->GetRecentPlotPenaltyForUnit(pUnit, pTargetPlot, true) : 0;
+		return (iDamageDealt > iDamageReceived + iMemoryPenalty || iDamageDealt == pTargetUnit->GetCurrHitPoints());
+	}
 	}
 
 	return false;
@@ -9541,6 +10005,7 @@ bool TacticalAIHelpers::PerformOpportunityAttack(CvUnit* pUnit, bool bAllowMovem
 {
 	if (!pUnit || !pUnit->IsCanAttack() || !pUnit->canMove() || pUnit->isDelayedDeath())
 		return false;
+	CvTacticalAI* pTacticalAI = GET_PLAYER(pUnit->getOwner()).GetTacticalAI();
 
 	//for ranged we have a readymade method
 	if (pUnit->IsCanAttackRanged())
@@ -9611,6 +10076,19 @@ bool TacticalAIHelpers::PerformOpportunityAttack(CvUnit* pUnit, bool bAllowMovem
 			if (pUnit->GetDanger(pPlotAfterAttack, killedEnemies, iDamageReceived) >= iPostCombatHp)
 				continue;
 
+			int iMemoryPenalty = pTacticalAI ? pTacticalAI->GetRecentPlotPenaltyForUnit(pUnit, pTestPlot, true) : 0;
+			if (iMemoryPenalty > 0 && !bWouldKill && iDamageDealt <= iDamageReceived + iMemoryPenalty)
+			{
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString strMsg;
+					strMsg.Format("Tactical memory: %s skipped opportunity attack on (%d,%d); dmg %d vs %d + penalty %d",
+						pUnit->getName().GetCString(), pTestPlot->getX(), pTestPlot->getY(), iDamageDealt, iDamageReceived, iMemoryPenalty);
+					pTacticalAI->LogTacticalMessage(strMsg);
+				}
+				continue;
+			}
+
 			if (iDamageDealt >= pEnemy->GetCurrHitPoints())
 			{
 				if (iDamageReceived < pUnit->GetCurrHitPoints())
@@ -9645,6 +10123,7 @@ bool TacticalAIHelpers::PerformOpportunityAttack(CvUnit* pUnit, bool bAllowMovem
 			}
 
 			int iScore = (1000 * iDamageDealt) / (iDamageReceived + 10);
+			iScore -= iMemoryPenalty * 12;
 			meleeTargets.push_back(SPlotWithScore(pTestPlot, iScore));
 
 			//increase the threshold for each new enemy we find
@@ -10066,6 +10545,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 	//compute once outside the loop - used for retreat direction check
 	CvPlayer& kPlayer = GET_PLAYER(pUnit->getOwner());
+	CvTacticalAI* pTacticalAI = kPlayer.GetTacticalAI();
 	bool bImminentAttack = kPlayer.GetTacticalAI() ? kPlayer.GetTacticalAI()->IsImminentAttackCached() : false;
 	int iCurrentCityDistance = kPlayer.GetCityDistancePathLength(pCurrentPlot);
 
@@ -10282,6 +10762,8 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 		//map 144 to 144, everything above is not so important
 		int iScore = (iDanger > 144) ? 12 * sqrti(iDanger) : iDanger;
+		int iMemoryPenalty = pTacticalAI ? pTacticalAI->GetRecentPlotPenaltyForUnit(pUnit, pPlot, false) : 0;
+		iScore += iMemoryPenalty;
 
 		if (pPlot != pUnit->plot() && !pUnit->hasMoved())
 		{
@@ -10406,6 +10888,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				iEmbarkScore += 500; //heavily penalize moving toward enemy frontline
 			if (!bIsZeroDanger)
 				iEmbarkScore += iDanger; //factor in detected naval danger
+			iEmbarkScore += iMemoryPenalty * 2;
 			//prefer plots in our territory (we can see threats better)
 			if (!bIsInTerritory)
 				iEmbarkScore += 200;
