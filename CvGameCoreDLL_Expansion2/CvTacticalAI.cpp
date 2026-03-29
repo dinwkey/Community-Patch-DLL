@@ -9585,6 +9585,8 @@ bool TacticalAIHelpers::PerformOpportunityAttack(CvUnit* pUnit, bool bAllowMovem
 			PRECONDITION(pEnemy, "isEnemyUnit is true, but getBestDefender didn't return a unit");
 			int iDamageReceived = 0;
 			int iDamageDealt = TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(pEnemy, pUnit, pTestPlot, pOrigin, iDamageReceived);
+			int iPostCombatHp = pUnit->GetCurrHitPoints() - iDamageReceived;
+			bool bWouldKill = (iDamageDealt >= pEnemy->GetCurrHitPoints());
 
 			//no suicide
 			if (iDamageReceived >= pUnit->GetCurrHitPoints())
@@ -9592,6 +9594,21 @@ bool TacticalAIHelpers::PerformOpportunityAttack(CvUnit* pUnit, bool bAllowMovem
 
 			//there might be stacking issues so do another pathfinder check
 			if (pUnit->TurnsToReachTarget(pTestPlot, CvUnit::MOVEFLAG_ATTACK | CvUnit::MOVEFLAG_NO_EMBARK, 1) > 0)
+				continue;
+
+			// Opportunity attacks are a fast heuristic; add one post-attack danger check so
+			// naval melee units do not lunge into obvious coastal kill zones they cannot survive.
+			UnitIdContainer killedEnemies;
+			const CvPlot* pPlotAfterAttack = pOrigin;
+			if (bWouldKill)
+			{
+				killedEnemies.push_back(pEnemy->GetID());
+				pPlotAfterAttack = pTestPlot;
+				iPostCombatHp += pUnit->getHPHealedIfDefeatEnemy();
+				iPostCombatHp = min(iPostCombatHp, pUnit->GetMaxHitPoints());
+			}
+
+			if (pUnit->GetDanger(pPlotAfterAttack, killedEnemies, iDamageReceived) >= iPostCombatHp)
 				continue;
 
 			if (iDamageDealt >= pEnemy->GetCurrHitPoints())
