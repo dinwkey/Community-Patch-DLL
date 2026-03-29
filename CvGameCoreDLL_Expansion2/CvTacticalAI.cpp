@@ -3027,10 +3027,12 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 		else if (bEnemyDominated)
 			iSearchRange = 4;
 		
-		// Look for available naval units
-		for (list<int>::iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); ++it)
+		// Look for available naval units.
+		// Iterate over a snapshot because UnitProcessed() removes IDs from m_CurrentTurnUnits.
+		std::vector<int> vCandidateUnits(m_CurrentTurnUnits.begin(), m_CurrentTurnUnits.end());
+		for (size_t iUnit = 0; iUnit < vCandidateUnits.size(); iUnit++)
 		{
-			CvUnit* pUnit = m_pPlayer->getUnit(*it);
+			CvUnit* pUnit = m_pPlayer->getUnit(vCandidateUnits[iUnit]);
 			if (!pUnit || !pUnit->canUseForTacticalAI())
 				continue;
 			
@@ -3045,9 +3047,13 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			// Don't pull from armies
 			if (pUnit->getArmyID() != -1)
 				continue;
+
+			CvPlot* pUnitPlot = pUnit->plot();
+			if (!pUnitPlot)
+				continue;
 			
 			// Check if unit is close enough
-			if (plotDistance(*pUnit->plot(), *pCityPlot) > iSearchRange * 2)
+			if (plotDistance(*pUnitPlot, *pCityPlot) > iSearchRange * 2)
 				continue;
 			
 			// Don't use heavily damaged units
