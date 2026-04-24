@@ -33281,7 +33281,8 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 						if (iRing == 1 && pTarget->IsCanAttackWithMove() && pTarget->canMoveOrAttackInto(*plot()))
 						{
 							int iAttackerDamage = 0;
-							int iProjectedCityDamage = TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(this, pTarget, pTargetPlot, iAttackerDamage, true, 0, true);
+							int iGarrisonDamage = 0;
+							int iProjectedCityDamage = TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(this, pTarget, pTargetPlot, iAttackerDamage, iGarrisonDamage, true, 0, 0, 0, true);
 							bImmediateCaptureThreat = (iProjectedCityDamage >= iCityHP);
 						}
 						if (!bImmediateCaptureThreat)
