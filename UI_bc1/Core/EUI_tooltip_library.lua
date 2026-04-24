@@ -59,7 +59,7 @@ local UI_GetHeadSelectedCity = UI.GetHeadSelectedCity
 local UI_GetNumCurrentDeals = UI.GetNumCurrentDeals
 local UI_LoadCurrentDeal = UI.LoadCurrentDeal
 local YieldTypes = YieldTypes
-local g_numYieldTypes = Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES
+local g_numYieldTypes = (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes()) or (YieldTypes and YieldTypes.NUM_YIELD_TYPES) or 0
 local L
 do
 	local _L = Locale.ConvertTextKey
