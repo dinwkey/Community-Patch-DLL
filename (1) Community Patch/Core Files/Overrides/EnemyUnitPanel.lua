@@ -1559,7 +1559,7 @@ function OnMouseOverHex(hexX, hexY)
 						end
 					elseif pPlot:IsVisible(eTeam, false) and not pHeadUnit:IsCityAttackOnly() then
 						local ePlayer = Game.GetActivePlayer();
-						local pUnit = pPlot:GetBestDefender(-1, ePlayer, pHeadUnit, 1);
+						local pUnit = pPlot:GetBestDefender(-1, ePlayer, pHeadUnit, 1, 0, 0, 1);
 
 						if pUnit then
 							UpdateUnitPortrait(pUnit);
@@ -1570,7 +1570,7 @@ function OnMouseOverHex(hexX, hexY)
 							Controls.TheirCombatResultsStack:SetHide(false);
 							g_bShowPanel = true;
 						else
-							pUnit = pPlot:GetBestDefender(-1, ePlayer, pHeadUnit);
+							pUnit = pPlot:GetBestDefender(-1, ePlayer, pHeadUnit, 0, 0, 0, 1);
 							if pUnit then
 								UpdateUnitPortrait(pUnit);
 								UpdateUnitPromotions(pUnit);
