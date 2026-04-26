@@ -39706,6 +39706,13 @@ void CvPlayer::changeResourceFromMinors(ResourceTypes eIndex, int iChange)
 	if(iChange != 0)
 	{
 		m_paiResourceFromMinors[eIndex] = m_paiResourceFromMinors[eIndex] + iChange;
+		if (m_paiResourceFromMinors[eIndex] < 0)
+		{
+			CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eIndex);
+			CUSTOMLOG("ResourceFromMinors counter underflow for Player %d (%s), Resource %s. Delta: %d, stored after change: %d. Clamping to 0.",
+				GetID(), getCivilizationShortDescription(), pkResourceInfo ? pkResourceInfo->GetText() : "?", iChange, m_paiResourceFromMinors[eIndex]);
+			m_paiResourceFromMinors[eIndex] = 0;
+		}
 		ASSERT(getResourceFromMinors(eIndex) >= 0);
 
 		CalculateNetHappiness();
