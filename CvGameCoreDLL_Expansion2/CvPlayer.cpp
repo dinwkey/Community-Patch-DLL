@@ -38455,10 +38455,39 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 					CvResourceInfo* pResource = GC.getResourceInfo(eIndex);
 					if (pResource)
 					{
-						if (GET_PLAYER(eBestRelationsPlayer).IsResourceRevealed(eIndex))
+						// Determine how much to propagate to the ally.
+						// For positive deltas: only credit if the ally can currently see the resource
+						// (existing behavior; matches gameplay expectation that an ally can't benefit
+						// from a resource they can't see yet).
+						// For negative deltas: clamp the decrement to what we actually exported to
+						// this ally. This keeps the per-minor invariant
+						//   ally.m_paiResourceFromMinors[X] >= contributions from this minor
+						// even when reveal flipped between the credit and the decrement (e.g. a
+						// PolicyReveal was adopted after the resource was placed: the original +N
+						// was skipped because not revealed, but a later -N would otherwise fire and
+						// silently subtract from other allied minors' contributions). Reveal-flip
+						// reconciliation only fires for tech reveals to the current ally
+						// (CvTeam::processTech -> DoUpdateAlliesResourceBonus); other reveal sources
+						// such as getPolicyReveal do not reconcile, hence the clamp here.
+						int iPropChange = iChange;
+						if (iPropChange > 0)
 						{
-							GET_PLAYER(eBestRelationsPlayer).changeResourceFromMinors(eIndex, iChange);
-							changeResourceExport(eIndex, iChange);
+							if (!GET_PLAYER(eBestRelationsPlayer).IsResourceRevealed(eIndex))
+								iPropChange = 0;
+						}
+						else // iPropChange < 0
+						{
+							int iCurrentExport = getResourceExport(eIndex);
+							if (iCurrentExport <= 0)
+								iPropChange = 0;
+							else if (-iPropChange > iCurrentExport)
+								iPropChange = -iCurrentExport;
+						}
+
+						if (iPropChange != 0)
+						{
+							GET_PLAYER(eBestRelationsPlayer).changeResourceFromMinors(eIndex, iPropChange);
+							changeResourceExport(eIndex, iPropChange);
 
 							CvNotifications* pNotifications = GET_PLAYER(eBestRelationsPlayer).GetNotifications();
 							if (pNotifications && !GetMinorCivAI()->IsDisableNotifications())
@@ -38467,7 +38496,7 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 								Localization::String strSummary;
 
 								// Adding Resources
-								if (iChange > 0)
+								if (iPropChange > 0)
 								{
 									strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_MINOR_BFF_NEW_RESOURCE");
 									strMessage << getNameKey() << GC.getResourceInfo(eIndex)->GetDescriptionKey();
