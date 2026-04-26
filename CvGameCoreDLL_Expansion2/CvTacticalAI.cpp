@@ -327,6 +327,7 @@ void CvTacticalAI::RecruitUnits()
 using namespace CityTargetingAIHelpers;
 
 static bool IsMemoryAttackImminentForPlayer(const CvPlayer* pPlayer);
+static bool IsMajorDiplomacyPlayer(PlayerTypes ePlayer);
 static void GetCoastalApproachCounts(const CvCity* pCity, int& iLandApproaches, int& iWaterApproaches);
 static bool IsNavyLedCoastalAssaultTarget(const CvCity* pCity, bool& bIslandCity, bool& bNavalDominatedCity, int& iLandApproaches, int& iWaterApproaches);
 static bool CanReachLandAttackPositionWithoutEmbark(const CvUnit* pUnit, const CvCity* pCity, bool bAllowOneTurnSetup);
@@ -1403,6 +1404,9 @@ static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOthe
 	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
 		return false;
 
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eOtherPlayer) || !IsMajorDiplomacyPlayer(eTargetOwner))
+		return false;
+
 	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
 	if (!pDiploAI)
 		return false;
@@ -1416,9 +1420,17 @@ static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOthe
 	return false;
 }
 
+static bool IsMajorDiplomacyPlayer(PlayerTypes ePlayer)
+{
+	return ePlayer >= 0 && ePlayer < MAX_MAJOR_CIVS;
+}
+
 static int GetCoalitionOutcomeWeight(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, const CvCity* pCity)
 {
 	if (!pPlayer || !pCity || eOtherPlayer == NO_PLAYER)
+		return 0;
+
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eOtherPlayer))
 		return 0;
 
 	PlayerTypes eTargetOwner = pCity->getOwner();
@@ -1502,6 +1514,9 @@ static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* 
 	if (!pPlayer || !pCity)
 		return;
 
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()))
+		return;
+
 	PlayerTypes eTargetOwner = pCity->getOwner();
 	if (!IsCoalitionRelevantCityTargetOwner(eTargetOwner))
 		return;
@@ -1519,6 +1534,9 @@ static void GetCoalitionPressureNearCity(const CvPlayer* pPlayer, const CvCity* 
 				continue;
 
 			PlayerTypes eOtherPlayer = pLoopUnit->getOwner();
+			if (!IsMajorDiplomacyPlayer(eOtherPlayer))
+				continue;
+
 			if (eOtherPlayer == pPlayer->GetID() || eOtherPlayer == eTargetOwner)
 				continue;
 

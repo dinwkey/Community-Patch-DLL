@@ -34,6 +34,11 @@ enum SharedWarContributionPosture
 	SHARED_WAR_POSTURE_PRESSURE_ONLY,
 };
 
+bool IsMajorDiplomacyPlayer(PlayerTypes ePlayer)
+{
+	return ePlayer >= 0 && ePlayer < MAX_MAJOR_CIVS;
+}
+
 int CountUnassignedCombatNavalUnits(const CvPlayer* pPlayer)
 {
 	if (!pPlayer)
@@ -57,6 +62,9 @@ bool IsHelpfulSharedWarPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer
 	bStrongerPartner = false;
 
 	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
+		return false;
+
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eOtherPlayer) || !IsMajorDiplomacyPlayer(eTargetOwner))
 		return false;
 
 	if (!GET_PLAYER(eOtherPlayer).isAlive() || !GET_PLAYER(eOtherPlayer).isMajorCiv())
@@ -83,6 +91,9 @@ bool IsHelpfulSharedWarPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer
 SharedWarContributionPosture GetSharedWarContributionPosture(const CvPlayer* pPlayer, PlayerTypes eTargetOwner)
 {
 	if (!pPlayer || eTargetOwner == NO_PLAYER || !GET_PLAYER(eTargetOwner).isMajorCiv())
+		return SHARED_WAR_POSTURE_FULL_CAPTURE;
+
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eTargetOwner))
 		return SHARED_WAR_POSTURE_FULL_CAPTURE;
 
 	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
@@ -175,12 +186,15 @@ float GetCoalitionPartnerTargetModifier(const CvPlayer* pPlayer, PlayerTypes eOt
 	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
 		return 1.f;
 
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eOtherPlayer))
+		return 1.f;
+
 	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
 	if (!pDiploAI)
 		return 1.f;
 
 	float fModifier = GET_PLAYER(eTargetOwner).isMajorCiv() ?
-		((pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING) ? 0.96f : 0.86f) :
+		((IsMajorDiplomacyPlayer(eTargetOwner) && pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING) ? 0.96f : 0.86f) :
 		0.90f;
 
 	if (pDiploAI->IsFriendOrAlly(eOtherPlayer) || pDiploAI->IsDoFAccepted(eOtherPlayer))
@@ -218,6 +232,9 @@ float GetSelfCaptureTargetModifier(const CvPlayer* pPlayer, const CvCity* pTarge
 float GetCoalitionOutcomeTargetModifier(const CvPlayer* pPlayer, const CvCity* pTargetCity, PlayerTypes eOtherPlayer)
 {
 	if (!pPlayer || !pTargetCity || eOtherPlayer == NO_PLAYER)
+		return 1.f;
+
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eOtherPlayer))
 		return 1.f;
 
 	CvPlayer& kOtherPlayer = GET_PLAYER(eOtherPlayer);
@@ -313,6 +330,9 @@ float GetCoalitionWarTargetModifier(const CvPlayer* pPlayer, const CvCity* pTarg
 
 	PlayerTypes eSelf = pPlayer->GetID();
 	PlayerTypes eTargetOwner = pTargetCity->getOwner();
+	if (!IsMajorDiplomacyPlayer(eSelf))
+		return 1.f;
+
 	if (!IsCoalitionRelevantCityTargetOwner(eTargetOwner))
 		return 1.f;
 

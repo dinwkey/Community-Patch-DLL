@@ -33406,10 +33406,13 @@ bool CvDiplomacyAI::IsNukedBy(PlayerTypes ePlayer) const
 /// Is this player a friend or ally in any way? Quick heuristic check that only checks for good things.
 bool CvDiplomacyAI::IsFriendOrAlly(PlayerTypes ePlayer) const
 {
+	if (ePlayer < 0 || ePlayer >= MAX_PLAYERS || ePlayer == BARBARIAN_PLAYER)
+		return false;
+
 	if (IsTeammate(ePlayer))
 		return true;
 
-	if (!GET_PLAYER(ePlayer).isAlive() || ePlayer == BARBARIAN_PLAYER)
+	if (!GET_PLAYER(ePlayer).isAlive() || !GET_PLAYER(ePlayer).isMajorCiv() || ePlayer >= MAX_MAJOR_CIVS)
 		return false;
 
 	if (IsDoFAccepted(ePlayer))
@@ -33427,7 +33430,7 @@ bool CvDiplomacyAI::IsFriendOrAlly(PlayerTypes ePlayer) const
 	if (WasResurrectedBy(ePlayer))
 		return true;
 
-	if (GET_PLAYER(ePlayer).GetDiplomacyAI()->WasResurrectedBy(GetID()))
+	if (GetID() >= 0 && GetID() < MAX_MAJOR_CIVS && GET_PLAYER(ePlayer).GetDiplomacyAI()->WasResurrectedBy(GetID()))
 		return true;
 
 	return false;
