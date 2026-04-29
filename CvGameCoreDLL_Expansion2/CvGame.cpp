@@ -700,7 +700,7 @@ void CvGame::InitPlayers()
 			}
 			else if (CvPreGame::leaderHead(eLoopPlayer) == NO_LEADER)
 			{
-				CvCivilizationInfo* pCivInfo = GC.getCivilizationInfo(ePlayerCiv);
+				CvCivilizationInfo* pCivInfo = GC.getCivilizationInfo(CvPreGame::civilization(eLoopPlayer));
 				for (int iLeader = 0; iLeader < GC.getNumLeaderHeadInfos(); iLeader++)
 				{
 					if (pCivInfo->isLeaders(iLeader))
