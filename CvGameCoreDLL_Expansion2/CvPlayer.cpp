@@ -23514,7 +23514,6 @@ void CvPlayer::ChangeHappinessFromAnnexedMinor(PlayerTypes eMinor, int iSign, Er
 		
 		int iBonus = 0;
 
-		static EraTypes eCurrentEra = GET_TEAM(getTeam()).GetCurrentEra();
 		static EraTypes eIndustrial = (EraTypes)GC.getInfoTypeForString("ERA_INDUSTRIAL", true);
 		static EraTypes eMedieval = (EraTypes)GC.getInfoTypeForString("ERA_MEDIEVAL", true);
 

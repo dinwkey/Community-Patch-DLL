@@ -608,7 +608,6 @@ void CvStrategicGeographyMap::ClassifyAllCities()
 	m_cityAnalysis.clear();
 
 	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
-	CvCity* pCapital = kPlayer.getCapitalCity();
 
 	int iCityLoop = 0;
 	for (CvCity* pCity = kPlayer.firstCity(&iCityLoop); pCity != NULL; pCity = kPlayer.nextCity(&iCityLoop))
@@ -1602,7 +1601,6 @@ void CvStrategicGeographyMap::DeriveRoadPriorities()
 void CvStrategicGeographyMap::AnalyzeCoastalExposure()
 {
 	CvPlayer& kPlayer = GET_PLAYER(m_ePlayer);
-	int iMinOceanSize = GD_INT_GET(MIN_WATER_SIZE_FOR_OCEAN);
 
 	for (std::map<int, StrategicCityAnalysis>::iterator it = m_cityAnalysis.begin(); it != m_cityAnalysis.end(); ++it)
 	{

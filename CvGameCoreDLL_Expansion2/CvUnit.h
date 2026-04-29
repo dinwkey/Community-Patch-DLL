@@ -392,7 +392,7 @@ struct SUnitIDValueContainer
 
 namespace std {
 	template<>
-	void swap(SUnitIDValueContainer& a, SUnitIDValueContainer& b)
+	inline void swap(SUnitIDValueContainer& a, SUnitIDValueContainer& b)
 	{
 		a.swap(b);
 	}

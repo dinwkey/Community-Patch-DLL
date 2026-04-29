@@ -44,7 +44,7 @@ const char* CvLuaGame::GetInstanceName()
 	return "Game";
 }
 //------------------------------------------------------------------------------
-CvGame* CvLuaGame::GetInstance(lua_State* L, int idx)
+CvGame* CvLuaGame::GetInstance(lua_State* L, int /*idx*/)
 {
 	(void)L; // Suppress unused parameter warning
 	return &GC.getGame();

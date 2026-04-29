@@ -793,8 +793,8 @@ struct SComboMove
 	{
 		bool operator() (const SComboMove& lhs, const SComboMove& rhs)
 		{
-			int lhsScore = !lhs.hasB() ? lhs.getA().Score() : lhs.getA().Score() + lhs.getB().Score();
-			int rhsScore = !rhs.hasB() ? rhs.getA().Score() : rhs.getA().Score() + rhs.getB().Score();
+			int lhsScore = !lhs.hasB() ? lhs.getA().Score() : (lhs.getA().Score() + lhs.getB().Score()) / 2;
+			int rhsScore = !rhs.hasB() ? rhs.getA().Score() : (rhs.getA().Score() + rhs.getB().Score()) / 2;
 			return lhsScore > rhsScore;
 		}
 	};

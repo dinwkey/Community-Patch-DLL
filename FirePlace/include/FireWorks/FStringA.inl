@@ -727,7 +727,7 @@ inline void FStringA::ReplaceDriveLetter( LPCSTR lpszNewDrive, char chPathDelimi
 	*this += sFileName;
 }
 
-inline void FStringA::ReplaceFileDir( LPCSTR lpszNewDir, char chPathDelimiter )
+inline void FStringA::ReplaceFileDir( LPCSTR lpszNewDir, char /*chPathDelimiter*/ )
 {
 	FStringFixedBufferA(sDriveLetter, 16);
 	FStringFixedBufferA(sFileName, MAX_PATH);
