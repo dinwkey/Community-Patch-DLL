@@ -99,6 +99,99 @@ TeamTypes CvDealAI::GetTeam() const
 	return m_pPlayer->getTeam();
 }
 
+namespace
+{
+	bool IsSameRenewalItem(const CvTradedItem& kExistingItem, const CvTradedItem& kProposedItem)
+	{
+		return kExistingItem.m_eItemType == kProposedItem.m_eItemType &&
+			kExistingItem.m_eFromPlayer == kProposedItem.m_eFromPlayer &&
+			kExistingItem.m_iData1 == kProposedItem.m_iData1 &&
+			kExistingItem.m_iData2 == kProposedItem.m_iData2 &&
+			kExistingItem.m_iData3 == kProposedItem.m_iData3 &&
+			kExistingItem.m_bFlag1 == kProposedItem.m_bFlag1;
+	}
+
+	bool IsMatchingRenewDeal(CvDeal& kCurrentDeal, const CvDeal& kProposedDeal)
+	{
+		if (kCurrentDeal.m_iFinalTurn != GC.getGame().getGameTurn())
+			return false;
+
+		if (kCurrentDeal.m_bIsGift || kCurrentDeal.IsPeaceTreatyTrade(kCurrentDeal.GetFromPlayer()) || kCurrentDeal.IsPeaceTreatyTrade(kCurrentDeal.GetToPlayer()))
+			return false;
+
+		if (!kCurrentDeal.IsPotentiallyRenewable())
+			return false;
+
+		for (TradedItemList::const_iterator itCurrent = kCurrentDeal.m_TradedItems.begin(); itCurrent != kCurrentDeal.m_TradedItems.end(); ++itCurrent)
+		{
+			if (CvDeal::GetItemTradeableState(itCurrent->m_eItemType) == CvDeal::DEAL_NONRENEWABLE)
+				continue;
+
+			for (TradedItemList::const_iterator itProposed = kProposedDeal.m_TradedItems.begin(); itProposed != kProposedDeal.m_TradedItems.end(); ++itProposed)
+			{
+				if (IsSameRenewalItem(*itCurrent, *itProposed))
+					return true;
+			}
+		}
+
+		return false;
+	}
+
+	CvDeal* FindRenewDealForEvaluation(PlayerTypes ePlayer1, PlayerTypes ePlayer2, const CvDeal& kProposedDeal)
+	{
+		CvGameDeals& kGameDeals = GC.getGame().GetGameDeals();
+		for (DealList::iterator it = kGameDeals.m_CurrentDeals.begin(); it != kGameDeals.m_CurrentDeals.end(); ++it)
+		{
+			if (!((it->m_eFromPlayer == ePlayer1 && it->m_eToPlayer == ePlayer2) || (it->m_eFromPlayer == ePlayer2 && it->m_eToPlayer == ePlayer1)))
+				continue;
+
+			if (IsMatchingRenewDeal(*it, kProposedDeal))
+				return &(*it);
+		}
+
+		return NULL;
+	}
+
+	class ScopedRenewDealContext
+	{
+	public:
+		ScopedRenewDealContext(PlayerTypes ePlayer1, PlayerTypes ePlayer2, const CvDeal* pProposedDeal)
+			: m_ePlayer1(ePlayer1)
+			, m_ePlayer2(ePlayer2)
+			, m_bChanged(false)
+		{
+			if (pProposedDeal == NULL || ePlayer1 == NO_PLAYER || ePlayer2 == NO_PLAYER || ePlayer1 == ePlayer2)
+				return;
+
+			CvGameDeals& kGameDeals = GC.getGame().GetGameDeals();
+			m_iPreviousRenewDealID = kGameDeals.GetRenewDealID(ePlayer1, ePlayer2);
+			if (m_iPreviousRenewDealID > -1)
+				return;
+
+			CvDeal* pRenewDeal = FindRenewDealForEvaluation(ePlayer1, ePlayer2, *pProposedDeal);
+			if (pRenewDeal != NULL)
+			{
+				kGameDeals.SetRenewDealID(ePlayer1, ePlayer2, pRenewDeal->m_iID);
+				m_bChanged = true;
+			}
+		}
+
+		~ScopedRenewDealContext()
+		{
+			if (m_bChanged)
+			{
+				GC.getGame().GetGameDeals().SetRenewDealID(m_ePlayer1, m_ePlayer2, m_iPreviousRenewDealID);
+			}
+		}
+
+	private:
+		PlayerTypes m_ePlayer1;
+		PlayerTypes m_ePlayer2;
+		int m_iPreviousRenewDealID;
+		bool m_bChanged;
+	};
+}
+
 
 bool CvDealAI::WithinAcceptableRange(int iNetValue) const
 {
@@ -166,6 +259,7 @@ DealOfferResponseTypes CvDealAI::DoHumanOfferDealToThisAI(CvDeal* pDeal)
 	LeaderheadAnimationTypes eAnimation = NO_LEADERHEAD_ANIM;
 
 	PlayerTypes eFromPlayer = pDeal->GetOtherPlayer(GetPlayer()->GetID()); // Playing it safe, should be OK to use pDeal->GetFromPlayer() but code was using GetActivePlayer so maybe the From field wasn't always the human (although in my testing it was fine!)
+	ScopedRenewDealContext renewContext(eFromPlayer, GetPlayer()->GetID(), pDeal);
 
 	bool bFromIsActivePlayer = eFromPlayer == GC.getGame().getActivePlayer();
 
@@ -591,6 +685,8 @@ void CvDealAI::DoAcceptedDemand(PlayerTypes eFromPlayer, const CvDeal& kDeal) co
 /// Will this AI accept pDeal? Handles deal from both human and AI players
 bool CvDealAI::IsDealWithHumanAcceptable(CvDeal* pDeal, PlayerTypes eOtherPlayer, int& iTotalValueToMe, bool* bCantMatchOffer, bool bFirstPass) const
 {
+	ScopedRenewDealContext renewContext(GetPlayer()->GetID(), eOtherPlayer, pDeal);
+
 	// Important: check invalid return value!
 	if (iTotalValueToMe==INT_MAX || iTotalValueToMe==(INT_MAX * -1))
 		return false;
