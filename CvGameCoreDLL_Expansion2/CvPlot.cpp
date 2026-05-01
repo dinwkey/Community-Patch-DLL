@@ -8478,58 +8478,6 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 			}
 		}
 
-		// If we're removing an Improvement that hooked up a resource then we need to take away the bonus
-		if(eOldImprovement != NO_IMPROVEMENT && !isCity())
-		{
-			if(isOwned())
-			{
-				CvPlayer& owningPlayer = GET_PLAYER(owningPlayerID);
-				ResourceTypes eResourceFromImprovement = (ResourceTypes)GC.getImprovementInfo(eOldImprovement)->GetResourceFromImprovement();
-
-				// Remove Resource Quantity from total
-				// but not if the resource is given by the improvement, in that case the resource counter update will be handled later in setResourceType
-				if(getResourceType(getTeam()) != NO_RESOURCE && getResourceType() != eResourceFromImprovement)
-				{
-					if (bOldImprovementConnectedResource)
-					{
-						owningPlayer.removeResourcesOnPlotFromTotal(this);
-						owningPlayer.addResourcesOnPlotToUnimproved(this);
-					}
-				}
-
-				ResourceTypes eResource = getResourceType(getTeam());
-
-				if(eResource != NO_RESOURCE)
-				{
-					if(GC.getImprovementInfo(eOldImprovement)->IsConnectsResource(eResource))
-					{
-						if(GC.getResourceInfo(eResource)->getResourceUsage() == RESOURCEUSAGE_LUXURY)
-						{
-							owningPlayer.CalculateNetHappiness();
-						}
-					}
-				}
-
-				if (eResourceFromImprovement != NO_RESOURCE)
-				{
-					if (getResourceType() != NO_RESOURCE && getResourceType() == eResourceFromImprovement)
-					{
-						setResourceType(NO_RESOURCE, 0);
-					}
-				}
-
-				if (GC.getImprovementInfo(eOldImprovement)->IsExoticResourceFromImprovement())
-				{
-					// if for some reason this doesnt place resources, then dont remove resources. unlikely to fire, but we do allow it to be zero = inactive
-					int iQuantity = GC.getImprovementInfo(eOldImprovement)->GetResourceQuantityFromImprovement() + GET_PLAYER(eBuilder).GetAdmiralLuxuryBonus();
-					if (getResourceType() != NO_RESOURCE && iQuantity > 0)
-					{
-						setResourceType(NO_RESOURCE, 0);
-					}
-				}
-			}
-		}
-
 		m_eImprovementType = eNewValue;
 		if (MOD_GLOBAL_STACKING_RULES)
 		{

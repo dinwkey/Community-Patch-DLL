@@ -1438,6 +1438,7 @@ public:
 	void doFoundMessage();
 
 	bool IsExtraLuxuryResources();
+	int GetExtraLuxuryResourceCount() const;
 	void SetExtraLuxuryResources(int iNewValue);
 	void ChangeExtraLuxuryResources(int iChange);
 

@@ -27092,6 +27092,12 @@ bool CvCity::IsExtraLuxuryResources()
 }
 
 //	--------------------------------------------------------------------------------
+int CvCity::GetExtraLuxuryResourceCount() const
+{
+	return m_iCountExtraLuxuries;
+}
+
+//	--------------------------------------------------------------------------------
 void CvCity::SetExtraLuxuryResources(int iNewValue)
 {
 	m_iCountExtraLuxuries = iNewValue;

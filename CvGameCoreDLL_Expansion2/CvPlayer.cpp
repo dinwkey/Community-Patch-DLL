@@ -93,6 +93,82 @@ int CountActiveTileResourcesForPlayer(const CvPlayer& kPlayer, ResourceTypes eRe
 
 	return iCount;
 }
+
+int CountBuildingResourcesForPlayer(const CvPlayer& kPlayer, ResourceTypes eResource)
+{
+	int iCount = 0;
+
+	for (int iLoop = 0; iLoop < GC.getMap().numPlots(); ++iLoop)
+	{
+		CvPlot* pLoopPlot = GC.getMap().plotByIndexUnchecked(iLoop);
+		if (!pLoopPlot || pLoopPlot->getOwner() != kPlayer.GetID())
+			continue;
+
+		if (pLoopPlot->getResourceType() != eResource)
+			continue;
+
+		const CvCity* pOwningCity = pLoopPlot->getOwningCity();
+		if (!pOwningCity)
+			continue;
+
+		const int iExtraLuxuryCount = pOwningCity->GetExtraLuxuryResourceCount();
+		if (iExtraLuxuryCount <= 0)
+			continue;
+
+		if (!pLoopPlot->IsResourceImprovedForOwner())
+			continue;
+
+		iCount += iExtraLuxuryCount;
+	}
+
+	for (int iLoop = 0; iLoop < GC.getNumBuildingInfos(); ++iLoop)
+	{
+		const BuildingTypes eBuilding = static_cast<BuildingTypes>(iLoop);
+		CvBuildingEntry* pBuildingInfo = GC.getBuildingInfo(eBuilding);
+		if (!pBuildingInfo)
+			continue;
+
+		const int iResourceQuantity = pBuildingInfo->GetResourceQuantity(eResource);
+		if (iResourceQuantity == 0)
+			continue;
+
+		int iCityLoop = 0;
+		for (const CvCity* pLoopCity = kPlayer.firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = kPlayer.nextCity(&iCityLoop))
+		{
+			CvCityBuildings* pCityBuildings = pLoopCity->GetCityBuildings();
+			if (!pCityBuildings)
+				continue;
+
+			const int iNumBuilding = pCityBuildings->GetNumBuilding(eBuilding);
+			if (iNumBuilding > 0)
+			{
+				iCount += iResourceQuantity * iNumBuilding;
+			}
+		}
+	}
+
+	CvLeague* pLeague = GC.getGame().GetGameLeagues()->GetActiveLeague();
+	if (pLeague && pLeague->IsMember(kPlayer.GetID()))
+	{
+		ActiveResolutionList vActiveResolutions = pLeague->GetActiveResolutions();
+		for (ActiveResolutionList::iterator it = vActiveResolutions.begin(); it != vActiveResolutions.end(); ++it)
+		{
+			if (it->GetEffects()->iResourceQuantity == 0)
+				continue;
+
+			if (it->GetProposerDecision()->GetType() != RESOLUTION_DECISION_ANY_LUXURY_RESOURCE)
+				continue;
+
+			const ResourceTypes eTargetLuxury = static_cast<ResourceTypes>(it->GetProposerDecision()->GetDecision());
+			if (eTargetLuxury == eResource)
+			{
+				iCount += it->GetEffects()->iResourceQuantity;
+			}
+		}
+	}
+
+	return iCount;
+}
 }
 
 // Public Functions...
@@ -38428,6 +38504,13 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 		else
 		{
 			m_paiNumResourceFromBuildings[eIndex] = m_paiNumResourceFromBuildings[eIndex] + iChange;
+			if (m_paiNumResourceFromBuildings[eIndex] < 0)
+			{
+				const int iRecountedBuildingResources = CountBuildingResourcesForPlayer(*this, eIndex);
+				CUSTOMLOG("Building resource counter underflow for Player %d (%s), Resource %s. Delta: %d, stored after change: %d, recounted: %d. Auto-correcting.",
+					GetID(), getCivilizationShortDescription(), GC.getResourceInfo(eIndex)->GetText(), iChange, m_paiNumResourceFromBuildings[eIndex], iRecountedBuildingResources);
+				m_paiNumResourceFromBuildings[eIndex] = max(0, iRecountedBuildingResources);
+			}
 			ASSERT(m_paiNumResourceFromBuildings[eIndex] >= 0);
 		}
 
