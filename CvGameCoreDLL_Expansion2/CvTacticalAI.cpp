@@ -13637,7 +13637,8 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 
 	// Skirmishers should go to the front line when they can attack
 	eUnitMovementStrategy eMoveStrategy = unit.eMoveStrategy;
-	if (unit.iAttacksLeft > 0 && pUnit->GetRange() == 1 && (unit.iMovesLeft > GD_INT_GET(MOVE_DENOMINATOR) || !pUnit->canMoveAfterAttacking()))
+	bool bSkirmisher = unit.iAttacksLeft > 0 && pUnit->GetRange() == 1 && (unit.iMovesLeft > GD_INT_GET(MOVE_DENOMINATOR) || (!pUnit->canMoveAfterAttacking() && unit.iMovesLeft > 0));
+	if (bSkirmisher)
 		eMoveStrategy = MS_FIRSTLINE;
 
 	//zero to TACTICAL_COMBAT_MAX_TARGET_DISTANCE
