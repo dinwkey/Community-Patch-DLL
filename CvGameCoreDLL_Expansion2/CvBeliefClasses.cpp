@@ -258,7 +258,6 @@ CvBeliefEntry::~CvBeliefEntry()
 	SAFE_DELETE_ARRAY(m_piYieldFromFaithPurchase);
 	SAFE_DELETE_ARRAY(m_piYieldFromKnownPantheons);
 	SAFE_DELETE_ARRAY(m_piMaxYieldPerFollower);
-	SAFE_DELETE_ARRAY(m_piMaxYieldPerFollowerPercent);
 	SAFE_DELETE_ARRAY(m_piImprovementVoteChange);
 
 	CvDatabaseUtility::SafeDelete2DArray(m_ppiImprovementYieldChanges);
