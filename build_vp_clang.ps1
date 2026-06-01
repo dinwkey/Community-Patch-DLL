@@ -54,11 +54,11 @@ $INCLUDE_DIRS = @(
 $SHARED_PREDEFS = @(
     'FXS_IS_DLL', 'WIN32', '_WINDOWS', '_USRDLL',
     'EXTERNAL_PAUSING', 'CVGAMECOREDLL_EXPORTS',
-    'FINAL_RELEASE', '_CRT_SECURE_NO_WARNINGS', '_WINDLL'
+    '_CRT_SECURE_NO_WARNINGS', '_WINDLL'
 )
 
 if ($Config -eq 'release') {
-    $PREDEFS = $SHARED_PREDEFS + @('STRONG_ASSUMPTIONS', 'NDEBUG', 'VPRELEASE_ERRORMSG')
+    $PREDEFS = $SHARED_PREDEFS + @('FINAL_RELEASE', 'STRONG_ASSUMPTIONS', 'NDEBUG', 'VPRELEASE_ERRORMSG')
 } else {
     $PREDEFS = $SHARED_PREDEFS + @('VPDEBUG')
 }
@@ -265,7 +265,7 @@ function Build-ClangArgs {
     if ($Config -eq 'release') {
         $args += '/Ox', '/Ob2', '/Zo', '-flto'
     } else {
-        $args += '/Od', '/Oy-'
+        $args += '/Od', '/Oy-', '/Zo'
     }
     
     foreach ($predef in $PREDEFS) {
@@ -290,13 +290,15 @@ function Build-ClangArgs {
 # Build linker argument list
 function Build-LinkArgs {
     $args = @(
-        '/MACHINE:x86', '/DLL', '/DEBUG', '/LTCG', '/DYNAMICBASE',
+        '/MACHINE:x86', '/DLL', '/DEBUG', '/DYNAMICBASE',
         '/NXCOMPAT', '/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED',
         '/FORCE:MULTIPLE', "/DEF:`"$(Join-Path $PROJECT_DIR $DEF_FILE)`""
     )
     
     if ($Config -eq 'release') {
-        $args += '/OPT:REF', '/OPT:ICF'
+        $args += '/LTCG', '/OPT:REF', '/OPT:ICF'
+    } else {
+        $args += '/OPT:NOREF', '/OPT:NOICF'
     }
     
     return $args

@@ -66,11 +66,10 @@ SHARED_PREDEFS = [
     '_USRDLL',
     'EXTERNAL_PAUSING',
     'CVGAMECOREDLL_EXPORTS',
-    'FINAL_RELEASE',
     '_CRT_SECURE_NO_WARNINGS',
     '_WINDLL',
 ]
-RELEASE_PREDEFS = SHARED_PREDEFS + ['STRONG_ASSUMPTIONS', 'NDEBUG', 'VPRELEASE_ERRORMSG']
+RELEASE_PREDEFS = SHARED_PREDEFS + ['FINAL_RELEASE', 'STRONG_ASSUMPTIONS', 'NDEBUG', 'VPRELEASE_ERRORMSG']
 DEBUG_PREDEFS = SHARED_PREDEFS + ['VPDEBUG']
 PREDEFS = {
     Config.Release: RELEASE_PREDEFS,
@@ -318,6 +317,7 @@ def build_cl_config_args(config: Config) -> list[str]:
     else:
         args.append('/Od')
         args.append('/Oy-')
+        args.append('/Zo')
     for predef in PREDEFS[config]:
         args.append(f'/D{predef}')
     for include_dir in INCLUDE_DIRS:
@@ -329,9 +329,11 @@ def build_cl_config_args(config: Config) -> list[str]:
     return args
 
 def build_link_config_args(config: Config) -> list[str]:
-    args = ['/MACHINE:x86', '/DLL', '/DEBUG', '/LTCG', '/DYNAMICBASE', '/NXCOMPAT', '/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED', '/FORCE:MULTIPLE', f'/DEF:"{os.path.join(PROJECT_DIR, DEF_FILE)}"']
+    args = ['/MACHINE:x86', '/DLL', '/DEBUG', '/DYNAMICBASE', '/NXCOMPAT', '/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED', '/FORCE:MULTIPLE', f'/DEF:"{os.path.join(PROJECT_DIR, DEF_FILE)}"']
     if config == Config.Release:
-        args += ['/OPT:REF', '/OPT:ICF']
+        args += ['/LTCG', '/OPT:REF', '/OPT:ICF']
+    else:
+        args += ['/OPT:NOREF', '/OPT:NOICF']
     return args
 
 def prepare_dirs(build_dir: Path, out_dir: Path):
