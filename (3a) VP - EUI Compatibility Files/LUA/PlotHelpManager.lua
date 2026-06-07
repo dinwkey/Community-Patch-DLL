@@ -147,6 +147,13 @@ local function ShowPlotTips( tip )
 	end
 end
 
+local function GetResourceAmountPostModifiers(plot, playerID, improvementID)
+	if plot and plot.GetNumResourcePostModifiers and playerID and playerID ~= -1 and improvementID and improvementID ~= -1 then
+		return plot:GetNumResourcePostModifiers(playerID, improvementID)
+	end
+	return plot and plot:GetNumResource() or 0
+end
+
 local function isMountainNearby( city, distance )
 	for i = 0, (distance+1) * distance * 3 do
 		local plot = city:GetCityIndexPlot(i)
@@ -696,7 +703,7 @@ local PlotToolTips = EUI.PlotToolTips or function( plot, isExtraTips )
 			numResource = plot:GetNumResource()
 			numResourcePostModifiers = numResource
 			if plotOwner then
-				numResourcePostModifiers = plot:GetNumResourcePostModifiers(plotOwnerID, revealedImprovementID)
+				numResourcePostModifiers = GetResourceAmountPostModifiers(plot, plotOwnerID, revealedImprovementID)
 			end
 
 			if resourceUsageType == ResourceUsageTypes_RESOURCEUSAGE_STRATEGIC then
@@ -1103,10 +1110,10 @@ local PlotToolTips = EUI.PlotToolTips or function( plot, isExtraTips )
 						end
 						if resource and isResourceUsefull then
 							if plot:IsResourceConnectedByImprovement( buildImprovementID ) then
-								newImprovementAmount = plot:GetNumResourcePostModifiers(activePlayerID, buildImprovementID)
+								newImprovementAmount = GetResourceAmountPostModifiers(plot, activePlayerID, buildImprovementID)
 							end
 							if isResourceConnected then
-								oldImprovementAmount = plot:GetNumResourcePostModifiers(activePlayerID, revealedImprovementID)
+								oldImprovementAmount = GetResourceAmountPostModifiers(plot, activePlayerID, revealedImprovementID)
 							end
 							if newImprovementAmount > oldImprovementAmount then
 								buildTip = string_format("%s [COLOR_POSITIVE_TEXT]%+i[ENDCOLOR]%s", buildTip, newImprovementAmount - oldImprovementAmount, resource.IconString )

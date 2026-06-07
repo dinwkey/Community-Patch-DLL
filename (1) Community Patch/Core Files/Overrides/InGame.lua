@@ -574,6 +574,7 @@ function ClearAllHighlights()
 	Events.ClearHexHighlightStyle("FireRangeBorder");
 	Events.ClearHexHighlightStyle("GroupBorder");
 	Events.ClearHexHighlightStyle("ValidFireTargetBorder");
+	Events.ClearHexHighlightStyle("DestinationHighlight");
 end
 
 function ClearUnitHexHighlights()

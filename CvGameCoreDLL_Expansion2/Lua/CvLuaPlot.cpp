@@ -774,7 +774,7 @@ int CvLuaPlot::lGetFeatureProduction(lua_State* L)
 	return 1;
 }
 //------------------------------------------------------------------------------
-//CyUnit* getBestDefender(PlayerTypes eOwner, PlayerTypes eAttackingPlayer, CyUnit* pAttacker, bool bTestAtWar, bool bTestPotentialEnemy, bool bTestCanMove);
+//CyUnit* getBestDefender(PlayerTypes eOwner, PlayerTypes eAttackingPlayer, CyUnit* pAttacker, bool bTestAtWar, bool bIgnoreVisibility, bool bTestCanMove, bool bNoncombatAllowed);
 int CvLuaPlot::lGetBestDefender(lua_State* L)
 {
 	CvPlot* pkPlot = GetInstance(L); CHECK_PLOT_VALID(pkPlot);
@@ -784,7 +784,8 @@ int CvLuaPlot::lGetBestDefender(lua_State* L)
 	const bool bTestAtWar = luaL_optint(L, 5, 0);
 	const bool bIgnoreVisibility = luaL_optint(L, 6, 0);
 	const bool bTestCanMove = luaL_optint(L, 7, 0);
-	CvUnit* pkUnit = pkPlot->getBestDefender(eOwner, eAttackingPlayer, pkAttacker, bTestAtWar, bIgnoreVisibility, bTestCanMove);
+	const bool bNoncombatAllowed = luaL_optint(L, 8, 0);
+	CvUnit* pkUnit = pkPlot->getBestDefender(eOwner, eAttackingPlayer, pkAttacker, bTestAtWar, bIgnoreVisibility, bTestCanMove, bNoncombatAllowed);
 	CvLuaUnit::Push(L, pkUnit);
 	return 1;
 }

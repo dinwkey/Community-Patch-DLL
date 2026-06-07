@@ -874,6 +874,7 @@ void CvLuaPlayer::PushMethods(lua_State* L, int t)
 	Method(GetNumResourceUsed);
 	Method(GetNumResourceTotal);
 	Method(GetNumResourceFromBuildings);
+	Method(GetNumResourceFromEvents);
 	Method(ChangeNumResourceTotal);
 	Method(GetNumResourceAvailable);
 
@@ -981,6 +982,8 @@ void CvLuaPlayer::PushMethods(lua_State* L, int t)
 	Method(IsStopSpyingMessageTooSoon);
 	Method(IsAskedToStopConverting);
 	Method(IsAskedToStopDigging);
+	Method(IsAskedToStopPlundering);
+	Method(GetNumTradeRoutesPlundered);
 	Method(IsDoFMessageTooSoon);
 	Method(IsDoF);
 	Method(GetDoFCounter);
@@ -10536,6 +10539,12 @@ int CvLuaPlayer::lGetNumResourceFromBuildings(lua_State* L)
 	return BasicLuaMethod(L, &CvPlayerAI::getNumResourceFromBuildings);
 }
 //------------------------------------------------------------------------------
+//int getNumResourceFromEvents(ResourceTypes  iIndex);
+int CvLuaPlayer::lGetNumResourceFromEvents(lua_State* L)
+{
+	return BasicLuaMethod(L, &CvPlayerAI::getNumResourceFromEvents);
+}
+//------------------------------------------------------------------------------
 //int getNumResourceTotal(ResourceTypes  iIndex, bool bIncludeImport);
 int CvLuaPlayer::lGetNumResourceTotal(lua_State* L)
 {
@@ -11159,6 +11168,37 @@ int CvLuaPlayer::lGetReasonActionDisabled(lua_State* L)
 
 			std::vector<int> aiTradeUnitsAtPlot = pkPlayer->GetTrade()->GetOpposingTradeUnitsAtPlot(pPlot, false);
 
+			// Check for Morocco UA with diplomatic restrictions
+			if (pkPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
+			{
+				for (uint uiTradeRoute = 0; uiTradeRoute < aiTradeUnitsAtPlot.size(); uiTradeRoute++)
+				{
+					PlayerTypes eTradeUnitOwner = GC.getGame().GetGameTrade()->GetOwnerFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
+					if (eTradeUnitOwner == NO_PLAYER)
+					{
+						continue;
+					}
+					
+					TeamTypes eMoroccoTeam = pkPlayer->getTeam();
+					TeamTypes eOwnerTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
+					
+					// Check defensive pact
+					if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
+					{
+						lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED");
+						return 1;
+					}
+					
+					// Check vassal
+					if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
+						GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
+					{
+						lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_VASSAL");
+						return 1;
+					}
+				}
+			}
+
 			for (uint uiTradeRoute = 0; uiTradeRoute < aiTradeUnitsAtPlot.size(); uiTradeRoute++)
 			{
 				PlayerTypes eTradeUnitOwner = GC.getGame().GetGameTrade()->GetOwnerFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
@@ -11526,6 +11566,32 @@ int CvLuaPlayer::lIsAskedToStopDigging(lua_State* L)
 	const bool bAsked = pkPlayer->GetDiplomacyAI()->IsPlayerAskedNotToDig(eWithPlayer);
 
 	lua_pushboolean(L, bAsked);
+	return 1;
+}
+
+//------------------------------------------------------------------------------
+//void IsAskedToStopPlundering(PlayerTypes eWithPlayer);
+int CvLuaPlayer::lIsAskedToStopPlundering(lua_State* L)
+{
+	CvPlayerAI* pkPlayer = GetInstance(L);
+	PlayerTypes eWithPlayer = (PlayerTypes) lua_tointeger(L, 2);
+
+	const bool bAsked = pkPlayer->GetDiplomacyAI()->IsPlayerAskedNotToPlunder(eWithPlayer);
+
+	lua_pushboolean(L, bAsked);
+	return 1;
+}
+
+//------------------------------------------------------------------------------
+//int GetNumTradeRoutesPlundered(PlayerTypes eWithPlayer);
+int CvLuaPlayer::lGetNumTradeRoutesPlundered(lua_State* L)
+{
+	CvPlayerAI* pkPlayer = GetInstance(L);
+	PlayerTypes eOtherPlayer = (PlayerTypes) lua_tointeger(L, 2);
+
+	const int iValue = pkPlayer->GetDiplomacyAI()->GetNumTradeRoutesPlundered(eOtherPlayer);
+
+	lua_pushinteger(L, iValue);
 	return 1;
 }
 

@@ -1299,6 +1299,7 @@
     <File md5="0F7FA7A5B4A7208E6D443ADB8E3C1D5D" import="0">Database Changes/Text/en_US/UnitPromotions/PromotionTextChanges.sql</File>
     <File md5="DDA7CA65AFBAC78647BE27D28C01203E" import="0">Database Changes/Text/en_US/Units/PreUnitTextChanges.sql</File>
     <File md5="615A8F84B28E30BEEF1C9624EE9BC68B" import="0">Database Changes/Text/en_US/Units/MissionTextChanges.sql</File>
+    <File md5="A6725FFB3A17460C433585F4F8E41AB4" import="0">Database Changes/Text/en_US/Units/MoroccoUAFixes.sql</File>
     <File md5="E44B069F8ED6698D11B89240DCAC6F38" import="0">Database Changes/Text/en_US/Units/NewMissionText.xml</File>
     <File md5="D2EFE53DFE4412953E6A1B9F8C72DFD6" import="0">Database Changes/Text/en_US/Units/NewUnitText.xml</File>
     <File md5="7F6897296013D2AEFC1246A55590B077" import="0">Database Changes/Text/en_US/Units/UnitTextChanges.sql</File>
@@ -1643,6 +1644,7 @@
       <UpdateDatabase>Database Changes/Text/en_US/UI/UITextChanges.sql</UpdateDatabase>
       <UpdateDatabase>Database Changes/Text/en_US/UnitPromotions/PromotionTextChanges.sql</UpdateDatabase>
       <UpdateDatabase>Database Changes/Text/en_US/Units/MissionTextChanges.sql</UpdateDatabase>
+      <UpdateDatabase>Database Changes/Text/en_US/Units/MoroccoUAFixes.sql</UpdateDatabase>
       <UpdateDatabase>Database Changes/Text/en_US/Units/UnitTextChanges.sql</UpdateDatabase>
       <UpdateDatabase>Database Changes/Text/en_US/WorldCongress/ProjectTextChanges.sql</UpdateDatabase>
       <UpdateDatabase>Database Changes/Text/en_US/WorldCongress/ResolutionTextChanges.sql</UpdateDatabase>
