@@ -1775,7 +1775,7 @@ function ActionToolTipHandler( control )
 
 		-- Extra Yield from this build
 
-		for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+		for yieldID = 0, (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES)-1 do
 			local yieldChange = plot:GetYieldWithBuild( buildID, yieldID, false, g_activePlayerID ) - plot:CalculateYield(yieldID)
 
 			if yieldChange > 0 then
@@ -1852,7 +1852,7 @@ function()-- control )
 			tipControlTable.UnitActionHotKey:SetText()
 			-- Yield from this improvement
 			local toolTip = table()
-			for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+			for yieldID = 0, (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES)-1 do
 				local yieldChange = plot:CalculateImprovementYieldChange( improvementID, yieldID, plot:GetOwner() )
 				--plot:CalculateYield( yieldID ) - plot:CalculateNatureYield( yieldID, g_activeTeamID )
 

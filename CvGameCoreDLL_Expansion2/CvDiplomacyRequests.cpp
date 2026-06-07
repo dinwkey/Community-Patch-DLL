@@ -103,6 +103,15 @@ void CvDiplomacyRequests::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
 	CvDiplomacyRequests::Serialize(*this, serialVisitor);
+
+	// These fields reference live UI/runtime state and cannot be resumed from a save.
+	m_bRequestActive = false;
+	m_eRequestActiveFromPlayer = NO_PLAYER;
+	m_eNextAIPlayer = NO_PLAYER;
+	for (RequestList::iterator iter = m_aRequests.begin(); iter != m_aRequests.end(); ++iter)
+	{
+		iter->m_iLookupIndex = -1;
+	}
 }
 
 /// Serialization write

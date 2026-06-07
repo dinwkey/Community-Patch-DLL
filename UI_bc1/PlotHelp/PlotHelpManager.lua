@@ -66,7 +66,7 @@ local UI_GetHeadSelectedUnit = UI.GetHeadSelectedUnit
 local UI_GetMouseOverHex = UI.GetMouseOverHex
 local YieldDisplayTypes_AREA = YieldDisplayTypes.AREA
 local YieldTypes = YieldTypes
-local YieldTypes_NUM_YIELD_TYPES_1 = YieldTypes.NUM_YIELD_TYPES-1
+local YieldTypes_NUM_YIELD_TYPES_1 = (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES) - 1
 
 -------------------------------
 -- Globals

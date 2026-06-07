@@ -10,6 +10,9 @@
 #ifndef CIV5_AI_DIPLOMACY_H
 #define CIV5_AI_DIPLOMACY_H
 
+#include "CvDiplomacyMemory.h"
+#include "CvUnitSightingManager.h"
+
 struct Opinion
 {
 	Localization::String m_str;
@@ -46,10 +49,45 @@ public:
 	void Init(CvPlayer* pPlayer);
 	template<typename DiplomacyAI, typename Visitor>
 	static void Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	template<typename DiplomacyAI, typename Visitor>
+	static void SerializePreNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	template<typename DiplomacyAI, typename Visitor>
+	static void SerializeNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	template<typename DiplomacyAI, typename Visitor>
+	static void SerializePostNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
+	static void ResetNoPlunderPromiseData(CvDiplomacyAI& diplomacyAI);
 	void Read(FDataStream& kStream);
 	void Write(FDataStream& kStream) const;
 	void update();
 	void SlotStateChange();
+
+	// ************************************
+	// Extended Memory System
+	// ************************************
+
+	/// Capture a snapshot of current diplomatic/military state into the ring buffer.
+	/// Called at the START of DoTurn(), before any state updates.
+	void CaptureMemorySnapshot();
+
+	/// Read/write memory system data separately (sentinel-guarded for save compat).
+	void ReadMemorySystem(FDataStream& kStream);
+	void WriteMemorySystem(FDataStream& kStream) const;
+
+	/// Access the memory buffer (const and non-const).
+	CivMemory& GetMemory() { return m_DiplomacyMemory.GetMemory(); }
+	const CivMemory& GetMemory() const { return m_DiplomacyMemory.GetMemory(); }
+
+	// --- Pattern Detection ---
+	bool IsPlayerBuildingUpNearUs(PlayerTypes ePlayer) const;
+	bool IsSiegeWarningActive(PlayerTypes ePlayer) const;
+	bool IsPlayerCreepingCloser(PlayerTypes ePlayer) const;
+	bool HasApproachChangedRecently(PlayerTypes ePlayer, int iWithinTurns) const;
+	bool HasTurnedHostileRecently(PlayerTypes ePlayer, int iWithinTurns) const;
+	bool AmIOverextended() const;
+	int  GetCoalitionThreatScore() const;
+	int  GetHistoricalThreat(PlayerTypes ePlayer, int iTurnsAgo) const;
+	bool IsThreatRising(PlayerTypes ePlayer) const;
+	bool IsAttackLikelyImminent(PlayerTypes ePlayer) const;
 
 	// ************************************
 	// Pointers
@@ -693,6 +731,17 @@ public:
 	bool IsPlayerAskedNotToDig(PlayerTypes ePlayer) const;
 	void SetPlayerAskedNotToDig(PlayerTypes ePlayer, bool bValue);
 
+	// Plunder Promise (Morocco UA)
+	PromiseStates GetNoPlunderPromiseState(PlayerTypes ePlayer) const;
+	void SetNoPlunderPromiseState(PlayerTypes ePlayer, PromiseStates ePromiseState);
+	int GetNoPlunderPromiseTurn(PlayerTypes ePlayer) const;
+	void SetNoPlunderPromiseTurn(PlayerTypes ePlayer, int iTurn);
+	bool MadeNoPlunderPromise(PlayerTypes ePlayer) const;
+	bool BrokeNoPlunderPromise(PlayerTypes ePlayer) const;
+	bool IgnoredNoPlunderPromise(PlayerTypes ePlayer) const;
+	bool IsPlayerAskedNotToPlunder(PlayerTypes ePlayer) const;
+	void SetPlayerAskedNotToPlunder(PlayerTypes ePlayer, bool bValue);
+
 	// Coop War Promise
 	bool BrokeCoopWarPromise(PlayerTypes ePlayer) const;
 	void SetBrokeCoopWarPromise(PlayerTypes ePlayer, bool bValue);
@@ -1115,6 +1164,10 @@ public:
 	// ------------------------------------
 
 	int CountAggressiveMilitaryScore(PlayerTypes ePlayer, bool bHalveDefenders);
+	int CountCombatUnitsNearUs(PlayerTypes ePlayer) const;
+	int CountSiegeUnitsNearUs(PlayerTypes ePlayer) const;
+	int CountNavalUnitsNearUs(PlayerTypes ePlayer) const;
+	bool IsLikelyIntentAgainstUs(PlayerTypes ePlayer) const;
 	void DoUpdateMilitaryAggressivePostures();
 
 	void DoExpansionBickering();
@@ -1170,9 +1223,13 @@ public:
 	// ------------------------------------
 
 	void DoUpdateGlobalPolitics();
+	void DoFinalizeReevaluation(vector<PlayerTypes>& vPlayersToReevaluate, bool bRefreshGlobalPolitics);
+	void DoReevaluatePlayersInternal(vector<PlayerTypes>& vTargetPlayers, bool bMajorEvent, bool bCancelExchanges, bool bFromResurrection, bool bRefreshGlobalPolitics);
+	void DoReevaluateLocalPlayer(PlayerTypes ePlayer, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoReevaluatePlayer(PlayerTypes ePlayer, bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoReevaluateEveryone(bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
+	void DoReevaluateMutualRelation(PlayerTypes ePlayer, bool bMajorEvent = false, bool bCancelExchanges = true, bool bFromResurrection = false);
 	void DoUpdateMajorCompetitors();
 	void DoUpdateMajorCivApproaches(vector<PlayerTypes>& vPlayersToReevaluate, bool bStrategic);
 
@@ -1274,6 +1331,7 @@ public:
 	// Other things the player has done to piss off the AI
 	void DoDugUpMyYardStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
 	void DoConvertedMyCityStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
+	void DoPlunderedTradeRouteStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
 	//void DoSeriousExpansionWarningStatement(PlayerTypes ePlayer, DiploStatementTypes &eStatement);
 	//void DoSeriousPlotBuyingWarningStatement(PlayerTypes ePlayer, DiploStatementTypes &eStatement);
 	void DoExpansionWarningStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement);
@@ -1601,6 +1659,9 @@ public:
 	// Player asks the AI not to dig
 	bool IsStopDiggingAcceptable(PlayerTypes ePlayer);
 
+	// Player asks the AI not to plunder trade routes
+	bool IsStopPlunderingAcceptable(PlayerTypes ePlayer);
+
 	CivOpinionTypes GetNeighborOpinion(PlayerTypes ePlayer) const;
 	bool MusteringForNeighborAttack(PlayerTypes ePlayer) const;
 
@@ -1689,6 +1750,8 @@ public:
 	int GetIgnoredNoDiggingPromiseScore(PlayerTypes ePlayer);
 	int GetBrokenSpyPromiseScore(PlayerTypes ePlayer);
 	int GetIgnoredSpyPromiseScore(PlayerTypes ePlayer);
+	int GetBrokenNoPlunderPromiseScore(PlayerTypes ePlayer);
+	int GetIgnoredNoPlunderPromiseScore(PlayerTypes ePlayer);
 	int GetBrokenCoopWarPromiseScore(PlayerTypes ePlayer);
 
 	// Religion / Ideology
@@ -1858,6 +1921,7 @@ private:
 	void LogPersonality();
 	void LogStatus();
 	void LogWarStatus();
+	void LogMemorySnapshot();
 
 	void LogGrandStrategy(CvString& strString);
 
@@ -2065,6 +2129,11 @@ private:
 	int m_aiNoDiggingPromiseTurn[MAX_MAJOR_CIVS];
 	bool m_abAskedNotToDig[MAX_MAJOR_CIVS];
 
+	// No Plunder Promise (Morocco UA)
+	char m_aeNoPlunderPromiseState[MAX_MAJOR_CIVS];
+	int m_aiNoPlunderPromiseTurn[MAX_MAJOR_CIVS];
+	bool m_abAskedNotToPlunder[MAX_MAJOR_CIVS];
+
 	// Coop War Promise
 	int m_aiBrokenCoopWarPromiseTurn[MAX_MAJOR_CIVS];
 
@@ -2161,6 +2230,9 @@ private:
 	bool m_abVassalTaxLowered[MAX_MAJOR_CIVS];
 	int m_aiVassalGoldPerTurnTaxedSinceVassalStarted[MAX_MAJOR_CIVS];
 	int m_aiVassalGoldPerTurnCollectedSinceVassalStarted[MAX_MAJOR_CIVS];
+
+	// Extended Memory System (Phase 1) — extracted component
+	CvDiplomacyMemory m_DiplomacyMemory;
 
 	float m_aTradePriority[MAX_MAJOR_CIVS]; // current ai to human trade priority
 

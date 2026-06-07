@@ -46,7 +46,8 @@ VALUES
 	('RESPONSE_TRADE_CANT_MATCH_OFFER', 'TRADE_CANT_MATCH'),
 	('RESPONSE_GREETING_POLITE_HELLO', 'GREETING_POLITE_HELLO'),
 	('RESPONSE_GREETING_NEUTRAL_HELLO', 'GREETING_NEUTRAL_HELLO'),
-	('RESPONSE_GREETING_HOSTILE_HELLO', 'GREETING_HOSTILE_HELLO');
+	('RESPONSE_GREETING_HOSTILE_HELLO', 'GREETING_HOSTILE_HELLO'),
+	('RESPONSE_DOF_AI_DENOUNCE_REQUEST', 'RESPONSE_DOF_AI_DENOUNCE_REQUEST');
 
 CREATE TEMP TABLE LeaderNames (
 	LeaderType text,
@@ -105,6 +106,27 @@ SELECT
 	b.LeaderType, a.ResponseType, b.LeaderName || '_' || a.ResponseKeySuffix || '%'
 FROM Responses a, LeaderNames b
 WHERE NOT EXISTS (SELECT 1 FROM Diplomacy_Responses WHERE LeaderType = b.LeaderType AND ResponseType = a.ResponseType);
+
+--------------------------------------------------------------------------------------------------------
+-- Fix RESPONSE_WORK_AGAINST_SOMEONE: the base game pattern 'TXT_KEY_DENOUNCE%' accidentally matches
+-- TXT_KEY_DENOUNCE_HUMAN and TXT_KEY_DENOUNCE_HUMAN_TT (UI button/tooltip text), causing the AI
+-- to sometimes display "Clicking this button will DENOUNCE the other player" as dialogue.
+-- Solution: Delete the bad pattern and insert explicit entries for TXT_KEY_DENOUNCE_1 through _10.
+--------------------------------------------------------------------------------------------------------
+DELETE FROM Diplomacy_Responses WHERE ResponseType = 'RESPONSE_WORK_AGAINST_SOMEONE' AND Response = 'TXT_KEY_DENOUNCE%';
+
+INSERT INTO Diplomacy_Responses (LeaderType, ResponseType, Response, Bias)
+VALUES
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_1', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_2', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_3', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_4', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_5', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_6', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_7', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_8', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_9', 1),
+	('GENERIC', 'RESPONSE_WORK_AGAINST_SOMEONE', 'TXT_KEY_DENOUNCE_10', 1);
 
 DROP TABLE Responses;
 DROP TABLE LeaderNames;

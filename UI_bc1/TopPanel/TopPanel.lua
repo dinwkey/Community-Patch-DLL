@@ -1453,7 +1453,7 @@ else
 			for info in GameInfo.HealthLevels() do
 				local healthLevelID = info.ID
 				if g_activePlayer:IsAffectedByHealthLevel(healthLevelID) then
-					for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+					for yieldID = 0, (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES)-1 do
 						cityYieldMods[yieldID] = (cityYieldMods[yieldID] or 0) + Game.GetHealthLevelCityYieldModifier(healthLevelID, excessHealth, yieldID)
 					end
 					combatMod = combatMod + (info.CombatModifier or 0)
@@ -1466,7 +1466,7 @@ else
 			tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_CITY_GROWTH_MODIFIER", cityGrowthMod )
 			tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_OUTPOST_GROWTH_MODIFIER", outpostGrowthMod )
 			tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_CITY_INTRIGUE_MODIFIER", cityIntrigueMod )
-			for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+			for yieldID = 0, (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES)-1 do
 				tips:insertLocalizedBulletIfNonZero( "TXT_KEY_TP_HEALTH_LEVEL_EFFECT_CITY_YIELD_MODIFIER", cityYieldMods[yieldID] or 0, YieldIcons[yieldID] or "???", YieldNames[yieldID] or "???" )
 			end
 --			tips:insert( "[ENDCOLOR]" )
@@ -2119,14 +2119,14 @@ local function ResourcesToolTip( control )
 			local numResourceExport = g_activePlayer:GetResourceExport( resourceID )
 			local numResourceImport = g_activePlayer:GetResourceImport( resourceID )
 			local numResourceMisc = g_activePlayer:GetResourcesMisc(resourceID)
-			local numResourceLocal = g_activePlayer:GetNumResourceTotal( resourceID, false ) + numResourceExport - numResourceMisc
-
+				local numResourceEvents = g_activePlayer:GetNumResourceFromEvents(resourceID)
 			tips:insert( ColorizeAbs(numResourceAvailable) .. resource.IconString .. " " .. Locale.ToUpper(resource.Description) )
 			tips:insert( "----------------" )
 
 			----------------------------
 			-- Local Resources in Cities
 			----------------------------
+			local numResourceLocal = 0
 			tips:insert( "" )
 			tips:insert( Colorize(numResourceLocal) .. " " .. L"TXT_KEY_EO_LOCAL_RESOURCES_CBP" )
 
@@ -2144,6 +2144,7 @@ local function ResourcesToolTip( control )
 						end
 					end
 				end
+				numResourceLocal = numResourceLocal + numConnectedResource + numUnconnectedResource
 				local tip = ""
 				if numConnectedResource > 0 then
 					tip = " " .. ColorizeAbs( numConnectedResource ) .. resource.IconString
@@ -2226,7 +2227,7 @@ local function ResourcesToolTip( control )
 				local numResourceCSAlly = g_activePlayer:GetResourceFromCSAlliances(resourceID)
 
 				--want the total, but before GetStrategicResourceMod and GetResourceModFromReligion are applied, so have to remove Misc then add back in parts of it
-				local totalBeforeMod =  g_activePlayer:GetNumResourceTotal( resourceID, false ) - numResourceMisc + numResourceGP + numResourceCorp + numResourceFranchises + numResourceCSAlly
+				local totalBeforeMod =  g_activePlayer:GetNumResourceTotal( resourceID, false ) - numResourceMisc + numResourceGP + numResourceCorp + numResourceFranchises + numResourceCSAlly + numResourceEvents
 
 				local stratResMod = g_activePlayer:GetStrategicResourceMod()
 				local resourceModRel = g_activePlayer:GetResourceModFromReligion(resourceID)
@@ -2242,6 +2243,9 @@ local function ResourcesToolTip( control )
 				end
 				if numResourceCSAlly > 0 then
 					tips:insert( "[ICON_BULLET]" .. Colorize(numResourceCSAlly) .. resource.IconString .. " " .. L"TXT_KEY_EO_CS_ALLY_RESOURCES" )
+				end
+				if numResourceEvents > 0 then
+					tips:insert( "[ICON_BULLET]" .. Colorize(numResourceEvents) .. resource.IconString .. " " .. L"TXT_KEY_EO_EVENT_RESOURCES" )
 				end
 				if stratResMod > 0 and Game.GetResourceUsageType(resource.ID) == ResourceUsageTypes.RESOURCEUSAGE_STRATEGIC then
 					local change = math_floor(((totalBeforeMod * (100 + stratResMod)) / 100) - totalBeforeMod)
