@@ -95,6 +95,8 @@
     <ClCompile Include="CvDealAI.cpp" />
     <ClCompile Include="CvDealClasses.cpp" />
     <ClCompile Include="CvDiplomacyAI.cpp" />
+    <ClCompile Include="CvDiplomacyMemory.cpp" />
+    <ClCompile Include="CvUnitSightingManager.cpp" />
     <ClCompile Include="CvDiplomacyRequests.cpp" />
     <ClCompile Include="CvDistanceMap.cpp" />
     <ClCompile Include="CvEconomicAI.cpp" />
@@ -145,6 +147,7 @@
     <ClCompile Include="CvReplayMessage.cpp" />
     <ClCompile Include="CvSiteEvaluationClasses.cpp" />
     <ClCompile Include="CvStartPositioner.cpp" />
+    <ClCompile Include="CvStrategicGeographyMap.cpp" />
     <ClCompile Include="cvStopWatch.cpp" />
     <ClCompile Include="CvStructs.cpp" />
     <ClCompile Include="CvTacticalAI.cpp" />
@@ -267,6 +270,8 @@
     <ClInclude Include="CvDealClasses.h" />
     <ClInclude Include="CvDefines.h" />
     <ClInclude Include="CvDiplomacyAI.h" />
+    <ClInclude Include="CvDiplomacyMemory.h" />
+    <ClInclude Include="CvUnitSightingManager.h" />
     <ClInclude Include="CvDiplomacyAIEnums.h" />
     <ClInclude Include="CvDiplomacyRequests.h" />
     <ClInclude Include="CvDistanceMap.h" />
@@ -320,6 +325,7 @@
     <ClInclude Include="CvReplayMessage.h" />
     <ClInclude Include="CvSiteEvaluationClasses.h" />
     <ClInclude Include="CvStartPositioner.h" />
+    <ClInclude Include="CvStrategicGeographyMap.h" />
     <ClInclude Include="cvStopWatch.h" />
     <ClInclude Include="CvStructs.h" />
     <ClInclude Include="CvTacticalAI.h" />
