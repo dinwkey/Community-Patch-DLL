@@ -1916,7 +1916,7 @@ int StepHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, 
 
 //	--------------------------------------------------------------------------------
 /// Heuristic cost for land trade routes. Plot costs can be much lower than PATH_BASE_COST, see TradePathLandCost
-int StepHeuristicTradeLand(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, int iDestX, int iDestY, int /*iBaseMoves*/)
+int StepHeuristicTradeLand(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, int iDestX, int iDestY, const CvAStar* /*finder*/)
 {
 	return plotDistance(iNextX, iNextY, iDestX, iDestY) * PATH_BASE_COST / 4;
 }
