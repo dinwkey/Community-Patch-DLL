@@ -1079,7 +1079,7 @@ bool EconomicAIHelpers::ShouldExplorerAvoid(const CvPlot* pPlot, const CvPlayer*
 		if (pLoopPlot != NULL)
 		{
 			//if there's an adjacent barbarian camp, assume danger
-			if (pLoopPlot->getRevealedImprovementType(pPlayer->getTeam()) == GD_INT_GET(BARBARIAN_CAMP_IMPROVEMENT) && !pPlot->isVisible(pPlayer->getTeam()))
+			if (pLoopPlot->getRevealedImprovementType(pPlayer->getTeam()) == GD_INT_GET(BARBARIAN_CAMP_IMPROVEMENT) && !pLoopPlot->isVisible(pPlayer->getTeam()))
 				return true;
 		}
 	}
@@ -4029,7 +4029,18 @@ void CvEconomicAI::DisbandUnitsToFreeSpaceshipResources()
 					}
 					if (eBestBuilding != NO_BUILDING)
 					{
-						pLoopCity->isBuildingInQueue(eBestBuilding) ? pLoopCity->clearOrderQueue() : pLoopCity->GetCityBuildings()->DoSellBuilding(eBestBuilding);
+						if (pLoopCity->isBuildingInQueue(eBestBuilding))
+						{
+							int iOrderIndex = pLoopCity->getFirstBuildingOrder(eBestBuilding);
+							if (iOrderIndex >= 0)
+							{
+								pLoopCity->popOrder(iOrderIndex, false, true);
+							}
+						}
+						else
+						{
+							pLoopCity->GetCityBuildings()->DoSellBuilding(eBestBuilding);
+						}
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
@@ -4942,7 +4953,7 @@ bool EconomicAIHelpers::IsTestStrategy_NeedReconSea(EconomicAIStrategyTypes eStr
 		return false;
 	}
 	// Never desperate for explorers if we are at war
-	static MilitaryAIStrategyTypes eStrategyAtWar = (MilitaryAIStrategyTypes) GC.getInfoTypeForString("MILITARYAISTRATEGY_LOSING_WARS");
+	static MilitaryAIStrategyTypes eStrategyAtWar = (MilitaryAIStrategyTypes) GC.getInfoTypeForString("MILITARYAISTRATEGY_AT_WAR");
 	if(pPlayer->GetMilitaryAI()->IsUsingStrategy(eStrategyAtWar))
 	{
 		return false;
@@ -4955,7 +4966,7 @@ bool EconomicAIHelpers::IsTestStrategy_NeedReconSea(EconomicAIStrategyTypes eStr
 bool EconomicAIHelpers::IsTestStrategy_EnoughReconSea(CvPlayer* pPlayer)
 {
 	// Never desperate for explorers if we are at war
-	static MilitaryAIStrategyTypes eStrategyAtWar = (MilitaryAIStrategyTypes) GC.getInfoTypeForString("MILITARYAISTRATEGY_LOSING_WARS");
+	static MilitaryAIStrategyTypes eStrategyAtWar = (MilitaryAIStrategyTypes) GC.getInfoTypeForString("MILITARYAISTRATEGY_AT_WAR");
 	if(pPlayer->GetMilitaryAI()->IsUsingStrategy(eStrategyAtWar))
 	{
 		return true;

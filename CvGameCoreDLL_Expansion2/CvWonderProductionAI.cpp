@@ -143,13 +143,14 @@ BuildingTypes CvWonderProductionAI::ChooseWonder(int& iWonderWeight)
 	vector<int> allExistingBuildings = m_pPlayer->GetTotalBuildingCount();
 	for (CvCity* pLoopCity = m_pPlayer->firstCity(&iLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iLoop))
 	{
-		int iEstimatedProductionPerTurn = pLoopCity->getRawProductionPerTurnTimes100() / 100;
+		// Use current production yield which includes modifiers for better estimation
+		int iEstimatedProductionPerTurn = pLoopCity->getYieldRateTimes100(YIELD_PRODUCTION) / 100;
 		if (iEstimatedProductionPerTurn < 1)
 			iEstimatedProductionPerTurn = 1;
 
 		// Loop through adding the available wonders
 		SPlotStats plotStats = pLoopCity->getPlotStats();
-		for (int iBldgLoop = 0; iBldgLoop < GC.GetGameBuildings()->GetNumBuildings(); iBldgLoop++)
+		for (int iBldgLoop = 0; iBldgLoop < m_pBuildings->GetNumBuildings(); iBldgLoop++)
 		{
 			const BuildingTypes eBuilding = static_cast<BuildingTypes>(iBldgLoop);
 			CvBuildingEntry* pkBuildingInfo = m_pBuildings->GetEntry(eBuilding);
@@ -161,9 +162,11 @@ BuildingTypes CvWonderProductionAI::ChooseWonder(int& iWonderWeight)
 
 			int iTurnsRequired = std::max(1, pkBuildingInfo->GetProductionCost() / iEstimatedProductionPerTurn);
 
-			// if we are forced to restart a wonder, give one that has been started already a huge bump
+			// if we are forced to restart a wonder, give one that has been started already a strong bump
 			bool bAlreadyStarted = pLoopCity->GetCityBuildings()->GetBuildingProduction(eBuilding) > 0;
-			int iTempWeight = bAlreadyStarted ? m_WonderAIWeights.GetWeight(iBldgLoop) * 25 : m_WonderAIWeights.GetWeight(iBldgLoop);
+			int iTempWeight = m_WonderAIWeights.GetWeight(iBldgLoop);
+			if (bAlreadyStarted)
+				iTempWeight *= 5;
 
 			int iWeight = CityStrategyAIHelpers::ReweightByTurnsLeft(iTempWeight, iTurnsRequired);
 			if (iWeight <= 0)

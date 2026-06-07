@@ -726,6 +726,12 @@ void CvPlayerTechs::Reset()
 	m_bHasUUTech = false;
 	m_bWillHaveUUTechSoon = false;
 
+	// Reset median tech cache (transient)
+	m_bMedianTechCacheValid = false;
+	m_iMedianTechCacheTurn = -1;
+	m_iMedianTechCacheValue = 0;
+	m_iMedianTechCacheVersion = -1;
+
 	// Tweak tech priorities to recognize unique properties of this civ
 	if(m_pPlayer->GetID() != NO_PLAYER && !m_pPlayer->isMinorCiv() && !m_pPlayer->isBarbarian() && m_pPlayer->getCivilizationType() != NO_CIVILIZATION)
 	{
@@ -1801,37 +1807,44 @@ int CvPlayerTechs::GetResearchProgressTimes100(TechTypes eTech) const
 /// Median value of a tech we can research (that's what's awarded for research agreements now)
 int CvPlayerTechs::GetMedianTechResearch() const
 {
+	// Versioned cache: recompute only if team tech set changed
+	int iTeamVersion = GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->GetTechSetVersion();
+	if (m_bMedianTechCacheValid && m_iMedianTechCacheVersion == iTeamVersion)
+	{
+		return m_iMedianTechCacheValue;
+	}
+
 	vector<int> aiTechCosts;
 	int iRtnValue = 0;
 
-	for(int iTechLoop = 0; iTechLoop < GC.getNumTechInfos(); iTechLoop++)
+	for (int iTechLoop = 0; iTechLoop < GC.getNumTechInfos(); iTechLoop++)
 	{
 		TechTypes eTech = (TechTypes)iTechLoop;
-
-		if(CanResearch(eTech))
+		if (CanResearch(eTech))
 		{
 			aiTechCosts.push_back(GetResearchCost(eTech));
 		}
 	}
 
-	int iNumEntries = aiTechCosts.size();
-	if(iNumEntries > 0)
+	const int iNumEntries = (int)aiTechCosts.size();
+	if (iNumEntries > 0)
 	{
 		std::stable_sort(aiTechCosts.begin(), aiTechCosts.end());
 
-		// Odd number, take middle?
-		if((iNumEntries / 2) * 2 != iNumEntries)
+		if ((iNumEntries & 1) == 1)
 		{
 			iRtnValue = aiTechCosts[iNumEntries / 2];
 		}
-
-		// Even number, average middle 2
 		else
 		{
 			iRtnValue = (aiTechCosts[(iNumEntries - 1) / 2] + aiTechCosts[iNumEntries / 2]) / 2;
 		}
 	}
 
+	// store cache
+	m_iMedianTechCacheValue = iRtnValue;
+	m_iMedianTechCacheVersion = iTeamVersion;
+	m_bMedianTechCacheValid = true;
 	return iRtnValue;
 }
 
@@ -1882,12 +1895,13 @@ void CvPlayerTechs::CheckHasUUTech()
 							{
 								bHas = false;
 							}
-						}					
+						}
 					}
 				}
 			}
 		}
 	}
+
 	if (m_bHasUUTech != bHas)
 	{
 		m_bHasUUTech = bHas;
@@ -2151,7 +2165,8 @@ CvTeamTechs::CvTeamTechs():
 	m_pabNoTradeTech(NULL),
 	m_paiResearchProgressTimes100(NULL),
 	m_paiEurekaCounter(NULL),
-	m_paiTechCount(NULL)
+	m_paiTechCount(NULL),
+	m_iTechSetVersion(0)
 {
 }
 
@@ -2199,6 +2214,7 @@ void CvTeamTechs::Reset()
 
 	m_eLastTechAcquired = NO_TECH;
 	m_iNumTechs = 0;
+	m_iTechSetVersion = 0;
 
 	for(iI = 0; iI < m_pTechs->GetNumTechs(); iI++)
 	{
@@ -2301,6 +2317,9 @@ void CvTeamTechs::SetHasTech(TechTypes eIndex, bool bNewValue)
 
 		if(bNewValue)
 			SetLastTechAcquired(eIndex);
+
+		// bump version whenever ownership changes (especially on acquire)
+		m_iTechSetVersion++;
 
 		ICvEngineScriptSystem1* pkScriptSystem = gDLL->GetScriptSystem();
 		if(pkScriptSystem)
@@ -2443,11 +2462,22 @@ void CvTeamTechs::SetResearchProgressTimes100(TechTypes eIndex, int iNewValue, P
 				iOverflow = iOverflow * 100 / iPlayerOverflowDivisorTimes100;
 			}
 
+			// Cap overflow to a reasonable bound to avoid integer saturation in extremely long games
+			// Use a dynamic cap based on player's science per turn (times100) to keep proportional
+			{
+				const long long iSciencePerTurnTimes100 = (long long)GET_PLAYER(ePlayer).GetScienceTimes100();
+				const long long iDynamicCap = std::max( (long long)10000, iSciencePerTurnTimes100 * 10 ); // at least 100 beakers, up to 10 turns of science
+				if (iOverflow > iDynamicCap)
+					iOverflow = iDynamicCap;
+			}
+
 			if (iOverflow >= INT_MAX)
 				iOverflow = INT_MAX;
 
 			GET_PLAYER(ePlayer).changeOverflowResearchTimes100((int)iOverflow);
 			m_pTeam->setHasTech(eIndex, true, ePlayer, true, true);
+			// tech acquired via research completion, bump version for cache invalidation
+			m_iTechSetVersion++;
 			SetNoTradeTech(eIndex, true);
 
 			// Mark city specialization dirty
@@ -2557,6 +2587,11 @@ int CvTeamTechs::GetResearchLeftTimes100(TechTypes eTech) const
 CvTechXMLEntries* CvTeamTechs::GetTechs() const
 {
 	return m_pTechs;
+}
+
+int CvTeamTechs::GetTechSetVersion() const
+{
+	return m_iTechSetVersion;
 }
 
 set<TechTypes> CvTeamTechs::GetTechsToResearchFor(TechTypes eTech, int iMaxSearchDepth) const

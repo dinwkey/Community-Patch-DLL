@@ -792,9 +792,12 @@ void CvPolicyAI::DoConsiderIdeologySwitch(CvPlayer* pPlayer)
 	// Would switching cure our happiness problems?
 	bool bVUnhappy = pPlayer->IsEmpireVeryUnhappy();
 	bool bSUnhappy = pPlayer->IsEmpireSuperUnhappy();
+	
+	// Pre-compute hypothetical unhappiness once (performance optimization)
+	int iNewUnhappiness = pPlayer->GetCulture()->ComputeHypotheticalPublicOpinionUnhappiness(ePreferredIdeology);
+	
 	if (bSUnhappy)
 	{
-		int iNewUnhappiness = pPlayer->GetCulture()->ComputeHypotheticalPublicOpinionUnhappiness(ePreferredIdeology);
 		if (!MOD_BALANCE_VP)
 		{
 			bSUnhappy = pPlayer->GetExcessHappiness() + iPublicOpinionUnhappiness - iNewUnhappiness > /*-20*/ GD_INT_GET(SUPER_UNHAPPY_THRESHOLD);
@@ -808,7 +811,6 @@ void CvPolicyAI::DoConsiderIdeologySwitch(CvPlayer* pPlayer)
 	}
 	else if (bVUnhappy)
 	{
-		int iNewUnhappiness = pPlayer->GetCulture()->ComputeHypotheticalPublicOpinionUnhappiness(ePreferredIdeology);
 		if (!MOD_BALANCE_VP)
 		{
 			bVUnhappy = pPlayer->GetExcessHappiness() + iPublicOpinionUnhappiness - iNewUnhappiness > /*-10*/ GD_INT_GET(VERY_UNHAPPY_THRESHOLD);
@@ -1125,7 +1127,7 @@ void CvPolicyAI::PropagateWeights(int iPolicy, int iWeight, int iPropagationPerc
 				// Recurse to its prereqs (assuming we have any weight left)
 				if(iPropagatedWeight > 0)
 				{
-					PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel++);
+					PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel + 1);
 				}
 			}
 			else
@@ -3906,35 +3908,35 @@ Firaxis::Array< int, NUM_YIELD_TYPES > CvPolicyAI::WeightPolicyAttributes(CvPlay
 				yield[YIELD_TOURISM] += iTourismByUnitClassCreated;
 		}
 
-		if (pPlayer->getCapitalCity())
+		// Only call the expensive CheckUnitBuildSanity when the policy actually affects this unit class.
+		// Before commit e632da69db (2024-06-09) this was correctly inside each conditional; the "cleanup"
+		// hoisted it out, making it run for every unit class (~100+) unconditionally — O(policies × unitClasses × sanityWork).
+		bool bFaithPurchase = PolicyInfo->IsFaithPurchaseUnitClass(eUnitClass, /*INDUSTRIAL*/ GD_INT_GET(RELIGION_GP_FAITH_PURCHASE_ERA)) != 0;
+		bool bPolicyUnit = pUnitEntry->GetPolicyType() == ePolicy;
+
+		if ((bFaithPurchase || bPolicyUnit) && pPlayer->getCapitalCity())
 		{
 			int iBaseValue = pPlayer->getCapitalCity()->GetCityStrategyAI()->GetUnitProductionAI()->CheckUnitBuildSanity(eUnit, false, 10, true, true);
 
-			if (PolicyInfo->IsFaithPurchaseUnitClass(eUnitClass, /*INDUSTRIAL*/ GD_INT_GET(RELIGION_GP_FAITH_PURCHASE_ERA)) != 0)
+			if (bFaithPurchase && iBaseValue > 0)
 			{
-				if (iBaseValue > 0)
-				{
-					int iValue = iBaseValue;
-					if (pPlayerTraits->IsReligious())
-						iValue *= 2;
+				int iValue = iBaseValue;
+				if (pPlayerTraits->IsReligious())
+					iValue *= 2;
 
-					yield[YIELD_FAITH] += min(225, iValue);
-				}
+				yield[YIELD_FAITH] += min(225, iValue);
 			}
 
-			if (pUnitEntry->GetPolicyType() == ePolicy)
+			if (bPolicyUnit && iBaseValue > 0)
 			{
-				if (iBaseValue > 0)
-				{
-					int iValue = iBaseValue;
-					if (pPlayerTraits->IsWarmonger())
-						iValue *= 2;
+				int iValue = iBaseValue;
+				if (pPlayerTraits->IsWarmonger())
+					iValue *= 2;
 
-					if (pUnitEntry->GetDomainType() == DOMAIN_LAND || pUnitEntry->GetDomainType() == DOMAIN_AIR)
-						yield[YIELD_GREAT_GENERAL_POINTS] += min(150, iValue);
-					else
-						yield[YIELD_GREAT_ADMIRAL_POINTS] += min(150, iValue);
-				}
+				if (pUnitEntry->GetDomainType() == DOMAIN_LAND || pUnitEntry->GetDomainType() == DOMAIN_AIR)
+					yield[YIELD_GREAT_GENERAL_POINTS] += min(150, iValue);
+				else
+					yield[YIELD_GREAT_ADMIRAL_POINTS] += min(150, iValue);
 			}
 		}
 	}
