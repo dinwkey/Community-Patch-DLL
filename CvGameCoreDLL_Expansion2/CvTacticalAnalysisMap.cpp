@@ -665,6 +665,7 @@ void CvTacticalAnalysisMap::CreateDominanceZones()
 	{
 		CvPlot* pPlot = GC.getMap().plotByIndexUnchecked(iI);
 		ASSERT(pPlot != NULL, "plotByIndexUnchecked returned null - invalid plot index");
+		const uint32 plotFlags = pPlot->GetPlotCacheFlags();
 
 		//some plot will be part of the "unknown zone"
 		if (!pPlot->isRevealed(eOurTeam))
@@ -686,7 +687,7 @@ void CvTacticalAnalysisMap::CreateDominanceZones()
 		//now it gets interesting. a city can have 2 zones, one land one water.
 		//water zone has the same id as the land zone but negative
 		int iZoneID = pZoneCity->GetID();
-		if (pPlot->isWater())
+		if (plotFlags & CvPlot::PLOT_CACHE_WATER)
 			iZoneID *= -1;
 
 		//chances are it's the same zone as before
@@ -733,7 +734,7 @@ void CvTacticalAnalysisMap::CreateDominanceZones()
 		nonCityZonePlots.erase(nonCityZonePlots.begin());
 
 		int newId = iNonCityBaseId++;
-		if (stack.back()->isWater())
+		if (stack.back()->GetPlotCacheFlags() & CvPlot::PLOT_CACHE_WATER)
 			newId *= -1;
 
 		CvTacticalDominanceZone newZone;
@@ -920,7 +921,7 @@ void CvTacticalAnalysisMap::CalculateMilitaryStrengths()
 					}
 					else if (pLoopUnit->getDomainType() == DOMAIN_AIR)
 					{
-						if ( pPlot->isWater() )
+						if ( pPlot->GetPlotCacheFlags() & CvPlot::PLOT_CACHE_WATER )
 							pZone->AddEnemyNavalRangedStrength(iRangedStrength);
 						else
 							pZone->AddEnemyRangedStrength(iRangedStrength);
@@ -943,7 +944,7 @@ void CvTacticalAnalysisMap::CalculateMilitaryStrengths()
 					}
 					else if (pLoopUnit->getDomainType() == DOMAIN_AIR)
 					{
-						if ( pPlot->isWater() )
+						if ( pPlot->GetPlotCacheFlags() & CvPlot::PLOT_CACHE_WATER )
 							pZone->AddFriendlyNavalRangedStrength(iRangedStrength);
 						else
 							pZone->AddFriendlyRangedStrength(iRangedStrength);
@@ -993,6 +994,95 @@ void CvTacticalAnalysisMap::PrioritizeZones()
 			if (GET_PLAYER(m_ePlayer).GetTacticalAI()->IsInFocusArea(pZoneCity->plot()))
 			{
 				iBaseValue *= 3;
+			}
+
+			CvMilitaryAI* pMilitaryAI = GET_PLAYER(m_ePlayer).GetMilitaryAI();
+			bool bCityUnderPressure = pZoneCity->isInDangerOfFalling()
+				|| pZoneCity->isUnderSiege()
+				|| pZoneCity->IsBlockadedWaterAndLand()
+				|| pZoneCity->getThreatValue() >= 35
+				|| (pMilitaryAI && pMilitaryAI->IsExposedToEnemy(pZoneCity, NO_PLAYER));
+			bool bCityAtRisk = bCityUnderPressure || eDominance == TACTICAL_DOMINANCE_ENEMY;
+
+			// Strategic Geography: use layer classification for zone prioritization when available.
+			// Strategic cities should matter most when there is live pressure. Without it,
+			// geography is a tie-breaker, not a license to strip active fronts.
+			CvStrategicGeographyMap* pStratMap = pMilitaryAI ? pMilitaryAI->GetStrategicGeographyMap() : NULL;
+			const StrategicCityAnalysis* pCityStrat = pStratMap ? pStratMap->GetCityAnalysis(pZoneCity->GetID()) : NULL;
+			if (pCityStrat)
+			{
+				// Capital always gets top-tier boost
+				if (pCityStrat->bIsCapital)
+					iBaseValue *= 2;
+
+				// Chokepoints and floodgates deserve priority, but scale them up hard only when
+				// the city is actually contested or under imminent pressure.
+				if (pCityStrat->bIsChokepointCity)
+				{
+					iBaseValue = bCityAtRisk ? (iBaseValue * 2) : ((iBaseValue * 3) / 2);
+					if (pCityStrat->iApproachCorridors <= 1 && bCityAtRisk)
+						iBaseValue = (iBaseValue * 5) / 4;
+				}
+				else if (pCityStrat->iChokePointCount >= 1 && bCityAtRisk)
+					iBaseValue = (iBaseValue * 5) / 4;
+
+				// Layer-based boost
+				switch (pCityStrat->eLayer)
+				{
+				case STRATEGIC_LAYER_CORE:
+					if (bCityAtRisk)
+						iBaseValue = (iBaseValue * 5) / 4;
+					break;
+				case STRATEGIC_LAYER_SECOND_LINE:
+					if (bCityAtRisk)
+						iBaseValue = (iBaseValue * 6) / 5;
+					break;
+				default:
+					break; // front-line and rear get base value
+				}
+
+				// Defensible salients are worth reinforcing when contested; otherwise treat them
+				// conservatively so we do not pin the tactical layer to exposed geography.
+				if (pCityStrat->bIsSalient)
+				{
+					if (pCityStrat->bIsDefensibleSalient && !pCityStrat->bEnemyHasIndirectFire)
+					{
+						if (bCityAtRisk)
+							iBaseValue = (iBaseValue * 5) / 4;
+					}
+					else if (!pCityStrat->bIsCapital && !pCityStrat->bIsChokepointCity && pCityStrat->iChokePointCount < 3)
+					{
+						// Expendable salient: reduce priority so we don't waste tactical resources
+						iBaseValue = (iBaseValue * 3) / 4; // 0.75x
+					}
+				}
+
+				// Floodgates remain important, but their full value shows up when enemy pressure is real.
+				if (pCityStrat->bIsFloodgate)
+				{
+					iBaseValue = bCityAtRisk ? ((iBaseValue * 7) / 4) : ((iBaseValue * 5) / 4);
+
+					if (pCityStrat->iDependentCityCount >= 4 && bCityAtRisk)
+						iBaseValue = (iBaseValue * 5) / 4;
+				}
+			}
+			else
+			{
+				// Fallback: simple capital/distance heuristic
+				if (pZoneCity->isCapital())
+				{
+					iBaseValue *= 2;
+				}
+				else
+				{
+					CvCity* pCapital = GET_PLAYER(m_ePlayer).getCapitalCity();
+					if (pCapital)
+					{
+						int iDistToCapital = plotDistance(pZoneCity->getX(), pZoneCity->getY(), pCapital->getX(), pCapital->getY());
+						if (iDistToCapital <= 6)
+							iBaseValue = (iBaseValue * 3) / 2;
+					}
+				}
 			}
 
 			if (pZoneCity->isVisible(GET_PLAYER(m_ePlayer).getTeam(), false))
@@ -1222,6 +1312,14 @@ CvTacticalDominanceZone* CvTacticalAnalysisMap::GetZoneByCity(const CvCity* pCit
 		return NULL;
 
 	//water zones have negative ids
+	return GetZoneByID(pCity->GetID()*(bWater ? -1 : +1));
+}
+
+CvTacticalDominanceZone* CvTacticalAnalysisMap::GetZoneByCityNoRefresh(const CvCity* pCity, bool bWater)
+{
+	if (!pCity)
+		return NULL;
+
 	return GetZoneByID(pCity->GetID()*(bWater ? -1 : +1));
 }
 
