@@ -732,41 +732,21 @@ void CvDiplomacyAI::Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
 	SerializePostNoPlunderPromise(diplomacyAI, visitor);
 }
 
-void CvDiplomacyAI::ResetNoPlunderPromiseData(CvDiplomacyAI& diplomacyAI)
-{
-	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
-	{
-		diplomacyAI.m_aeNoPlunderPromiseState[iPlayerLoop] = NO_PROMISE_STATE;
-		diplomacyAI.m_aiNoPlunderPromiseTurn[iPlayerLoop] = -1;
-		diplomacyAI.m_abAskedNotToPlunder[iPlayerLoop] = false;
-	}
-}
-
 /// Serialization read
 void CvDiplomacyAI::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
-	CvDiplomacyAI::SerializePreNoPlunderPromise(*this, serialVisitor);
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_NO_PLUNDER_PROMISE)
-		CvDiplomacyAI::SerializeNoPlunderPromise(*this, serialVisitor);
-	else
-		CvDiplomacyAI::ResetNoPlunderPromiseData(*this);
-	CvDiplomacyAI::SerializePostNoPlunderPromise(*this, serialVisitor);
+	CvDiplomacyAI::Serialize(*this, serialVisitor);
 	m_DiplomacyMemory.Init(this);
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_MEMORY)
-		ReadMemorySystem(kStream);
+	ReadMemorySystem(kStream);
 }
 
 /// Serialization write
 void CvDiplomacyAI::Write(FDataStream& kStream) const
 {
 	CvStreamSaveVisitor serialVisitor(kStream);
-	CvDiplomacyAI::SerializePreNoPlunderPromise(*this, serialVisitor);
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_NO_PLUNDER_PROMISE)
-		CvDiplomacyAI::SerializeNoPlunderPromise(*this, serialVisitor);
-	CvDiplomacyAI::SerializePostNoPlunderPromise(*this, serialVisitor);
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_DIPLOMACY_MEMORY)
-		WriteMemorySystem(kStream);
+	CvDiplomacyAI::Serialize(*this, serialVisitor);
+	WriteMemorySystem(kStream);
 }
 
 FDataStream& operator>>(FDataStream& stream, CvDiplomacyAI& diplomacyAI)

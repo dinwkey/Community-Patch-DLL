@@ -55,7 +55,6 @@ public:
 	static void SerializeNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
 	template<typename DiplomacyAI, typename Visitor>
 	static void SerializePostNoPlunderPromise(DiplomacyAI& diplomacyAI, Visitor& visitor);
-	static void ResetNoPlunderPromiseData(CvDiplomacyAI& diplomacyAI);
 	void Read(FDataStream& kStream);
 	void Write(FDataStream& kStream) const;
 	void update();
