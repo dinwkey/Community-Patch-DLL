@@ -66,11 +66,10 @@ SHARED_PREDEFS = [
     '_USRDLL',
     'EXTERNAL_PAUSING',
     'CVGAMECOREDLL_EXPORTS',
-    'FINAL_RELEASE',
     '_CRT_SECURE_NO_WARNINGS',
     '_WINDLL',
 ]
-RELEASE_PREDEFS = SHARED_PREDEFS + ['STRONG_ASSUMPTIONS', 'NDEBUG', 'VPRELEASE_ERRORMSG']
+RELEASE_PREDEFS = SHARED_PREDEFS + ['FINAL_RELEASE', 'STRONG_ASSUMPTIONS', 'NDEBUG', 'VPRELEASE_ERRORMSG']
 DEBUG_PREDEFS = SHARED_PREDEFS + ['VPDEBUG']
 PREDEFS = {
     Config.Release: RELEASE_PREDEFS,
@@ -81,6 +80,11 @@ CL_SUPPRESS = [
     'tautological-constant-out-of-range-compare',
     'comment',
     'enum-constexpr-conversion', # TODO: #9786
+    'unknown-warning-option', # Suppress warnings about unrecognized -W options for cross-version compatibility
+]
+CL_ENABLE = [
+    'unused-variable',
+    'unused-parameter',
 ]
 PCH_CPP = 'CvGameCoreDLL_Expansion2\\_precompile.cpp'
 PCH_H = 'CvGameCoreDLLPCH.h'
@@ -132,6 +136,8 @@ CPP = [
     'CvGameCoreDLL_Expansion2\\CvDealAI.cpp',
     'CvGameCoreDLL_Expansion2\\CvDealClasses.cpp',
     'CvGameCoreDLL_Expansion2\\CvDiplomacyAI.cpp',
+    'CvGameCoreDLL_Expansion2\\CvDiplomacyMemory.cpp',
+    'CvGameCoreDLL_Expansion2\\CvUnitSightingManager.cpp',
     'CvGameCoreDLL_Expansion2\\CvDiplomacyRequests.cpp',
     'CvGameCoreDLL_Expansion2\\CvDistanceMap.cpp',
     'CvGameCoreDLL_Expansion2\\CvDllBuildInfo.cpp',
@@ -236,6 +242,7 @@ CPP = [
     'CvGameCoreDLL_Expansion2\\CvSerialize.cpp',
     'CvGameCoreDLL_Expansion2\\CvSiteEvaluationClasses.cpp',
     'CvGameCoreDLL_Expansion2\\CvStartPositioner.cpp',
+    'CvGameCoreDLL_Expansion2\\CvStrategicGeographyMap.cpp',
     'CvGameCoreDLL_Expansion2\\cvStopWatch.cpp',
     'CvGameCoreDLL_Expansion2\\CvTacticalAI.cpp',
     'CvGameCoreDLL_Expansion2\\CvTacticalAnalysisMap.cpp',
@@ -311,18 +318,23 @@ def build_cl_config_args(config: Config) -> list[str]:
     else:
         args.append('/Od')
         args.append('/Oy-')
+        args.append('/Zo')
     for predef in PREDEFS[config]:
         args.append(f'/D{predef}')
     for include_dir in INCLUDE_DIRS:
         args.append(f'/I"{os.path.join(PROJECT_DIR, include_dir)}"')
     for suppress in CL_SUPPRESS:
         args.append(f'-Wno-{suppress}')
+    for enable in CL_ENABLE:
+        args.append(f'-W{enable}')
     return args
 
 def build_link_config_args(config: Config) -> list[str]:
-    args = ['/MACHINE:x86', '/DLL', '/DEBUG', '/LTCG', '/DYNAMICBASE', '/NXCOMPAT', '/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED', '/FORCE:MULTIPLE', f'/DEF:"{os.path.join(PROJECT_DIR, DEF_FILE)}"']
+    args = ['/MACHINE:x86', '/DLL', '/DEBUG', '/DYNAMICBASE', '/NXCOMPAT', '/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED', '/FORCE:MULTIPLE', f'/DEF:"{os.path.join(PROJECT_DIR, DEF_FILE)}"']
     if config == Config.Release:
-        args += ['/OPT:REF', '/OPT:ICF']
+        args += ['/LTCG', '/OPT:REF', '/OPT:ICF']
+    else:
+        args += ['/OPT:NOREF', '/OPT:NOICF']
     return args
 
 def prepare_dirs(build_dir: Path, out_dir: Path):
