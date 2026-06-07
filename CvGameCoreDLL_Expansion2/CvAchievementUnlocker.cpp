@@ -217,7 +217,7 @@ CvPlayerAchievements::CvPlayerAchievements(const CvPlayer& kPlayer)
 {
 }
 //------------------------------------------------------------------------------
-void CvPlayerAchievements::AlliedWithCityState(PlayerTypes eNewCityStateAlly)
+void CvPlayerAchievements::AlliedWithCityState(PlayerTypes /*eNewCityStateAlly*/)
 {
 	if (!MOD_ENABLE_ACHIEVEMENTS || m_kPlayer.GetID() != GC.getGame().getActivePlayer())
 		return;
@@ -451,7 +451,7 @@ void CvPlayerAchievements::EndTurn()
 {
 }
 //-------------------------------------------------------------------------
-void CvPlayerAchievements::FinishedBuilding(CvCity* pkCity, BuildingTypes eBuilding)
+void CvPlayerAchievements::FinishedBuilding(CvCity* pkCity, BuildingTypes /*eBuilding*/)
 {
 	if (!MOD_ENABLE_ACHIEVEMENTS)
 		return;

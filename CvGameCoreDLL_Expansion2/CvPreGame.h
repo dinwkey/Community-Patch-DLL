@@ -204,7 +204,7 @@ void                                       setGameSpeed(GameSpeedTypes g);
 void                                       setGameSpeed(const CvString& g);
 void                                       setGameStarted(bool started);
 void                                       onGameStarted();
-vector<MinorCivTypes> GetAvailableMinorCivTypes(vector<MinorCivTypes>& vCultured, vector<MinorCivTypes>& vMilitaristic, vector<MinorCivTypes>& vMaritime, vector<MinorCivTypes>& vMercantile, vector<MinorCivTypes>& vReligious);
+vector<MinorCivTypes> GetAvailableMinorCivTypes(vector<MinorCivTypes>& vCultured, vector<MinorCivTypes>& vMilitaristic, vector<MinorCivTypes>& vMaritime, vector<MinorCivTypes>& vMercantile, vector<MinorCivTypes>& vReligious, vector<MinorCivTypes>* pvCustomOrder = NULL);
 void                                       setGameTurn(int turn);
 bool										 SetGameOption(const char* szOptionName, int iValue);
 bool                                       SetGameOption(GameOptionTypes eOption, int iValue);

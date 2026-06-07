@@ -984,7 +984,7 @@ void CvDllGameContext::SetOutOfSyncDebuggingEnabled(bool isEnabled)
 	GC.setOutOfSyncDebuggingEnabled(isEnabled);
 }
 //------------------------------------------------------------------------------
-bool CvDllGameContext::RandomNumberGeneratorSyncCheck(PlayerTypes ePlayer, ICvRandom1* pRandom, bool bIsHost)
+bool CvDllGameContext::RandomNumberGeneratorSyncCheck(PlayerTypes /*ePlayer*/, ICvRandom1* pRandom, bool /*bIsHost*/)
 {
 	// uh oh! Check the Random number generator!
 	const CvRandom& localSimRandomNumberGenerator = GC.getGame().getJonRand();

@@ -97,13 +97,6 @@ struct stringHash
 	}
 };
 
-//------------------------------------------------------------------------------
-// CvGame Version History
-// Version 1 
-//	 * CvGame save version reset for expansion pack 2.
-//------------------------------------------------------------------------------
-const int g_CurrentCvGameVersion = 1;
-
 //some statistics
 int gTactMovesCount[NUM_AI_TACTICAL_MOVES] = { 0 };
 int gHomeMovesCount[NUM_AI_HOMELAND_MOVES] = { 0 };
@@ -719,9 +712,21 @@ void CvGame::InitPlayers()
 					CvPreGame::setLeaderHead(eLoopPlayer, eAssignedLeader);
 				}
 			}
+			eStatus = CvPreGame::slotStatus(eLoopPlayer);
+		}
+		if (eStatus == SS_TAKEN || eStatus == SS_COMPUTER) // Don't set colors for unoccupied slots.
+		{
+			ePlayerColor = CvPreGame::playerColor(eLoopPlayer);
+
+			// If it wasn't set in the pregame for some reason, fetch it from the database.
+			if (ePlayerColor == NO_PLAYERCOLOR)
+			{
+				CvCivilizationInfo* pCivilizationInfo = GC.getCivilizationInfo(CvPreGame::civilization(eLoopPlayer));
+				ePlayerColor = (PlayerColorTypes)pCivilizationInfo->getDefaultPlayerColor();
+			}
 			else if (CvPreGame::leaderHead(eLoopPlayer) == NO_LEADER)
 			{
-				CvCivilizationInfo* pCivInfo = GC.getCivilizationInfo(ePlayerCiv);
+				CvCivilizationInfo* pCivInfo = GC.getCivilizationInfo(CvPreGame::civilization(eLoopPlayer));
 				for (int iLeader = 0; iLeader < GC.getNumLeaderHeadInfos(); iLeader++)
 				{
 					if (pCivInfo->isLeaders(iLeader))
@@ -731,15 +736,6 @@ void CvGame::InitPlayers()
 					}
 				}
 			}
-		}
-
-		ePlayerColor = CvPreGame::playerColor(eLoopPlayer);
-
-		// If it wasn't set in the pregame for some reason, fetch it from the database.
-		if (ePlayerColor == NO_PLAYERCOLOR)
-		{
-			CvCivilizationInfo* pCivilizationInfo = GC.getCivilizationInfo(CvPreGame::civilization(eLoopPlayer));
-			ePlayerColor = (PlayerColorTypes)pCivilizationInfo->getDefaultPlayerColor();
 		}
 
 		if (ePlayerColor == NO_PLAYERCOLOR || ePlayerColor == barbarianPlayerColor)
@@ -1746,19 +1742,41 @@ void CvGame::CheckPlayerTurnDeactivate()
 				if(kPlayer.hasProcessedAutoMoves())
 				{
 					bool bAutoMovesComplete = false;
-					if (!(kPlayer.hasBusyUnitOrCity()))
+					EndTurnBlockingTypes eCurrentBlockingType = kPlayer.GetEndTurnBlockingType();
+					int iCurrentBlockingNotificationIndex = kPlayer.GetEndTurnBlockingNotificationIndex();
+					if (kPlayer.GetNotifications())
 					{
-						bAutoMovesComplete = true;
-
-						NET_MESSAGE_DEBUG_OSTR_ALWAYS("CheckPlayerTurnDeactivate() : auto-moves complete for " << kPlayer.getName());
+						kPlayer.GetNotifications()->GetEndTurnBlockedType(eCurrentBlockingType, iCurrentBlockingNotificationIndex);
+						kPlayer.SetEndTurnBlocking(eCurrentBlockingType, iCurrentBlockingNotificationIndex);
 					}
-					else if (gDLL->HasReceivedTurnComplete(kPlayer.GetID()))
+					// Allow pending-deal notifications to not block turn deactivation in simultaneous turns (multiplayer).
+					// This prevents a freeze when a proposal is sent to a player who has already ended their turn.
+					bool bIsBlockingTypeAllowed = (eCurrentBlockingType == NO_ENDTURN_BLOCKING_TYPE);
+					bool bAllowPendingDealOverride = (eCurrentBlockingType == ENDTURN_BLOCKING_PENDING_DEAL) &&
+						kPlayer.isSimultaneousTurns() && gDLL->HasReceivedTurnComplete(kPlayer.GetID());
+
+					if (bIsBlockingTypeAllowed)
+					{
+						if (!(kPlayer.hasBusyUnitOrCity()))
+						{
+							bAutoMovesComplete = true;
+
+							NET_MESSAGE_DEBUG_OSTR_ALWAYS("CheckPlayerTurnDeactivate() : auto-moves complete for " << kPlayer.getName());
+						}
+					}
+					else if (bAllowPendingDealOverride)
 					{
 						bAutoMovesComplete = true;
 					}
 
 					if(bAutoMovesComplete)
 					{
+						if(!kPlayer.isSimultaneousTurns() && !isSimultaneousTeamTurns() && GC.GetEngineUserInterface()->isDiploActive())
+						{
+							NET_MESSAGE_DEBUG_OSTR_ALWAYS("CheckPlayerTurnDeactivate() : deferring sequential turn handoff for player " << kPlayer.GetID() << " " << kPlayer.getName() << " because diplomacy is active");
+							continue;
+						}
+
 						kPlayer.setTurnActive(false);
 
 						// Activate the next player
@@ -1822,11 +1840,6 @@ void CvGame::CheckPlayerTurnDeactivate()
 											}
 										}
 									}
-								}
-								else
-								{
-									// KWG: This doesn't actually do anything other than print to the debug log
-									changeNumGameTurnActive(1, std::string("Because the diplo screen is blocking I am bumping this up for player ") + getName());
 								}
 							}
 						}
@@ -2106,8 +2119,9 @@ bool CvGame::hasTurnTimerExpired(PlayerTypes playerID)
 					}
 				}
 
-				if((!curPlayer.isTurnActive() || gDLL->HasReceivedTurnComplete(playerID)) //Active player has finished their turn.
-					&& getNumSequentialHumans() > 1)	//or sequential turn mode
+				// updateTimers() runs before CheckPlayerTurnDeactivate(), so a received turn-complete signal can arrive
+				// while this player is still technically turn-active. Keep showing the active-turn timer until deactivation.
+				if(!curPlayer.isTurnActive() && getNumSequentialHumans() > 1)	//or sequential turn mode
 				{//It's not our turn and there are sequential turn human players in the game.
 
 					//In this case, the turn timer shows progress in terms of the max possible time until our next turn.
@@ -2195,6 +2209,11 @@ void CvGame::updateTestEndTurn()
 	CvPlayer& activePlayer = GET_PLAYER(activePlayerID);
 
 	ICvUserInterface2* pkIface = GC.GetEngineUserInterface();
+	if (pkIface != NULL)
+	{
+		pkIface->setCanEndTurn(false);
+	}
+
 	if (activePlayer.isTurnActive())
 	{
 		// check notifications
@@ -3740,7 +3759,7 @@ void CvGame::doControl(ControlTypes eControl)
 		// DEBUG: Assert if UI interface is null to debug DLL call stack
 		ASSERT(GC.GetEngineUserInterface() != NULL);
 		
-		if(GC.GetEngineUserInterface()->canEndTurn() && gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed())
+		if(GC.GetEngineUserInterface()->canEndTurn() && gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed() && !gDLL->HasSentTurnComplete())
 		{
 			CvPlayerAI& kActivePlayer = GET_PLAYER(getActivePlayer());
 
@@ -3775,7 +3794,7 @@ void CvGame::doControl(ControlTypes eControl)
 	case CONTROL_FORCEENDTURN:
 	{
 		EndTurnBlockingTypes eBlock = GET_PLAYER(getActivePlayer()).GetEndTurnBlockingType();
-		if(gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed() && (eBlock == NO_ENDTURN_BLOCKING_TYPE || eBlock == ENDTURN_BLOCKING_UNITS))
+		if(gDLL->allAICivsProcessedThisTurn() && allUnitAIProcessed() && !gDLL->HasSentTurnComplete() && (eBlock == NO_ENDTURN_BLOCKING_TYPE || eBlock == ENDTURN_BLOCKING_UNITS))
 		{
 			if (MOD_ENABLE_ACHIEVEMENTS)
 			{
@@ -5553,6 +5572,10 @@ void CvGame::setAIAutoPlay(int iNewValue, PlayerTypes eReturnAsPlayer)
 				CvPreGame::setSlotStatus(eReturnAsPlayer, SS_TAKEN);
 				CvPreGame::VerifyHandicap(eReturnAsPlayer, true);
 				setActivePlayer(eReturnAsPlayer, false /*bForceHotSeat*/, true /*bAutoplaySwitch*/);
+				if (getObserverUIOverridePlayer() == eReturnAsPlayer)
+				{
+					setObserverUIOverridePlayer(NO_PLAYER);
+				}
 				GET_PLAYER(eReturnAsPlayer).GetDiplomacyAI()->SlotStateChange();
 			}
 		}
@@ -8965,7 +8988,7 @@ void CvGame::updateMoves()
 		if(gDLL->allAICivsProcessedThisTurn())
 		{//everyone is finished processing the AI civs.
 			PlayerTypes eActivePlayer = getActivePlayer();
-			if(eActivePlayer != NO_PLAYER && CvPreGame::slotStatus(eActivePlayer) == SS_OBSERVER)
+			if(eActivePlayer != NO_PLAYER && CvPreGame::slotStatus(eActivePlayer) == SS_OBSERVER && !gDLL->HasSentTurnComplete())
 			{//if the active player is an observer, send a turn complete so we don't hold up the game.
 				//We wait until allAICivsProcessedThisTurn to prevent a race condition where an observer could send turn complete,
 				//before all clients have cleared the netbarrier locally.
@@ -9110,7 +9133,7 @@ void CvGame::updateMoves()
 							pLoopUnit->AutoMission();
 
 							// Does the unit still have movement points left over?
-							if(player.isHuman(ISHUMAN_AI_UNITS) && CvUnitMission::HasCompletedMoveMission(pLoopUnit) && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated())
+							if(player.isHuman(ISHUMAN_AI_UNITS) && CvUnitMission::HasCompletedMoveMission(pLoopUnit) && !pLoopUnit->isDelayedDeath() && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated())
 							{
 								if(player.isEndTurn())
 								{
@@ -9141,7 +9164,7 @@ void CvGame::updateMoves()
 							// jrandall sez: In MP matches, let's not OOS or stall the game.
 							if(!isNetworkMultiPlayer() && !isOption(GAMEOPTION_END_TURN_TIMER_ENABLED))
 							{
-								if(pLoopUnit && player.isEndTurn() && pLoopUnit->GetLengthMissionQueue() == 0 && pLoopUnit->GetActivityType() == ACTIVITY_AWAKE && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated() && !MOD_AI_CONTROL_UNITS)
+								if(pLoopUnit && player.isEndTurn() && pLoopUnit->GetLengthMissionQueue() == 0 && pLoopUnit->GetActivityType() == ACTIVITY_AWAKE && !pLoopUnit->isDelayedDeath() && pLoopUnit->canMove() && !pLoopUnit->IsDoingPartialMove() && !pLoopUnit->IsAutomated() && !MOD_AI_CONTROL_UNITS)
 								{
 									if(IsForceEndingTurn())
 									{
@@ -9178,7 +9201,7 @@ void CvGame::updateMoves()
 									{
 										if (!pLoopUnit->canEndTurnAtPlot(pLoopUnit->plot()))
 										{
-											if(pLoopUnitInner->IsFortified() && !pLoopUnit->IsFortified())
+											if(!pLoopUnitInner->isDelayedDeath() && pLoopUnitInner->IsFortified() && !pLoopUnit->IsFortified())
 											{
 												bMoveMe = true;
 											}
@@ -9197,6 +9220,43 @@ void CvGame::updateMoves()
 						}
 					}
 
+					int iReadyUnitsAfterAuto = player.GetCountReadyUnits();
+
+					// AutoMission runs outside the main AI_unitUpdate block, so it needs its own progress checkpoint and hang fallback.
+					if(iReadyUnitsAfterAuto < iReadyUnitsBeforeMoves || player.GetCountReadyUnits(true) > 0)
+					{
+						player.SetLastSliceMoved(m_iTurnSlice);
+					}
+
+					if(!player.isHuman() && !player.hasBusyUnitOrCity() && iReadyUnitsAfterAuto > 0)
+					{
+						const CvUnit* pReadyUnit = player.GetFirstReadyUnit();
+						if (pReadyUnit)
+						{
+							int iWaitTime = 1000;
+							if(!isNetworkMultiPlayer())
+							{
+								iWaitTime = 10;
+							}
+
+							if(m_iTurnSlice - player.GetLastSliceMoved() > iWaitTime)
+							{
+								CvUnitEntry* entry = GC.getUnitInfo(pReadyUnit->getUnitType());
+								if(entry)
+								{
+									CvString strTemp = entry->GetDescription();
+									CvString szAssertMessage;
+									szAssertMessage.Format(
+										"GAME HANG - Stuck automoves will have their turn ended so game can advance. [DETAILS: Player %i %s. First stuck unit is %s at (%d, %d)]",
+										player.GetID(), player.getName(), strTemp.GetCString(), pReadyUnit->getX(), pReadyUnit->getY());
+									ASSERT(false, szAssertMessage);
+									NET_MESSAGE_DEBUG_OSTR_ALWAYS(szAssertMessage);
+								}
+								player.EndTurnsForReadyUnits();
+							}
+						}
+					}
+
 					// If we completed the processing of the auto-moves, flag it.
 					if(player.isEndTurn() || !player.isHuman())
 					{
@@ -9207,7 +9267,8 @@ void CvGame::updateMoves()
 				// KWG: This code should go into CheckPlayerTurnDeactivate
 				if(!player.isEndTurn() && gDLL->HasReceivedTurnComplete(player.GetID()) && player.isHuman() /* && (isNetworkMultiPlayer() || (!isNetworkMultiPlayer() && player.GetID() != getActivePlayer())) */)
 				{
-					if(!player.hasBusyUnitOrCity())
+					bool bActivePlayerHasReadyUnits = (player.GetID() == getActivePlayer()) && player.hasReadyUnit();
+					if(!player.hasBusyUnitOrCity() && !bActivePlayerHasReadyUnits)
 					{
 						player.setEndTurn(true);
 						if(player.isEndTurn())
@@ -9217,7 +9278,7 @@ void CvGame::updateMoves()
 					}
 					else
 					{
-						if(!player.hasBusyUnitUpdatesRemaining())
+						if(!player.hasBusyUnitUpdatesRemaining() && !bActivePlayerHasReadyUnits)
 						{
 							NET_MESSAGE_DEBUG_OSTR_ALWAYS("Received turn complete for player "  << player.GetID() << " " << player.getName() << " but there is a busy unit. Forcing the turn to advance");
 							player.setEndTurn(true);

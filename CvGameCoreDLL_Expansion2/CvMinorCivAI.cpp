@@ -4676,6 +4676,23 @@ void CvMinorCivAI::Read(FDataStream& kStream)
 {
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+
+	// Validate minor civ type after loading - if the type couldn't be resolved from the database
+	// (e.g., mod was removed), the player should not be considered a valid city-state.
+	// Log a warning so players know why their city-state disappeared.
+	// Only check this for actual minor civs - major civs also have CvMinorCivAI objects but
+	// GetMinorCivType() will naturally return NO_MINORCIV for them.
+	MinorCivTypes eMinorCivType = GetMinorCivType();
+	if (eMinorCivType == NO_MINORCIV && m_pPlayer && m_pPlayer->isAlive() && m_pPlayer->isMinorCiv())
+	{
+		CvString strLogMsg;
+		strLogMsg.Format("WARNING: Minor civ player %d (%s) has invalid minor civ type (NO_MINORCIV) after loading save. The city-state's mod may have been removed. Setting status to NO_MINOR_CIV_STATUS_TYPE.",
+			m_pPlayer->GetID(), m_pPlayer->getName());
+		CUSTOMLOG(strLogMsg.c_str());
+
+		// Mark this as an invalid city-state so game logic can handle it gracefully
+		m_eStatus = NO_MINOR_CIV_STATUS_TYPE;
+	}
 }
 
 /// Serialization write
@@ -4739,7 +4756,8 @@ void CvMinorCivAI::SetBullyUnit(UnitClassTypes eUnitClassType)
 {
 	if (eUnitClassType == NO_UNITCLASS)
 	{
-		CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(GetMinorCivType());
+		MinorCivTypes eMinorCivType = GetMinorCivType();
+		CvMinorCivInfo* pkMinorCivInfo = (eMinorCivType != NO_MINORCIV) ? GC.getMinorCivInfo(eMinorCivType) : NULL;
 		if (pkMinorCivInfo)
 		{
 			if ((UnitClassTypes)pkMinorCivInfo->GetBullyUnit() != NO_UNITCLASS)
@@ -4769,7 +4787,8 @@ void CvMinorCivAI::DoPickPersonality()
 {
 	MinorCivPersonalityTypes ePersonality = NO_MINOR_CIV_PERSONALITY_TYPE;
 	MinorCivPersonalityTypes eFixedPersonality = NO_MINOR_CIV_PERSONALITY_TYPE;
-	CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(GetMinorCivType());
+	MinorCivTypes eMinorCivType = GetMinorCivType();
+	CvMinorCivInfo* pkMinorCivInfo = (eMinorCivType != NO_MINORCIV) ? GC.getMinorCivInfo(eMinorCivType) : NULL;
 	if (pkMinorCivInfo)
 		eFixedPersonality = pkMinorCivInfo->GetFixedPersonality();
 
@@ -4840,8 +4859,17 @@ void CvMinorCivAI::DoPickPersonality()
 /// What is this civ's trait?
 MinorCivTraitTypes CvMinorCivAI::GetTrait() const
 {
-	CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(GetMinorCivType());
-	return (MinorCivTraitTypes)pkMinorCivInfo->GetMinorCivTrait();
+	MinorCivTypes eMinorCivType = GetMinorCivType();
+	if (eMinorCivType == NO_MINORCIV)
+		return NO_MINOR_CIV_TRAIT_TYPE;
+
+	CvMinorCivInfo* pkMinorCivInfo = GC.getMinorCivInfo(eMinorCivType);
+	if(pkMinorCivInfo)
+	{
+		return (MinorCivTraitTypes) pkMinorCivInfo->GetMinorCivTrait();
+	}
+
+	return NO_MINOR_CIV_TRAIT_TYPE;
 }
 
 /// Does this civ have a unique unit? (only for Militaristic)
@@ -9303,6 +9331,16 @@ UnitTypes CvMinorCivAI::GetBestUnitGiftFromPlayer(PlayerTypes ePlayer)
 {
 	CvWeightedVector<UnitTypes> veValidUnits;
 	bool bAllowNaval = GetPlayer()->getCapitalCity()->isCoastal(10) && GET_PLAYER(ePlayer).GetNumEffectiveCoastalCities() > 1;
+	bool bHasRanged = false;
+	int iUnitLoop = 0;
+	for (CvUnit* pLoopUnit = m_pPlayer->firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = m_pPlayer->nextUnit(&iUnitLoop))
+	{
+		if (!pLoopUnit->IsCivilianUnit() && pLoopUnit->IsCanAttackRanged())
+		{
+			bHasRanged = true;
+			break;
+		}
+	}
 
 	// Loop through all Unit Classes
 	for (int iUnitLoop = 0; iUnitLoop < GC.getNumUnitInfos(); iUnitLoop++)
@@ -9380,6 +9418,10 @@ UnitTypes CvMinorCivAI::GetBestUnitGiftFromPlayer(PlayerTypes ePlayer)
 			continue;
 
 		int iValue = 11;
+
+		// If the City-State has no ranged units, bias toward ranged gifts
+		if (!bHasRanged && pkUnitInfo->GetRange() > 0 && pkUnitInfo->GetRangedCombat() > 0)
+			iValue += 6;
 
 		// If this is a UU, add extra value so that the unique unit is more likely to get picked
 		if (eLoopUnit != pkUnitClassInfo->getDefaultUnitIndex())
@@ -11461,6 +11503,11 @@ void CvMinorCivAI::DoFriendshipChangeEffects(const PlayerTypes ePlayer, const in
 				AddNotification(notifStrings.first, notifStrings.second, ePlayer);
 			}
 		}
+	}
+
+	if (bFriendsChange && !bAlliesChange)
+	{
+		GET_PLAYER(ePlayer).RefreshCSAlliesFriends();
 	}
 
 	//ally change is more complex
@@ -13928,6 +13975,9 @@ int CvMinorCivAI::TransferUnitsAndCitiesToMajor(PlayerTypes eMajor, bool bForced
 	SetDisableNotifications(false);
 	GC.getGame().DoUpdateDiploVictory();
 	GC.GetEngineUserInterface()->setDirty(GameData_DIRTY_BIT, true);
+
+	// Recompute the major's military might immediately so that AI strength estimates reflect the transferred units/cities
+	GET_PLAYER(eMajor).ResetMightCalcTurn();
 
 	return iNumUnits;
 }
