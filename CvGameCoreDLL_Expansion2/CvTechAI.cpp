@@ -318,7 +318,7 @@ void CvTechAI::PropagateWeights(int iTech, int iWeight, int iPropagationPercent,
 		// Did we find a prereq?
 		int iPrereq = pkTechInfo->GetPrereqAndTechs(iI);
 		if (iPrereq != NO_TECH)
-			PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel++);
+			PropagateWeights(iPrereq, iPropagatedWeight, iPropagationPercent, iPropagationLevel + 1);
 	}
 }
 
@@ -378,6 +378,7 @@ void CvTechAI::ReweightByCost(CvPlayer *pPlayer, bool bWantsExpensive)
 	{
 		TechTypes eTech = (TechTypes)m_ResearchableTechs.GetElement(iI);
 		int iTurnsLeft = m_pCurrentTechs->GetResearchTurnsLeft(eTech, true);
+		iTurnsLeft = max(1, iTurnsLeft);
 
 		int iNewWeight = 0;
 		if (iTurnsLeft == INT_MAX)

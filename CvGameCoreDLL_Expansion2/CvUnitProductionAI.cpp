@@ -17,6 +17,226 @@
 // include this after all other headers
 #include "LintFree.h"
 
+namespace
+{
+int CountNearbyVisibleEnemyNavalUnits(const CvCity* pCity, PlayerTypes ePlayer)
+{
+	if (!pCity || !pCity->plot())
+		return 0;
+
+	int iNearbyEnemyNaval = 0;
+	for (int i = RING2_PLOTS; i < RING5_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby || !pNearby->isWater() || !pNearby->isVisible(GET_PLAYER(ePlayer).getTeam()))
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() == ePlayer || !GET_PLAYER(ePlayer).IsAtWarWith(pUnit->getOwner()))
+				continue;
+
+			if (pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_SEA)
+				iNearbyEnemyNaval++;
+		}
+	}
+
+	return iNearbyEnemyNaval;
+}
+
+bool IsSeaDependentEmpire(const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+		if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+			return true;
+	}
+
+	if (kPlayer.GetNumEffectiveCoastalCities() >= 3)
+		return true;
+
+	return pAnalysis && (pAnalysis->bIsFloodgate || pAnalysis->bIsNavalCanalCity || pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE);
+}
+
+int GetObservedNavalThreatForProduction(const CvCity* pCity, const CvPlayer& kPlayer, bool bMemoryThreat)
+{
+	if (!pCity || !pCity->isCoastal())
+		return 0;
+
+	int iThreat = 0;
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	const int iNearbyEnemyNaval = CountNearbyVisibleEnemyNavalUnits(pCity, kPlayer.GetID());
+
+	if (iNearbyEnemyNaval > 0)
+		iThreat += 90 + min(140, iNearbyEnemyNaval * 35);
+
+	if (pCity->GetCityCitizens()->AnyPlotBlockaded())
+		iThreat += 140;
+
+	if (pCity->getDamage() > 0)
+		iThreat += 50;
+
+	if (kPlayer.IsAtWarAnyMajor())
+	{
+		iThreat += 20;
+		if (pMilitaryAI && pMilitaryAI->GetWarType() == WARTYPE_SEA)
+			iThreat += 50;
+	}
+
+	if (pMilitaryAI)
+	{
+		if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_CRITICAL)
+			iThreat += 120;
+		else if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_NEEDED)
+			iThreat += 60;
+	}
+
+	if (bMemoryThreat)
+		iThreat += 30;
+
+	return iThreat;
+}
+
+int GetStructuralNavalNeed(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pCity || !pCity->isCoastal() || !pAnalysis)
+		return 0;
+
+	int iNeed = 0;
+
+	if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
+		iNeed += 80;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
+		iNeed += 40;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
+		iNeed += 10;
+
+	if (pAnalysis->iLandingZonesRing2 > 2)
+		iNeed += min(60, (pAnalysis->iLandingZonesRing2 - 2) * 15);
+
+	if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
+		iNeed += 120;
+	else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
+	{
+		iNeed += 60;
+		if (pAnalysis->iNavalChokeWidth == 1)
+			iNeed += 25;
+	}
+
+	if (pAnalysis->bIsFloodgate)
+		iNeed += 80 + min(60, pAnalysis->iDependentCityCount * 15);
+	else if (pAnalysis->bIsChokepointCity)
+		iNeed += 50;
+
+	if (pAnalysis->bIsFrontLine)
+		iNeed += 40;
+	else if (pAnalysis->bIsSecondLine)
+		iNeed += 15;
+
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+		if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+			iNeed += 120;
+		else if (ePosture == GEO_POSTURE_ISLAND)
+			iNeed += 80;
+	}
+
+	iNeed += min(40, max(0, kPlayer.GetNumEffectiveCoastalCities() - 1) * 10);
+
+	return iNeed;
+}
+
+int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pCity || !pCity->isCoastal())
+		return 0;
+
+	int iScore = 0;
+	CvUnit* pGarrison = pCity->GetGarrisonedUnit();
+
+	if (pCity->canRangeStrike())
+		iScore += 50;
+
+	if (pGarrison && !pGarrison->isDelayedDeath() && pGarrison->getDomainType() == DOMAIN_LAND && pGarrison->IsCanAttackRanged())
+	{
+		iScore += 80;
+		if (pGarrison->GetRange() >= 2)
+			iScore += 40;
+	}
+
+	int iShoreFirePositions = 0;
+	for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCity->plot(), i);
+		if (!pLoopPlot || pLoopPlot->isWater() || pLoopPlot->isMountain() || pLoopPlot->isImpassable())
+			continue;
+
+		bool bSupportsCoast = false;
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pLoopPlot->getX(), pLoopPlot->getY(), (DirectionTypes)iDir);
+			if (pAdj && pAdj->isWater() && !pAdj->isLake())
+			{
+				bSupportsCoast = true;
+				break;
+			}
+		}
+
+		if (bSupportsCoast)
+			iShoreFirePositions += pLoopPlot->isHills() ? 2 : 1;
+	}
+	iScore += min(100, iShoreFirePositions * 20);
+
+	int iNearbyFriendlyRanged = 0;
+	int iNearbyFriendlyNaval = 0;
+	for (int i = RING0_PLOTS; i < RING4_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby)
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() != kPlayer.GetID() || pUnit->isDelayedDeath())
+				continue;
+
+			if (pUnit == pGarrison)
+				continue;
+
+			if (pUnit->getDomainType() == DOMAIN_LAND && (pUnit->IsCanAttackRanged() || pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD))
+				iNearbyFriendlyRanged++;
+			else if (pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit())
+				iNearbyFriendlyNaval++;
+		}
+	}
+
+	iScore += min(60, iNearbyFriendlyRanged * 20);
+	iScore += min(80, iNearbyFriendlyNaval * 20);
+
+	if (pCity->IsRouteToCapitalConnected())
+		iScore += 30;
+
+	if (IsSeaDependentEmpire(kPlayer, pAnalysis))
+		iScore = iScore * 65 / 100;
+
+	return iScore;
+}
+
+int GetMilitaryProductionEraMultiplier(const CvPlayer& kPlayer)
+{
+	// Late-game local threat and war pressure already scale production demand heavily.
+	// Keep era relevance, but avoid a linear multiplier dominating every city's queue.
+	const int iEra = max(0, (int)kPlayer.GetCurrentEra());
+	return min(4, 1 + iEra / 2);
+}
+}
+
 
 /// Constructor
 CvUnitProductionAI::CvUnitProductionAI(CvCity* pCity,  CvUnitXMLEntries* pUnits):
@@ -294,8 +514,10 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			return SR_UNITSUPPLY;
 	}
 
+	int iMemoryThreatWeight = kPlayer.GetMilitaryAI()->GetMemoryThreatWeight();
+	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 	//only war with majors count
-	bool bAtWar = (kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0);
+	bool bAtWar = (kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0) || bMemoryThreat;
 	if (!bFree && kPlayer.isMinorCiv())
 	{
 		if (bNeedsSupply)
@@ -342,16 +564,58 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 
 	//Are we alone?
 	DomainTypes eDomain = pkUnitEntry->GetDomainType();
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	const CvStrategicGeographyMap* pStratGeo = pMilitaryAI ? pMilitaryAI->GetStrategicGeographyMap() : NULL;
+	const StrategicCityAnalysis* pCityAnalysis = pStratGeo ? pStratGeo->GetCityAnalysis(m_pCity->GetID()) : NULL;
+	const bool bSeaDependentEmpire = IsSeaDependentEmpire(kPlayer, pCityAnalysis);
+	const int iObservedNavalThreat = GetObservedNavalThreatForProduction(m_pCity, kPlayer, bMemoryThreat);
+	const int iStructuralNavalNeed = GetStructuralNavalNeed(m_pCity, kPlayer, pCityAnalysis);
+	const int iCoastalDefenseSubstitutes = GetCoastalDefenseSubstituteScore(m_pCity, kPlayer, pCityAnalysis);
+	const bool bStrategicPort = pCityAnalysis && (pCityAnalysis->bIsFloodgate || pCityAnalysis->bIsChokepointCity
+		|| pCityAnalysis->eNavalChoke != NAVAL_CHOKE_NONE || pCityAnalysis->iDependentCityCount > 0);
+	int iAdjustedStructuralNavalNeed = iStructuralNavalNeed;
+	if (iObservedNavalThreat == 0 && !bStrategicPort)
+		iAdjustedStructuralNavalNeed = iAdjustedStructuralNavalNeed * 65 / 100;
+	else if (iObservedNavalThreat < 100 && !bStrategicPort)
+		iAdjustedStructuralNavalNeed = iAdjustedStructuralNavalNeed * 85 / 100;
+	const int iLocalNavalNeed = max(0, iObservedNavalThreat + iAdjustedStructuralNavalNeed - iCoastalDefenseSubstitutes);
 	if (!bFree && bCombat)
 	{
 		CvLandmass* pLM = GC.getMap().getLandmassById(m_pCity->plot()->getLandmass());
-		if(pLM != NULL && pLM->getNumTiles() <= 3)
+		if (pLM != NULL && !pLM->isWater())
 		{
 			if (eDomain == DOMAIN_LAND && m_pCity->HasGarrison() && !bForOperation)
 			{
 				CvUnit* pGarrison = m_pCity->GetGarrisonedUnit();
 				if (pGarrison->getDomainType() == DOMAIN_LAND)
-					return SR_USELESS;
+				{
+					if (pLM->getNumTiles() <= 3)
+					{
+						return SR_USELESS;
+					}
+					else
+					{
+						eGeographicPosture ePosture = kPlayer.GetMilitaryAI()->GetGeographicPosture();
+						if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+						{
+							int iCitiesOnLandmass = pLM->getCitiesPerPlayer(m_pCity->getOwner());
+							int iDesiredGarrison = iCitiesOnLandmass + (iCitiesOnLandmass / 3);
+							// I1 fix: count only military land units, not civilians
+							int iMilitaryOnLandmass = 0;
+							int iUnitLoop = 0;
+							for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iUnitLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iUnitLoop))
+							{
+								if (pLoopUnit->IsCombatUnit() && pLoopUnit->getDomainType() == DOMAIN_LAND
+									&& pLoopUnit->plot() && pLoopUnit->plot()->getLandmass() == pLM->GetID())
+								{
+									iMilitaryOnLandmass++;
+								}
+							}
+							if (iMilitaryOnLandmass >= iDesiredGarrison)
+								return SR_USELESS;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -497,10 +761,140 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			{
 				iBonus += 100;
 			}
-			//Cruise Missiles? Only if we don't have any nukes lying around...
-			else if(pkUnitEntry->GetRangedCombat() > 0 && kPlayer.getNumNukeUnits() > 0)
+			//CRUISE MISSILES: Cost-benefit analysis for one-time use units
+			//Only build if we have worthwhile targets and the damage justifies the production cost
+			else if(pkUnitEntry->GetRangedCombat() > 0)
 			{
-				iBonus -= 50;
+				// Base evaluation: are we at war or likely to be?
+				bool bAtWarNow = kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0;
+				bool bPreparingWar = kPlayer.HasAnyOffensiveOperationsAgainstPlayer(NO_PLAYER);
+				
+				if (!bAtWarNow && !bPreparingWar)
+				{
+					// No war and not planning one - missiles are wasteful
+					iBonus -= 100;
+				}
+				else
+				{
+					// COST-BENEFIT: Compare missile production cost to expected value
+					int iMissileProductionCost = m_pCity->getProductionNeeded(eUnit);
+					int iMissileDamage = pkUnitEntry->GetRangedCombat(); // Base damage output (120 for Rocket, 180 for Guided)
+					int iMissileRange = pkUnitEntry->GetRange(); // Strike range (8 for Rocket, 12 for Guided)
+					
+					// Calculate expected targets: units in cities, high-value units, etc.
+					// Missiles excel at hitting units in cities where bombers can't
+					int iHighValueTargets = 0;
+					int iPotentialDamageValue = 0;
+					
+					// Check for enemy cities with units in them (missile specialty)
+					for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+					{
+						PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+						if (eEnemy == kPlayer.GetID())
+							continue;
+						if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+							continue;
+						
+						int iLoop = 0;
+						for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iLoop))
+						{
+							// Count garrisoned units - missiles can hit these, bombers can't
+							CvUnit* pGarrison = pEnemyCity->GetGarrisonedUnit();
+							if (pGarrison)
+							{
+								iHighValueTargets++;
+								// Value based on strength of garrisoned unit AND missile damage
+								// Higher damage missiles are more effective at eliminating threats
+								iPotentialDamageValue += (pGarrison->GetBaseCombatStrength() * iMissileDamage) / 100;
+							}
+							
+							// Check for siege units near enemy cities - high value to eliminate
+							for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
+							{
+								CvPlot* pLoopPlot = iterateRingPlots(pEnemyCity->plot(), i);
+								if (pLoopPlot)
+								{
+									CvUnit* pUnit = pLoopPlot->getBestDefender(eEnemy);
+									if (pUnit && (pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD || 
+										pUnit->AI_getUnitAIType() == UNITAI_RANGED))
+									{
+										iHighValueTargets++;
+										iPotentialDamageValue += (pUnit->GetBaseCombatStrength() * iMissileDamage) / 100;
+									}
+								}
+							}
+						}
+					}
+					
+					// Calculate cost efficiency factoring in missile damage output
+					// Higher damage missiles (Guided: 180) are more cost-effective per shot than lower (Rocket: 120)
+					// Formula: (potential damage value * damage multiplier) / production cost
+					int iDamageMultiplier = (iMissileDamage * 10) / 120; // Normalize: Rocket=10, Guided=15
+					int iCostEfficiency = (iPotentialDamageValue * iDamageMultiplier) / max(1, iMissileProductionCost);
+					
+					if (iHighValueTargets >= 3 && iCostEfficiency >= 5)
+					{
+						// Lots of good targets and cost-effective - build missiles!
+						iBonus += 75 + min(iHighValueTargets * 10, 50);
+					}
+					else if (iHighValueTargets >= 1 && iCostEfficiency >= 3)
+					{
+						// Some targets, reasonable efficiency
+						iBonus += 40;
+					}
+					else if (bAtWarNow && iHighValueTargets >= 1)
+					{
+						// At war with some targets - modest bonus
+						iBonus += 20;
+					}
+					else
+					{
+						// Few worthwhile targets - prefer reusable bombers
+						iBonus -= 30;
+					}
+					
+					// Range bonus: longer range missiles (Guided: 12) can strike from safer positions
+					// This is valuable for keeping carriers/cruisers out of danger
+					if (iMissileRange >= 12)
+					{
+						iBonus += 20; // Long range - can strike deep targets safely
+					}
+					else if (iMissileRange >= 10)
+					{
+						iBonus += 10; // Decent range
+					}
+					// Short range missiles (8) get no bonus - riskier to use
+					
+					// Stockpile limit: don't build too many missiles
+					int iCurrentMissiles = kPlayer.GetMilitaryAI()->GetNumMissileUnits();
+					int iMissileLimit = max(3, iHighValueTargets); // At least 3, or one per high-value target
+					if (iCurrentMissiles >= iMissileLimit * 2)
+					{
+						iBonus -= 100; // Already have plenty
+					}
+					else if (iCurrentMissiles >= iMissileLimit)
+					{
+						iBonus -= 40; // Have enough
+					}
+					
+					// Carrier/Cruiser capacity check: do we have platforms for missiles?
+					int iMissileSlots = 0;
+					int iLoop = 0;
+					for (CvUnit* pUnit = kPlayer.firstUnit(&iLoop); pUnit != NULL; pUnit = kPlayer.nextUnit(&iLoop))
+					{
+						// Missile cruisers and nuclear subs can carry missiles
+						if (pUnit->cargoSpace() > 0 && pUnit->domainCargo() == DOMAIN_AIR)
+						{
+							iMissileSlots += pUnit->cargoSpaceAvailable();
+						}
+					}
+					
+					if (iMissileSlots > iCurrentMissiles)
+					{
+						// Have unused missile capacity - good reason to build
+						iBonus += 25;
+					}
+				}
 			}
 			else
 			{
@@ -594,10 +988,45 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				if (iValue > 0 && kPlayer.GetPlayerTraits()->GetMinorInfluencePerGiftedUnit() > 0)
 					iBonus += 75;
 
-				iValue *= max(1, (int)kPlayer.GetCurrentEra());
+				iValue *= GetMilitaryProductionEraMultiplier(kPlayer);
 
 				if (iValue > 0 && !kPlayer.isBarbarian())
 				{
+					int iPressurePercent = 100;
+					if (bSeaDependentEmpire)
+						iPressurePercent += 50;
+					else if (kPlayer.GetNumEffectiveCoastalCities() > 1)
+						iPressurePercent += 15;
+
+					if (iObservedNavalThreat >= 220)
+						iPressurePercent += 90;
+					else if (iObservedNavalThreat >= 140)
+						iPressurePercent += 55;
+					else if (iObservedNavalThreat > 0)
+						iPressurePercent += 25;
+
+					if (iLocalNavalNeed >= 180)
+						iPressurePercent += 70;
+					else if (iLocalNavalNeed >= 100)
+						iPressurePercent += 35;
+					else if (iLocalNavalNeed == 0 && !bSeaDependentEmpire)
+						iPressurePercent -= 35;
+
+					if (!bSeaDependentEmpire)
+					{
+						if (iCoastalDefenseSubstitutes >= 160)
+							iPressurePercent -= 45;
+						else if (iCoastalDefenseSubstitutes >= 100)
+							iPressurePercent -= 25;
+						else if (iCoastalDefenseSubstitutes >= 60)
+							iPressurePercent -= 10;
+					}
+
+					if (!bSeaDependentEmpire && iObservedNavalThreat == 0 && iLocalNavalNeed < 50)
+						iPressurePercent = min(iPressurePercent, 65);
+
+					iValue = max(1, iValue * max(40, iPressurePercent) / 100);
+
 					//emphasize navy if there is nobody to attack over land
 					if (MilitaryAIHelpers::IsTestStrategy_NeedNavalUnitsCritical(&kPlayer))
 						iValue *= 5;
@@ -626,7 +1055,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						else
 						{
 							iWarValue += 1;
-						}
+					}
 					}
 
 					iWarValue /= max(1, iNumPlayers);
@@ -640,9 +1069,41 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					{
 						iValue *= iWarValue;
 					}
-				}
-				iBonus += iValue * 30;
+
+					int iNavalBonusMultiplier = 18;
+					if (iObservedNavalThreat >= 180)
+						iNavalBonusMultiplier = 32;
+					else if (bSeaDependentEmpire || iLocalNavalNeed >= 100)
+						iNavalBonusMultiplier = 24;
+					else if (!bSeaDependentEmpire && iObservedNavalThreat == 0 && iLocalNavalNeed < 50)
+						iNavalBonusMultiplier = 12;
+
+					if (bMemoryThreat && iObservedNavalThreat < 120 && !bSeaDependentEmpire)
+					{
+						iBonus += iValue * min(iNavalBonusMultiplier, 16) + iMemoryThreatWeight;
+						if (GC.getLogging() && GC.getAILogging())
+						{
+							CvString playerName = kPlayer.getCivilizationShortDescription();
+							CvString cityName = m_pCity->getName();
+							FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+							CvString msg;
+							msg.Format("%03d, %s, %s, NAVAL UNIT MIXED DEFENSE: bonus=%d (val=%d, threat=%d, structural=%d, substitutes=%d)",
+								GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+								iValue * min(iNavalBonusMultiplier, 16) + iMemoryThreatWeight, iValue,
+								iObservedNavalThreat, iStructuralNavalNeed, iCoastalDefenseSubstitutes);
+							pLog->Msg(msg.c_str());
+						}
+					}
+					else if (kPlayer.IsAtWarAnyMajor())
+					{
+						iBonus += iValue * iNavalBonusMultiplier + max(0, iObservedNavalThreat / 3);
+					}
+					else
+					{
+						iBonus += iValue * iNavalBonusMultiplier;
+					}
 			}
+		}
 		}
 		//Land Units Critically Needed?
 		else if (eDomain == DOMAIN_LAND)
@@ -657,7 +1118,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				if (iValue > 0 && kPlayer.GetPlayerTraits()->GetMinorInfluencePerGiftedUnit() > 0)
 					iBonus += 150;
 
-				iValue *= max(1, (int)kPlayer.GetCurrentEra());
+				iValue *= GetMilitaryProductionEraMultiplier(kPlayer);
 
 				if (iValue > 0 && !kPlayer.isBarbarian())
 				{
@@ -715,7 +1176,23 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						iValue *= iWarValue;
 					}
 				}
-				iBonus += iValue * 30;
+				if (bMemoryThreat && iValue > 0)
+				{
+					iBonus += iValue * 10 + iMemoryThreatWeight;
+					if (GC.getLogging() && GC.getAILogging())
+					{
+						CvString playerName = kPlayer.getCivilizationShortDescription();
+						CvString cityName = m_pCity->getName();
+						FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+						CvString msg;
+						msg.Format("%03d, %s, %s, MEMORY LAND UNIT: bonus=%d (val=%d, threat=%d)",
+							GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+							iValue * 10 + iMemoryThreatWeight, iValue, iMemoryThreatWeight);
+						pLog->Msg(msg.c_str());
+					}
+				}
+				else
+					iBonus += iValue * 30;
 			}
 		}
 
@@ -725,7 +1202,26 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			//just take care that it's approximately evenly split between attack and defense
 			int ourBombers = kPlayer.GetNumUnitsWithUnitAI(UNITAI_ATTACK_AIR, true);
 			int ourFighters = kPlayer.GetNumUnitsWithUnitAI(UNITAI_DEFENSE_AIR, true);
+			int ourMissiles = kPlayer.GetMilitaryAI()->GetNumMissileUnits();
 			int emptySlots = m_pCity->GetMaxAirUnits() - m_pCity->plot()->countNumAirUnits(kPlayer.getTeam(), true);
+			
+			// Calculate total air capacity across all cities and carriers
+			int iTotalAirCapacity = 0;
+			int iLoop = 0;
+			for (CvCity* pLoopCity = kPlayer.firstCity(&iLoop); pLoopCity != NULL; pLoopCity = kPlayer.nextCity(&iLoop))
+			{
+				iTotalAirCapacity += pLoopCity->GetMaxAirUnits();
+			}
+			for (CvUnit* pLoopUnit = kPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kPlayer.nextUnit(&iLoop))
+			{
+				if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
+				{
+					iTotalAirCapacity += pLoopUnit->cargoSpace();
+				}
+			}
+			
+			int iTotalAirUnits = ourBombers + ourFighters + ourMissiles;
+			int iExcessSlots = iTotalAirCapacity - iTotalAirUnits;
 
 			switch (pkUnitEntry->GetDefaultUnitAIType())
 			{
@@ -746,7 +1242,185 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				break;
 			}
 			default: //missiles etc
-				iBonus += 1000;
+			{
+				// MISSILES: Compete for limited air slots with reusable units
+				// Missiles are one-time use, so they need to justify taking a slot
+				// But they have unique value: guaranteed damage, can hit garrisoned units
+				
+				// Base bonus - start competitive with bombers/fighters
+				// Bombers get 2000 + emptySlots*100, so missiles need similar base
+				int iMissileBonus = 1500;
+				
+				// =====================================================
+				// EMERGENCY OVERRIDES: Missiles have unique tactical value
+				// They can't be intercepted and deal guaranteed damage
+				// =====================================================
+				
+				bool bEmergency = false;
+				
+				// Emergency 1: City under siege - need burst damage NOW
+				if (m_pCity->isUnderSiege())
+				{
+					bEmergency = true;
+					iMissileBonus += 400; // Urgent need for firepower
+					
+					if (m_pCity->isInDangerOfFalling())
+					{
+						iMissileBonus += 300; // Critical - city may fall
+					}
+				}
+				
+				// Emergency 2: Enemy has strong AA - missiles bypass interception
+				// Check for enemy AA units that threaten our bombers
+				{
+					int iEnemyAANearby = 0;
+					int iRange = 6; // Check within reasonable distance
+					
+					for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+					{
+						PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+						if (eEnemy == kPlayer.GetID())
+							continue;
+						if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+							continue;
+						
+						int iUnitLoop = 0;
+						for (CvUnit* pEnemyUnit = GET_PLAYER(eEnemy).firstUnit(&iUnitLoop); pEnemyUnit != NULL; pEnemyUnit = GET_PLAYER(eEnemy).nextUnit(&iUnitLoop))
+						{
+							// Check for AA capability
+							if (pEnemyUnit->GetAirInterceptRange() > 0 || pEnemyUnit->canIntercept())
+							{
+								// Is it near any of our cities or near a target we care about?
+								int iDistToThisCity = plotDistance(*m_pCity->plot(), *pEnemyUnit->plot());
+								if (iDistToThisCity <= iRange)
+								{
+									iEnemyAANearby++;
+									
+									// Strong AA is a bigger threat
+									if (pEnemyUnit->interceptionProbability() >= 50)
+									{
+										iEnemyAANearby++; // Count twice
+									}
+								}
+							}
+						}
+					}
+					
+					if (iEnemyAANearby >= 3)
+					{
+						// Heavy AA presence - missiles are valuable for guaranteed damage
+						bEmergency = true;
+						iMissileBonus += 300;
+					}
+					else if (iEnemyAANearby >= 1)
+					{
+						// Some AA - missiles help bypass it
+						iMissileBonus += 100;
+					}
+				}
+				
+				// Emergency 3: We're attacking a well-defended city
+				// Check if we have an active operation targeting a nearby enemy city
+				if (bAtWar)
+				{
+					CvTacticalAnalysisMap* pTactMap = kPlayer.GetTacticalAI()->GetTacticalAnalysisMap();
+					if (pTactMap)
+					{
+						// Look for enemy cities we might be attacking
+						for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+						{
+							PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+							if (eEnemy == kPlayer.GetID())
+								continue;
+							if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
+								continue;
+							
+							int iCityLoop = 0;
+							for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iCityLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iCityLoop))
+							{
+								int iDistToEnemyCity = plotDistance(*m_pCity->plot(), *pEnemyCity->plot());
+								if (iDistToEnemyCity <= 10) // Within operational range
+								{
+									// Check if city has garrison (can only hit with missiles)
+									CvPlot* pCityPlot = pEnemyCity->plot();
+									if (pCityPlot && pCityPlot->getNumDefenders(eEnemy) > 0)
+									{
+										// Garrisoned city - missiles can hit what bombers can't
+										iMissileBonus += 150;
+										break;
+									}
+								}
+							}
+						}
+					}
+				}
+				
+				// If emergency, skip the normal slot competition penalties
+				if (!bEmergency)
+				{
+					// Slot scarcity: if we're running low on slots, prefer reusable units
+					if (iExcessSlots <= 0)
+					{
+						// No excess capacity - heavily penalize missiles
+						// A bomber can fly many missions, a missile only one
+						iMissileBonus -= 400;
+					}
+					else if (iExcessSlots <= iTotalAirCapacity / 4)
+					{
+						// Less than 25% capacity free - prefer reusable
+						iMissileBonus -= 200;
+					}
+					else if (iExcessSlots >= iTotalAirCapacity / 2)
+					{
+						// Plenty of slots - missiles are more viable
+						iMissileBonus += 100;
+					}
+					
+					// Ratio check: missiles shouldn't dominate our air force
+					// Ideal: missiles are ~20% of air force for burst damage
+					int iIdealMissileRatio = max(1, iTotalAirCapacity / 5);
+					if (ourMissiles >= iIdealMissileRatio * 2)
+					{
+						// Way too many missiles - we need reusable units
+						iMissileBonus -= 300;
+					}
+					else if (ourMissiles >= iIdealMissileRatio)
+					{
+						// At or above ideal - slight penalty
+						iMissileBonus -= 100;
+					}
+					else if (ourMissiles < iIdealMissileRatio / 2 && ourBombers >= 2)
+					{
+						// We have bombers but few missiles - a few could be useful
+						iMissileBonus += 50;
+					}
+					
+					// Reusable air force health check
+					// Don't build missiles if we lack a solid reusable air force
+					int iMinReusableForMissiles = max(4, iTotalAirCapacity / 3);
+					if (ourBombers + ourFighters < iMinReusableForMissiles)
+					{
+						// Need more bombers/fighters first before missiles
+						iMissileBonus -= 200;
+					}
+				}
+				
+				// Empty local slots bonus (from the city we're building in)
+				if (emptySlots > 0)
+				{
+					iMissileBonus += min(emptySlots * 25, 100);
+				}
+				else
+				{
+					// This city is full - missile would need to deploy elsewhere
+					iMissileBonus -= 50;
+				}
+				
+				// Don't cap at zero - allow proper competition with bombers
+				// Negative values will be handled by the overall production system
+				iBonus += iMissileBonus;
+				break;
+			}
 			}
 		}
 
@@ -1463,7 +2137,15 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 	{
 		if (bCombat)
 		{
-			iBonus += 300;
+			int iTinyNavyBonus = 100;
+			if (bSeaDependentEmpire || iLocalNavalNeed >= 120)
+				iTinyNavyBonus = 300;
+			else if (iObservedNavalThreat >= 80 || iLocalNavalNeed >= 60)
+				iTinyNavyBonus = 200;
+			else if (iCoastalDefenseSubstitutes >= 120 && !bSeaDependentEmpire)
+				iTinyNavyBonus = 50;
+
+			iBonus += iTinyNavyBonus;
 		}
 		//Fewer civilians til we rectify this!
 		else
