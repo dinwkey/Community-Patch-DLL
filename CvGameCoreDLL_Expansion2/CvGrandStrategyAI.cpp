@@ -229,30 +229,20 @@ void CvGrandStrategyAI::Read(FDataStream& kStream)
 		m_paiGrandStrategyPriority[iGrandStrategy] = -1;
 	}
 
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_GRAND_STRATEGY_PRIORITY_COUNT)
+	int iSerializedNumGrandStrategies = 0;
+	kStream >> iSerializedNumGrandStrategies;
+
+	const int iReadableGrandStrategies = max(0, iSerializedNumGrandStrategies);
+	const int iGrandStrategiesToRead = min(iReadableGrandStrategies, iNumGrandStrategies);
+	for (int iGrandStrategy = 0; iGrandStrategy < iGrandStrategiesToRead; ++iGrandStrategy)
 	{
-		int iSerializedNumGrandStrategies = 0;
-		kStream >> iSerializedNumGrandStrategies;
-
-		const int iReadableGrandStrategies = max(0, iSerializedNumGrandStrategies);
-		const int iGrandStrategiesToRead = min(iReadableGrandStrategies, iNumGrandStrategies);
-		for (int iGrandStrategy = 0; iGrandStrategy < iGrandStrategiesToRead; ++iGrandStrategy)
-		{
-			kStream >> m_paiGrandStrategyPriority[iGrandStrategy];
-		}
-
-		for (int iGrandStrategy = iGrandStrategiesToRead; iGrandStrategy < iReadableGrandStrategies; ++iGrandStrategy)
-		{
-			int iDiscardedPriority = -1;
-			kStream >> iDiscardedPriority;
-		}
+		kStream >> m_paiGrandStrategyPriority[iGrandStrategy];
 	}
-	else
+
+	for (int iGrandStrategy = iGrandStrategiesToRead; iGrandStrategy < iReadableGrandStrategies; ++iGrandStrategy)
 	{
-		for (int iGrandStrategy = 0; iGrandStrategy < iNumGrandStrategies; ++iGrandStrategy)
-		{
-			kStream >> m_paiGrandStrategyPriority[iGrandStrategy];
-		}
+		int iDiscardedPriority = -1;
+		kStream >> iDiscardedPriority;
 	}
 
 	kStream >> m_eGuessOtherPlayerActiveGrandStrategy;
