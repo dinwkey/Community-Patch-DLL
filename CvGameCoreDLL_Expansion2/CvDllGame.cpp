@@ -312,7 +312,7 @@ void CvDllGame::InitScoreCalculation()
 	m_pGame->initScoreCalculation();
 }
 //------------------------------------------------------------------------------
-void CvDllGame::InitTacticalAnalysisMap(int iNumPlots)
+void CvDllGame::InitTacticalAnalysisMap(int /*iNumPlots*/)
 {
 	//handled in Tactical AI now ...
 }

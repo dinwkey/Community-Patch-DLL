@@ -213,6 +213,8 @@ public:
 	int GetSwappableArtifactIndex() const;
 	int GetSwappableMusicIndex() const;
 	void SetSwappableGreatWork(GreatWorkClass eGWClass, int iGreatWorkIndex);
+	void ClearSwappableGreatWorkIfMatches(int iGreatWorkIndex);
+	void SanitizeSwappableGreatWorks();
 	void SetSwappableWritingIndex(int iIndex);
 	void SetSwappableArtIndex(int iIndex);
 	void SetSwappableArtifactIndex(int iIndex);
@@ -258,7 +260,9 @@ public:
 	void SetLastTurnInfluenceIPTTimes100(PlayerTypes ePlayer, int iNewValue);
 	int GetInfluencePerTurnTimes100(PlayerTypes ePlayer) const;
 	InfluenceLevelTypes GetInfluenceLevel(PlayerTypes ePlayer) const;
+	// PERFORMANCE OPTIMIZATION: Lazy evaluate influence trends, cache per turn
 	InfluenceLevelTrend GetInfluenceTrend(PlayerTypes ePlayer) const;
+	void InvalidateInfluenceTrendCache() { m_influenceTrendCache.clear(); }
 	int GetTurnsToInfluential(PlayerTypes ePlayer);
 	int GetNumCivsInfluentialOn() const;
 	int GetNumCivsToBeInfluentialOn() const;
@@ -326,10 +330,15 @@ public:
 	CvString m_strOpinionTooltip;
 	CvString m_strOpinionUnhappinessTooltip;
 
-	int m_iSwappableWritingIndex;
-	int m_iSwappableArtIndex;
-	int m_iSwappableArtifactIndex;
-	int m_iSwappableMusicIndex;
+	mutable int m_iSwappableWritingIndex;
+	mutable int m_iSwappableArtIndex;
+	mutable int m_iSwappableArtifactIndex;
+	mutable int m_iSwappableMusicIndex;
+
+	// PERFORMANCE OPTIMIZATION: Batch theming updates at turn end instead of per-work
+	vector<pair<int, int>> m_BatchThemingUpdates;  // (CityID, BuildingClassID) pairs
+	bool m_bBatchThemingDirty;
+	void ApplyBatchedThemingUpdates();
 
 private:
 	int ComputePublicOpinionUnhappiness(int iDissatisfaction);
@@ -348,6 +357,7 @@ private:
 
 	CvPlayer *m_pPlayer;
 
+	// Cache: stores (GameTurnSlice, TrendValue) per player for lazy evaluation
 	mutable map<PlayerTypes, pair<int, InfluenceLevelTrend>> m_influenceTrendCache;
 };
 

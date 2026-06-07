@@ -328,7 +328,7 @@ CvTraitEntry::~CvTraitEntry()
 	SAFE_DELETE_ARRAY(m_paiGAPToYield);
 	SAFE_DELETE_ARRAY(m_paiMountainRangeYield);
 	SAFE_DELETE_ARRAY(m_piMovesChangeUnitClasses);
-	
+
 	SAFE_DELETE_ARRAY(m_piMaintenanceModifierUnitCombats);
 
 	SAFE_DELETE_ARRAY(m_piYieldFromLevelUp);
@@ -7570,7 +7570,6 @@ void CvPlayerTraits::Serialize(PlayerTraits& playerTraits, Visitor& visitor)
 	visitor(playerTraits.m_iPopulationUnhappinessModifier);
 	visitor(playerTraits.m_iCityStateBonusModifier);
 	visitor(playerTraits.m_iCityStateFriendshipModifier);
-	visitor(playerTraits.m_iCityStateRecoveryModifier);
 	visitor(playerTraits.m_iCityStateCombatModifier);
 	visitor(playerTraits.m_iLandBarbarianConversionPercent);
 	visitor(playerTraits.m_iLandBarbarianConversionExtraUnits);
