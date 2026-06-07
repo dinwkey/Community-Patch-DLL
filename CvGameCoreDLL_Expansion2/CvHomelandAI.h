@@ -418,6 +418,7 @@ bool CvHomelandUnitAuxIntSort(const CvHomelandUnit& obj1, const CvHomelandUnit& 
 bool CvHomelandUnitAuxIntReverseSort(const CvHomelandUnit& obj1, const CvHomelandUnit& obj2);
 
 int ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool bDesperate, int iRange);
+int ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool bDesperate, int iRange, const CvUnit* pUnit = NULL);
 bool IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit);
 vector<SPatrolTarget> GetPatrolTargets(PlayerTypes ePlayer, bool bWater, int nMaxTargets = 5);
 

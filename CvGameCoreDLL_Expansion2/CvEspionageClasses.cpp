@@ -24,7 +24,6 @@
 const int iSpyTurnsToTravel = 1;
 const int iSpyTurnsToMakeIntroductions = 5;
 const int iIntrigueTurnsValid = 5;
-const int iSpyRankPower = 50;
 PlayerTypes g_eSortPlayer = NO_PLAYER; // global - used for the sort
 
 // ================================================================================
@@ -312,6 +311,13 @@ FDataStream& operator>>(FDataStream& loadFrom, CvEspionageSpy& writeTo)
 	loadFrom >> uiVersion;
 	MOD_SERIALIZE_INIT_READ(loadFrom);
 
+	// Old saves (before SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL) wrote m_iName int before m_sName
+	if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL)
+	{
+		int iLegacySpyNameIndex = -1;
+		loadFrom >> iLegacySpyNameIndex;
+	}
+
 	MOD_SERIALIZE_READ(53, loadFrom, writeTo.m_sName, NULL);
 	int iSpyRank = 0;
 	loadFrom >> iSpyRank;
@@ -335,8 +341,16 @@ FDataStream& operator>>(FDataStream& loadFrom, CvEspionageSpy& writeTo)
 
 	MOD_SERIALIZE_READ(23, loadFrom, writeTo.m_bPassive, false);
 
-	loadFrom >> writeTo.m_iTurnCounterspyMissionChanged;
-	loadFrom >> writeTo.m_iTurnActiveMissionConducted;
+	if (uiVersion >= 2)
+	{
+		loadFrom >> writeTo.m_iTurnCounterspyMissionChanged;
+		loadFrom >> writeTo.m_iTurnActiveMissionConducted;
+	}
+	else
+	{
+		writeTo.m_iTurnCounterspyMissionChanged = 0;
+		writeTo.m_iTurnActiveMissionConducted = 0;
+	}
 
 	return loadFrom;
 }
@@ -344,7 +358,7 @@ FDataStream& operator>>(FDataStream& loadFrom, CvEspionageSpy& writeTo)
 /// Serialization write
 FDataStream& operator<<(FDataStream& saveTo, const CvEspionageSpy& readFrom)
 {
-	uint uiVersion = 1;
+	uint uiVersion = 2;
 	saveTo << uiVersion;
 	MOD_SERIALIZE_INIT_WRITE(saveTo);
 
@@ -424,6 +438,11 @@ void CvPlayerEspionage::Reset()
 	m_aiNumSpyActionsDone.clear();
 	m_aIntrigueNotificationMessages.clear();
 	m_aaPlayerStealableTechList.clear();
+}
+
+CvPlayer* CvPlayerEspionage::GetPlayer() const
+{
+	return m_pPlayer;
 }
 
 
@@ -1425,24 +1444,8 @@ bool CvPlayerEspionage::DoStealGW(CvCity* pPlayerCity, int iGWID)
 	CvCity *pArtCity = m_pPlayer->GetCulture()->GetClosestAvailableGreatWorkSlot(pPlayerCity->getX(), pPlayerCity->getY(), eGreatWorkSlot, eGWBuildingClass, iSlot);
 	if (pArtCity)
 	{
-		// Check if the great work to be stolen is offered for swap, and remove it if so
-		CvPlayerCulture* pDefendingCulture = GET_PLAYER(eDefendingPlayer).GetCulture();
-		if (pDefendingCulture->GetSwappableWritingIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableWritingIndex(-1);
-		}
-		if (pDefendingCulture->GetSwappableArtIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableArtIndex(-1);
-		}
-		if (pDefendingCulture->GetSwappableArtifactIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableArtifactIndex(-1);
-		}
-		if (pDefendingCulture->GetSwappableMusicIndex() == iGWID)
-		{
-			pDefendingCulture->SetSwappableMusicIndex(-1);
-		}
+		// Clear any stale swappable index on the defending player without using getters that assert
+		GET_PLAYER(eDefendingPlayer).GetCulture()->ClearSwappableGreatWorkIfMatches(iGWID);
 		// remove the work from the targeted city ...
 		pPlayerCity->GetCityBuildings()->SetBuildingGreatWork(eTargetBuildingClass, iTargetSlot, NO_GREAT_WORK);
 		pPlayerCity->UpdateCityYields(YIELD_TOURISM);
@@ -6590,7 +6593,23 @@ FDataStream& operator>>(FDataStream& loadFrom, CvPlayerEspionage& writeTo)
 	}
 
 	uint uiNumCivs = 0;
+	if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL)
+	{
+		// Old saves wrote m_aiSpyListNameOrder vector + m_iSpyListNameOrderIndex after spy list
+		int iLegacySpyNameCount = 0;
+		loadFrom >> iLegacySpyNameCount;
+		for (int i = 0; i < iLegacySpyNameCount; i++)
+		{
+			int iLegacySpyNameIndex = 0;
+			loadFrom >> iLegacySpyNameIndex;
+		}
+
+		int iLegacySpyNameOrderIndex = -1;
+		loadFrom >> iLegacySpyNameOrderIndex;
+	}
+
 	loadFrom >> uiNumCivs;
+
 	for(uint uiCiv = 0; uiCiv < uiNumCivs; uiCiv++)
 	{
 		TechList aTechList;
@@ -6668,7 +6687,7 @@ FDataStream& operator>>(FDataStream& loadFrom, CvPlayerEspionage& writeTo)
 /// Serialization write
 FDataStream& operator<<(FDataStream& saveTo, const CvPlayerEspionage& readFrom)
 {
-	uint uiVersion = 0;
+	uint uiVersion = 1;
 	saveTo << uiVersion;
 	MOD_SERIALIZE_INIT_WRITE(saveTo);
 
@@ -8261,6 +8280,17 @@ int CvEspionageAI::GetPlayerModifier(PlayerTypes eTargetPlayer, bool bOnlyDiplo)
 	CvDiplomacyAI* pTargetDiploAI = GET_PLAYER(eTargetPlayer).GetDiplomacyAI();
 
 	int iDiploModifier = 0; // diplomacy modifier
+	int iMemoryMod = 0;
+	if (pDiploAI->IsLikelyIntentAgainstUs(eTargetPlayer))
+	{
+		iMemoryMod += 10;
+		if (pDiploAI->IsPlayerBuildingUpNearUs(eTargetPlayer))
+			iMemoryMod += 15;
+		if (pDiploAI->IsSiegeWarningActive(eTargetPlayer))
+			iMemoryMod += 20;
+		if (pDiploAI->IsAttackLikelyImminent(eTargetPlayer))
+			iMemoryMod += 30;
+	}
 
 	if (GET_TEAM(eTeam).isAtWar(eTargetTeam) || pDiploAI->GetCivApproach(eTargetPlayer) == CIV_APPROACH_WAR)
 	{
@@ -8303,6 +8333,17 @@ int CvEspionageAI::GetPlayerModifier(PlayerTypes eTargetPlayer, bool bOnlyDiplo)
 
 	iDiploModifier *= 100 + 10 * (pDiploAI->GetDiploBalance() - 5);
 	iDiploModifier /= 100;
+
+	// Add memory-based modifier after personality scaling (objective threat data)
+	iDiploModifier += iMemoryMod;
+
+	if (iMemoryMod > 0 && GC.getLogging() && GC.getAILogging())
+	{
+		CvString strMsg;
+		strMsg.Format("MEMORY ESPIONAGE PLAYER MOD: vs %s, iMemoryMod=%d, totalDiploMod=%d",
+			GET_PLAYER(eTargetPlayer).getCivilizationShortDescription(), iMemoryMod, iDiploModifier);
+		m_pPlayer->GetEspionage()->LogEspionageMsg(strMsg);
+	}
 
 	if (bOnlyDiplo)
 		return iDiploModifier;
@@ -9107,6 +9148,38 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 		int iPositiveScoring = GetCounterspyEffectsMissionScore(pCity, ePlayer, pkMissionInfo, pDiplomacyAI);
 		iScore += iPositiveScoring;
 
+		// Use MilitaryAI's cached memory threat weight instead of duplicating the calculation
+		int iMemoryThreat = m_pPlayer->GetMilitaryAI()->GetMemoryThreatWeight();
+		if (iMemoryThreat > 0)
+		{
+			// Boost counterspy focus when memory signals a likely attack.
+			iScore += iMemoryThreat;
+			if (pCity->isCapital())
+				iScore += iMemoryThreat / 2;
+			if (pCity->isUnderSiege())
+				iScore += iMemoryThreat;
+
+			if (GC.getLogging() && GC.getAILogging())
+			{
+				CvString strMsg;
+				strMsg.Format("MEMORY COUNTERSPY: %s, threat=%d, scoreBoost=%d (cap=%d, siege=%d)",
+					pCity->getNameNoSpace().c_str(), iMemoryThreat,
+					iMemoryThreat + (pCity->isCapital() ? iMemoryThreat / 2 : 0) + (pCity->isUnderSiege() ? iMemoryThreat : 0),
+					pCity->isCapital() ? 1 : 0, pCity->isUnderSiege() ? 1 : 0);
+				m_pPlayer->GetEspionage()->LogEspionageScoringMsg(strMsg);
+			}
+		}
+
+		if (pkMissionInfo->isCounterspyBlockSapCity())
+		{
+			// this is only interesting if we're under siege
+			if (!m_pPlayer->IsAtPeaceAllMajors() || pCity->isUnderSiege())
+			{
+				// value based on the damage percent the city has taken
+				iScore += min(50, 100 * pCity->getDamage() / pCity->GetMaxHitPoints()) * 4;
+			}
+		}
+
 		// now take into account the missions that are blocked
 		// unless there are no offensive spy missions or we don't know any other players who have spies, then counterspies blocking has little-to-no value: skip
 		if (!GC.getGame().isOption(GAMEOPTION_PASSIVE_ESPIONAGE))
@@ -9227,6 +9300,20 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 		if (!pkMissionInfo->isEspionageMission())
 			return -1;
 
+		PlayerTypes eTargetPlayer = pCity->getOwner();
+		int iThreatWeight = 0;
+		if (pDiplomacyAI->IsLikelyIntentAgainstUs(eTargetPlayer))
+		{
+			iThreatWeight += 10;
+			if (pDiplomacyAI->IsPlayerBuildingUpNearUs(eTargetPlayer))
+				iThreatWeight += 15;
+			if (pDiplomacyAI->IsSiegeWarningActive(eTargetPlayer))
+				iThreatWeight += 20;
+			if (pDiplomacyAI->IsAttackLikelyImminent(eTargetPlayer))
+				iThreatWeight += 30;
+			if (iThreatWeight > 100)
+				iThreatWeight = 100;
+		}
 		// mission requirements (excluding cooldowns and network point requirements) not met?
 		CityEventTypes eParentEvent = m_pPlayer->GetEspionage()->GetSpyMissionEvent();
 		if (!pCity->IsCityEventChoiceValidEspionage(eMission, eParentEvent, iSpyIndex, ePlayer, true, true))
@@ -9262,6 +9349,10 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 		// now evaluate direct benefits
 		int iYourScoring = GetMissionScoreOffensiveBenefits(pCity, eOwner, pkMissionInfo, pDiplomacyAI, iSpyIndex);
 		iScore += iYourScoring;
+		if (pkMissionInfo->getBlockBuildingTurns() > 0 && iThreatWeight > 0)
+			iScore += iThreatWeight / 2;
+		if (pkMissionInfo->getSapCityTurns() > 0 && iThreatWeight > 0)
+			iScore += iThreatWeight;
 		
 		// cheaper and safer missions can be better because you get to use more of them
 		// cost multiplies by up to 2.5 for 800 cost vs 2000 cost
@@ -9376,7 +9467,11 @@ int CvEspionageAI::GetMissionScore(CvCity* pCity, CityEventChoiceTypes eMission,
 					strMsg = strMsg + strModifiers;
 				}
 			}
-			
+			if (iThreatWeight > 0 && (pkMissionInfo->getBlockBuildingTurns() > 0 || pkMissionInfo->getSapCityTurns() > 0))
+			{
+				strModifiers.Format(", MemoryThreat: %d", iThreatWeight);
+				strMsg = strMsg + strModifiers;
+			}
 			m_pPlayer->GetEspionage()->LogEspionageScoringMsg(strMsg);
 		}
 

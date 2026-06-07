@@ -12,6 +12,8 @@
 
 #include "CvAStar.h"
 
+#include <map>
+
 class FDataStream;
 
 //for tactical combat
@@ -316,6 +318,49 @@ struct CvFocusArea
 	int m_iLastTurn;
 };
 
+struct STacticalPlotMemory
+{
+	STacticalPlotMemory() : iPenalty(0), iTurnRecorded(-1), eDomain(NO_DOMAIN), bRecentLoss(false) {}
+
+	int iPenalty;
+	int iTurnRecorded;
+	DomainTypes eDomain;
+	bool bRecentLoss;
+};
+
+struct STacticalUnitTurnSnapshot
+{
+	STacticalUnitTurnSnapshot() : iPlotIndex(-1), iCurrentHP(0), eDomain(NO_DOMAIN), bEmbarked(false), bCombat(false), bCivilian(false) {}
+
+	int iPlotIndex;
+	int iCurrentHP;
+	DomainTypes eDomain;
+	bool bEmbarked;
+	bool bCombat;
+	bool bCivilian;
+};
+
+struct STacticalTargetProgressSnapshot
+{
+	STacticalTargetProgressSnapshot() : iTurnRecorded(-1), bTargetIsCity(false), bTargetPresent(false), iCityDamage(0), iBestDefenderHP(0) {}
+
+	int iTurnRecorded;
+	bool bTargetIsCity;
+	bool bTargetPresent;
+	int iCityDamage;
+	int iBestDefenderHP;
+};
+
+struct STacticalZoneMemoryDiagnostics
+{
+	STacticalZoneMemoryDiagnostics() : iHighPressureTargets(0), iMaxPenalty(0), bAnyRecentProgress(false), bSuppressedByProgress(false) {}
+
+	int iHighPressureTargets;
+	int iMaxPenalty;
+	bool bAnyRecentProgress;
+	bool bSuppressedByProgress;
+};
+
 FDataStream& operator<<(FDataStream&, const CvFocusArea&);
 FDataStream& operator>>(FDataStream&, CvFocusArea&);
 
@@ -344,6 +389,8 @@ public:
 	// Public turn update routines
 	void Update();
 	void CleanUp();
+	void UpdateForHomelandSupport();
+	bool IsImminentAttackCached() const { return m_bImminentAttack; }
 
 	// temporary focus of attention
 	void AddFocusArea(CvPlot* pPlot, int iRadius, int iDuration);
@@ -358,6 +405,7 @@ public:
 
 	// For air units
 	bool ShouldRebase(CvUnit* pUnit) const;
+	int GetRecentPlotPenaltyForUnit(const CvUnit* pUnit, const CvPlot* pPlot, bool bAllowBreakthrough = false) const;
 
 	// Public logging
 	FILogFile* GetLogFile();
@@ -394,6 +442,12 @@ private:
 	void PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediate);
 	void PlotPlunderTradeUnitMoves(DomainTypes eDomain);
 	void PlotBlockadeMoves();
+	void PlotCounterBlockadeMoves();
+	void PlotCoastalDefenseMoves();
+	void PlotNavalPatrolStationMoves();
+	void PlotConvoyEscortMoves();     // Phase I-5: Convoy escort assignment
+	void PlotAntiInvasionMoves();     // Phase I-6: Intercept detected invasion convoys
+	void PlotStraitDefenseMoves();    // Phase I-7: Station ships at naval chokepoints
 	void PlotCivilianAttackMoves();
 	void ExecuteCivilianAttackMoves(AITacticalTargetType eTargetType);
 	void PlotHealMoves(bool bFirstPass);
@@ -425,6 +479,20 @@ private:
 	void PlotNavalEscortMoves();
 	void ReviewUnassignedUnits();
 
+	// Issue 4.2: Tactical retreat and coordination support (Phase 3)
+	bool ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits);
+	int FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain);
+	bool FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const vector<CvUnit*>& vAlliedUnits);
+	bool IsShortTermMemoryActive() const;
+	void ReconcileShortTermMemory();
+	void SnapshotShortTermMemory();
+	void SnapshotTargetProgress();
+	void DecayShortTermMemory();
+	void RememberShortTermTacticalPenalty(int iPlotIndex, DomainTypes eDomain, int iPenalty, bool bRecentLoss);
+	bool ShouldReduceMemoryPenaltyForBreakthrough(const CvUnit* pUnit, const CvPlot* pPlot) const;
+	bool HasRecentTargetProgress(const CvUnit* pUnit, const CvPlot* pPlot) const;
+	eTacticalPosture GetSaferZonePostureFromRecentLosses(CvTacticalDominanceZone* pZone, eTacticalPosture eCurrentPosture, const vector<CvUnit*>& vZoneUnits, STacticalZoneMemoryDiagnostics* pDiagnostics = NULL) const;
+
 	// Operational AI support functions
 	bool CheckForEnemiesNearArmy(CvArmyAI* pArmy);
 	void ExecuteGatherMoves(CvArmyAI* pArmy, CvPlot* pTurnTarget);
@@ -443,8 +511,11 @@ private:
 	void ExecuteBarbarianCampMove(CvPlot* pTargetPlot);
 	void ExecuteBarbarianTheft();
 	bool ExecutePillage(CvPlot* pTargetPlot);
+	bool ShouldPlunderTradeRouteAtPlot(CvPlot* pPlot);
 	void ExecutePlunderTradeUnit(CvPlot* pTargetPlot);
 	void ExecuteParadropPillage(CvPlot* pTargetPlot);
+	bool ExecuteParadropCivilian(CvPlot* pTargetPlot);
+	bool ExecuteParadropCityCapture(CvCity* pCity);
 	void ExecuteLandingOperation(CvPlot* pTargetPlot);
 	bool ExecuteSpotterMove(const vector<CvUnit*>& vUnits, CvPlot* pTargetPlot);
 	bool ExecuteAttackWithUnits(CvPlot* pTargetPlot, eAggressionLevel eAggLvl);
@@ -484,6 +555,10 @@ private:
 	bool IsExpectedToDamageWithRangedAttack(CvUnit* pAttacker, CvPlot* pTarget, int iMinDamage=0);
 
 	bool MoveToEmptySpaceNearTarget(CvUnit* pUnit, CvPlot* pTargetPlot, DomainTypes eDomain, int iMaxTurns, bool bMustBeSafePath = false);
+	bool ExecutePreCaptureEmbarkedSupportStaging(CvPlot* pTargetPlot);
+	bool IsCoastalAssaultLandCooldownActive(const CvCity* pCity) const;
+	void SetCoastalAssaultLandCooldown(const CvCity* pCity, int iCooldownTurns, const char* szReason = NULL);
+	void ExpireCoastalAssaultLandCooldowns();
 
 	CvPlot* FindBestBarbarianLandTarget(CvUnit* pUnit);
 	CvPlot* FindBestBarbarianSeaTarget(CvUnit* pUnit);
@@ -512,6 +587,15 @@ private:
 	int m_iRecruitRange;
 	int m_iLandBarbarianRange;
 	int m_iSeaBarbarianRange;
+
+	// Cached per-turn state
+	bool m_bImminentAttack; // computed once in Update(), true if any nearby major has IsAttackLikelyImminent
+	std::map<int, int> m_coastalLandAssaultCooldownUntilTurn;
+	std::map<int, STacticalPlotMemory> m_recentPlotMemory;
+	std::map<int, STacticalUnitTurnSnapshot> m_previousUnitSnapshots;
+	std::map<int, STacticalTargetProgressSnapshot> m_targetProgressSnapshots;
+	int m_iLastMemoryReconcileTurn;
+	int m_iLastMemorySnapshotTurn;
 
 	// Dominance zone info
 	int m_eCurrentTargetType;
@@ -715,8 +799,8 @@ struct SComboMove
 	{
 		bool operator() (const SComboMove& lhs, const SComboMove& rhs)
 		{
-			int lhsScore = !lhs.hasB() ? lhs.getA().Score() : lhs.getA().Score() + lhs.getB().Score();
-			int rhsScore = !rhs.hasB() ? rhs.getA().Score() : rhs.getA().Score() + rhs.getB().Score();
+			int lhsScore = !lhs.hasB() ? lhs.getA().Score() : (lhs.getA().Score() + lhs.getB().Score()) / 2;
+			int rhsScore = !rhs.hasB() ? rhs.getA().Score() : (rhs.getA().Score() + rhs.getB().Score()) / 2;
 			return lhsScore > rhsScore;
 		}
 	};
