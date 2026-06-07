@@ -239,6 +239,9 @@
     <ClCompile Include="CvStartPositioner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CvStrategicGeographyMap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="cvStopWatch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -767,6 +770,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="CvStartPositioner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CvStrategicGeographyMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="cvStopWatch.h">
