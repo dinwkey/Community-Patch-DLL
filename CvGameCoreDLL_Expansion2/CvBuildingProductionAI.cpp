@@ -19,6 +19,220 @@
 // include after all other headers
 #include "LintFree.h"
 
+namespace
+{
+int CountNearbyVisibleEnemyNavalUnits(const CvCity* pCity, PlayerTypes ePlayer)
+{
+	if (!pCity || !pCity->plot())
+		return 0;
+
+	int iNearbyEnemyNaval = 0;
+	for (int i = RING2_PLOTS; i < RING5_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby || !pNearby->isWater() || !pNearby->isVisible(GET_PLAYER(ePlayer).getTeam()))
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() == ePlayer || !GET_PLAYER(ePlayer).IsAtWarWith(pUnit->getOwner()))
+				continue;
+
+			if (pUnit->IsCombatUnit() && pUnit->getDomainType() == DOMAIN_SEA)
+				iNearbyEnemyNaval++;
+		}
+	}
+
+	return iNearbyEnemyNaval;
+}
+
+bool IsSeaDependentEmpire(const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+		if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+			return true;
+	}
+
+	if (kPlayer.GetNumEffectiveCoastalCities() >= 3)
+		return true;
+
+	return pAnalysis && (pAnalysis->bIsFloodgate || pAnalysis->bIsNavalCanalCity || pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE);
+}
+
+int GetStructuralCoastalRisk(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pCity || !pAnalysis || pAnalysis->eExposure == COASTAL_EXPOSURE_NONE)
+		return 0;
+
+	int iRisk = 0;
+
+	if (pAnalysis->eExposure == COASTAL_EXPOSURE_EXPOSED)
+		iRisk += 80;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_MODERATE)
+		iRisk += 40;
+	else if (pAnalysis->eExposure == COASTAL_EXPOSURE_SHELTERED)
+		iRisk += 10;
+
+	if (pAnalysis->iLandingZonesRing2 > 2)
+		iRisk += min(60, (pAnalysis->iLandingZonesRing2 - 2) * 15);
+
+	if (pAnalysis->eNavalChoke == NAVAL_CHOKE_CANAL_CITY)
+		iRisk += 120;
+	else if (pAnalysis->eNavalChoke == NAVAL_CHOKE_NEAR_STRAIT)
+	{
+		iRisk += 60;
+		if (pAnalysis->iNavalChokeWidth == 1)
+			iRisk += 25;
+	}
+
+	if (pAnalysis->bIsFloodgate)
+		iRisk += 80 + min(60, pAnalysis->iDependentCityCount * 15);
+	else if (pAnalysis->bIsChokepointCity)
+		iRisk += 50;
+
+	if (pAnalysis->bIsFrontLine)
+		iRisk += 40;
+	else if (pAnalysis->bIsSecondLine)
+		iRisk += 15;
+
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	if (pMilitaryAI)
+	{
+		eGeographicPosture ePosture = pMilitaryAI->GetGeographicPosture();
+		if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+			iRisk += 120;
+		else if (ePosture == GEO_POSTURE_ISLAND)
+			iRisk += 80;
+	}
+
+	iRisk += min(40, max(0, kPlayer.GetNumEffectiveCoastalCities() - 1) * 10);
+
+	return iRisk;
+}
+
+int GetObservedNavalThreat(const CvCity* pCity, const CvPlayer& kPlayer, bool bMemoryThreat)
+{
+	if (!pCity || !pCity->isCoastal())
+		return 0;
+
+	int iThreat = 0;
+	CvMilitaryAI* pMilitaryAI = kPlayer.GetMilitaryAI();
+	const int iNearbyEnemyNaval = CountNearbyVisibleEnemyNavalUnits(pCity, kPlayer.GetID());
+	const bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
+	const bool bDamaged = (pCity->getDamage() > 0);
+
+	if (iNearbyEnemyNaval > 0)
+		iThreat += 90 + min(140, iNearbyEnemyNaval * 35);
+
+	if (bBlockaded)
+		iThreat += 140;
+
+	if (bDamaged)
+		iThreat += 50;
+
+	if (kPlayer.IsAtWarAnyMajor())
+	{
+		iThreat += 20;
+		if (pMilitaryAI && pMilitaryAI->GetWarType() == WARTYPE_SEA)
+			iThreat += 50;
+	}
+
+	if (pMilitaryAI)
+	{
+		if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_CRITICAL)
+			iThreat += 120;
+		else if (pMilitaryAI->GetNavalDefenseState() == DEFENSE_STATE_NEEDED)
+			iThreat += 60;
+	}
+
+	if (bMemoryThreat)
+		iThreat += 30;
+
+	return iThreat;
+}
+
+int GetCoastalDefenseSubstituteScore(const CvCity* pCity, const CvPlayer& kPlayer, const StrategicCityAnalysis* pAnalysis)
+{
+	if (!pCity || !pCity->isCoastal())
+		return 0;
+
+	int iScore = 0;
+	CvUnit* pGarrison = pCity->GetGarrisonedUnit();
+
+	if (pCity->canRangeStrike())
+		iScore += 50;
+
+	if (pGarrison && !pGarrison->isDelayedDeath() && pGarrison->getDomainType() == DOMAIN_LAND && pGarrison->IsCanAttackRanged())
+	{
+		iScore += 80;
+		if (pGarrison->GetRange() >= 2)
+			iScore += 40;
+	}
+
+	int iShoreFirePositions = 0;
+	for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
+	{
+		CvPlot* pLoopPlot = iterateRingPlots(pCity->plot(), i);
+		if (!pLoopPlot || pLoopPlot->isWater() || pLoopPlot->isMountain() || pLoopPlot->isImpassable())
+			continue;
+
+		bool bSupportsCoast = false;
+		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+		{
+			CvPlot* pAdj = plotDirection(pLoopPlot->getX(), pLoopPlot->getY(), (DirectionTypes)iDir);
+			if (pAdj && pAdj->isWater() && !pAdj->isLake())
+			{
+				bSupportsCoast = true;
+				break;
+			}
+		}
+
+		if (bSupportsCoast)
+			iShoreFirePositions += pLoopPlot->isHills() ? 2 : 1;
+	}
+	iScore += min(100, iShoreFirePositions * 20);
+
+	int iNearbyFriendlyRanged = 0;
+	int iNearbyFriendlyNaval = 0;
+	for (int i = RING0_PLOTS; i < RING4_PLOTS; i++)
+	{
+		CvPlot* pNearby = iterateRingPlots(pCity->plot(), i);
+		if (!pNearby)
+			continue;
+
+		for (int iUnitLoop = 0; iUnitLoop < pNearby->getNumUnits(); iUnitLoop++)
+		{
+			CvUnit* pUnit = pNearby->getUnitByIndex(iUnitLoop);
+			if (!pUnit || pUnit->getOwner() != kPlayer.GetID() || pUnit->isDelayedDeath())
+				continue;
+
+			if (pUnit == pGarrison)
+				continue;
+
+			if (pUnit->getDomainType() == DOMAIN_LAND && (pUnit->IsCanAttackRanged() || pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD))
+				iNearbyFriendlyRanged++;
+			else if (pUnit->getDomainType() == DOMAIN_SEA && pUnit->IsCombatUnit())
+				iNearbyFriendlyNaval++;
+		}
+	}
+
+	iScore += min(60, iNearbyFriendlyRanged * 20);
+	iScore += min(80, iNearbyFriendlyNaval * 20);
+
+	if (pCity->IsRouteToCapitalConnected())
+		iScore += 30;
+
+	if (IsSeaDependentEmpire(kPlayer, pAnalysis))
+		iScore = iScore * 65 / 100;
+
+	return iScore;
+}
+}
+
 /// Constructor
 CvBuildingProductionAI::CvBuildingProductionAI(CvCity* m_pCity, CvCityBuildings* pCityBuildings):
 	m_pCity(m_pCity),
@@ -158,6 +372,8 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 		return SR_IMPOSSIBLE;
 
 	CvPlayerAI& kPlayer = GET_PLAYER(m_pCity->getOwner());
+	int iMemoryThreatWeight = kPlayer.GetMilitaryAI()->GetMemoryThreatWeight();
+	bool bMemoryThreat = (iMemoryThreatWeight >= 40);
 
 	//do not build any buildings at all when about to be captured
 	if (m_pCity->isInDangerOfFalling())
@@ -174,9 +390,10 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 	int iBonus = 0;
 
 	const CvBuildingClassInfo& kBuildingClassInfo = pkBuildingInfo->GetBuildingClassInfo();
-	if (m_pCity->getPopulation() <= 6 && !m_pCity->isCapital())
+	// Block world wonders in very small cities (pop <= 4) unless it's the capital
+	if (m_pCity->getPopulation() <= 4 && !m_pCity->isCapital())
 	{
-		if(isWorldWonderClass(kBuildingClassInfo) || isTeamWonderClass(kBuildingClassInfo) || isNationalWonderClass(kBuildingClassInfo) || isLimitedWonderClass(kBuildingClassInfo))
+		if(isWorldWonderClass(kBuildingClassInfo))
 		{
 			return SR_STRATEGY;
 		}
@@ -285,13 +502,16 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 					iNumOthersConstructing++;
 				}
 			}
-			iBonus -= iNumOthersConstructing * 150;
+			// Cap competition penalty to prevent excessive negative values (max -500)
+			int iCompetitionPenalty = iNumOthersConstructing * 150;
 
 			//probably early game, so if we haven't started yet, we're probably not going to win this one.
 			if (kPlayer.getNumCities() == 1)
 			{
-				iBonus -= iNumOthersConstructing * 100;
+				iCompetitionPenalty += iNumOthersConstructing * 100;
 			}
+
+			iBonus -= min(500, iCompetitionPenalty);
 		}
 	}
 
@@ -341,6 +561,17 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 			{
 				iBonus += 10;
 			}
+		}
+
+		// Phase I-5: Island/archipelago civs value airports more — airlift avoids risky embarkation
+		CvStrategicGeographyMap* pStratGeo = kPlayer.GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratGeo)
+		{
+			eGeographicPosture ePosture = pStratGeo->GetGeographicPosture();
+			if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+				iBonus += 25;
+			else if (ePosture == GEO_POSTURE_ISLAND)
+				iBonus += 15;
 		}
 	}
 
@@ -393,6 +624,19 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 		{
 			iBonus += (iUnhappyConnection * 10);
 			bGoodforGPT = true;
+		}
+
+		// Phase I-8: Island/archipelago civs build water route buildings (harbor etc.) earlier
+		{
+			CvStrategicGeographyMap* pIslandGeo = kPlayer.GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pIslandGeo)
+			{
+				eGeographicPosture ePosture = pIslandGeo->GetGeographicPosture();
+				if (ePosture == GEO_POSTURE_ARCHIPELAGO)
+					iBonus += 30;
+				else if (ePosture == GEO_POSTURE_ISLAND)
+					iBonus += 20;
+			}
 		}
 	}
 
@@ -782,6 +1026,74 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 	}
 	else if (kPlayer.IsAtWarAnyMajor())
 		iDefenseMod += 150;
+	if (bMemoryThreat)
+	{
+		if (m_pCity->isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(m_pCity, NO_PLAYER))
+			iDefenseMod += iMemoryThreatWeight * 5;
+		else
+			iDefenseMod += iMemoryThreatWeight * 2;
+
+		if (GC.getLogging() && GC.getAILogging())
+		{
+			CvString playerName = GET_PLAYER(m_pCity->getOwner()).getCivilizationShortDescription();
+			CvString cityName = m_pCity->getName();
+			FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+			CvString msg;
+			msg.Format("%03d, %s, %s, MEMORY BLDG DEFENSE: %s, defMod=%d (threat=%d, border=%d)",
+				GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+				pkBuildingInfo->GetDescription(), iDefenseMod, iMemoryThreatWeight,
+				m_pCity->isBorderCity() ? 1 : 0);
+			pLog->Msg(msg.c_str());
+		}
+	}
+
+	// Strategic Geography Phase 6: boost defensive building priority for strategically critical cities.
+	// Chokepoint/floodgate/front-line cities need walls and defensive buildings earlier.
+	{
+		CvStrategicGeographyMap* pStratGeo = kPlayer.GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratGeo && pStratGeo->HasAnyCityData())
+		{
+			const StrategicCityAnalysis* pAnalysis = pStratGeo->GetCityAnalysis(m_pCity->GetID());
+			if (pAnalysis)
+			{
+				// Floodgate cities: losing them exposes the empire. Build walls ASAP.
+				if (pAnalysis->bIsFloodgate)
+					iDefenseMod += 600 + pAnalysis->iDependentCityCount * 100;
+
+				// Chokepoint cities: natural defensive positions. Walls make them fortresses.
+				if (pAnalysis->bIsChokepointCity)
+					iDefenseMod += 400;
+
+				// Front-line cities: first to be attacked. Need defenses.
+				if (pAnalysis->bIsFrontLine)
+					iDefenseMod += 200;
+				else if (pAnalysis->bIsSecondLine)
+					iDefenseMod += 75;
+
+				// Expendable salients: don't invest in walls, they may be abandoned.
+				if (pAnalysis->bIsSalient && !pAnalysis->bIsDefensibleSalient
+					&& !pAnalysis->bIsFloodgate && !pAnalysis->bIsChokepointCity && !pAnalysis->bIsCapital)
+				{
+					iDefenseMod -= 300;
+				}
+
+				const int iStructuralCoastalRisk = GetStructuralCoastalRisk(m_pCity, kPlayer, pAnalysis);
+				const int iObservedNavalThreat = GetObservedNavalThreat(m_pCity, kPlayer, bMemoryThreat);
+				const int iCoastalDefenseSubstitutes = GetCoastalDefenseSubstituteScore(m_pCity, kPlayer, pAnalysis);
+				const bool bStrategicPort = pAnalysis->bIsFloodgate || pAnalysis->bIsChokepointCity
+					|| pAnalysis->eNavalChoke != NAVAL_CHOKE_NONE || pAnalysis->iDependentCityCount > 0;
+
+				int iAdjustedStructuralRisk = iStructuralCoastalRisk;
+				if (iObservedNavalThreat == 0 && !bStrategicPort)
+					iAdjustedStructuralRisk = iAdjustedStructuralRisk * 65 / 100;
+				else if (iObservedNavalThreat < 100 && !bStrategicPort)
+					iAdjustedStructuralRisk = iAdjustedStructuralRisk * 85 / 100;
+
+				const int iNetCoastalDefenseNeed = max(0, iAdjustedStructuralRisk + iObservedNavalThreat - iCoastalDefenseSubstitutes);
+				iDefenseMod += iNetCoastalDefenseNeed;
+			}
+		}
+	}
 
 	bool bDanger = !bIgnoreSituational && m_pCity->isUnderSiege();
 	if (bDanger)
@@ -1331,9 +1643,27 @@ int CvBuildingProductionAI::CheckBuildingBuildSanity(BuildingTypes eBuilding, in
 		{
 			WarPenalty += 75;
 		}
-		if (iNumWar > 0 && pkBuildingInfo->GetDefenseModifier() <= 0 && !CityStrategyAIHelpers::IsTestCityStrategy_IsPuppetAndAnnexable(m_pCity) && !bFreeBuilding && !kPlayer.IsEmpireVeryUnhappy())
+		if ((iNumWar > 0 || bMemoryThreat) && pkBuildingInfo->GetDefenseModifier() <= 0 && !CityStrategyAIHelpers::IsTestCityStrategy_IsPuppetAndAnnexable(m_pCity) && !bFreeBuilding && !kPlayer.IsEmpireVeryUnhappy())
 		{
 			WarPenalty += 50 + m_pCity->getThreatValue();
+			if (bMemoryThreat)
+			{
+				WarPenalty += 25 + (iMemoryThreatWeight / 2);
+				if (m_pCity->isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(m_pCity, NO_PLAYER))
+					WarPenalty += 25;
+
+				if (GC.getLogging() && GC.getAILogging())
+				{
+					CvString playerName = kPlayer.getCivilizationShortDescription();
+					CvString cityName = m_pCity->getName();
+					FILogFile* pLog = LOGFILEMGR.GetLog(m_pCity->GetCityStrategyAI()->GetLogFileName(playerName, cityName), FILogFile::kDontTimeStamp);
+					CvString msg;
+					msg.Format("%03d, %s, %s, MEMORY WAR PENALTY: %s, penalty=%d (threat=%d)",
+						GC.getGame().getElapsedGameTurns(), playerName.c_str(), cityName.c_str(),
+						pkBuildingInfo->GetDescription(), WarPenalty, iMemoryThreatWeight);
+					pLog->Msg(msg.c_str());
+				}
+			}
 
 			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 			{

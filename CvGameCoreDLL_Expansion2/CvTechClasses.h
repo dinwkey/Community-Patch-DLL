@@ -281,6 +281,12 @@ private:
 	CvTechXMLEntries* m_pTechs;
 	CvPlayer* m_pPlayer;
 	CvTechAI* m_pTechAI;
+
+	// Transient cache for median tech research cost to avoid expensive recomputation within a turn
+	mutable int m_iMedianTechCacheValue;
+	mutable int m_iMedianTechCacheTurn;
+	mutable int m_iMedianTechCacheVersion;
+	mutable bool m_bMedianTechCacheValid;
 };
 
 FDataStream& operator>>(FDataStream&, CvPlayerTechs&);
@@ -330,6 +336,7 @@ public:
 	int GetResearchCost(TechTypes eTech) const;
 	int GetResearchLeftTimes100(TechTypes eTech) const;
 	CvTechXMLEntries* GetTechs() const;
+	int GetTechSetVersion() const;
 
 	set<TechTypes> GetTechsToResearchFor(TechTypes eTech, int iMaxSearchDepth) const;
 	bool HasPrereqTechs(TechTypes eTech, const vector<TechTypes>& extraTech) const;
@@ -340,6 +347,8 @@ public:
 	void SetEurekaCounter(TechTypes eTech, int newEurekaCount);
 
 private:
+	int m_iTechSetVersion;
+
 	TechTypes m_eLastTechAcquired;
 	int m_iNumTechs;
 

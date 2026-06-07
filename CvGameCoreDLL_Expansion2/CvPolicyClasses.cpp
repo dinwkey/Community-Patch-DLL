@@ -1,9 +1,9 @@
 /*	-------------------------------------------------------------------------------------------------------
-	© 1991-2012 Take-Two Interactive Software and its subsidiaries.  Developed by Firaxis Games.  
-	Sid Meier's Civilization V, Civ, Civilization, 2K Games, Firaxis Games, Take-Two Interactive Software 
-	and their respective logos are all trademarks of Take-Two interactive Software, Inc.  
-	All other marks and trademarks are the property of their respective owners.  
-	All rights reserved. 
+	© 1991-2012 Take-Two Interactive Software and its subsidiaries.  Developed by Firaxis Games.
+	Sid Meier's Civilization V, Civ, Civilization, 2K Games, Firaxis Games, Take-Two Interactive Software
+	and their respective logos are all trademarks of Take-Two interactive Software, Inc.
+	All other marks and trademarks are the property of their respective owners.
+	All rights reserved.
 	------------------------------------------------------------------------------------------------------- */
 #include "CvGameCoreDLLPCH.h"
 #include "CvGameCoreDLLUtil.h"
@@ -478,7 +478,7 @@ CvPolicyEntry::~CvPolicyEntry(void)
 	SAFE_DELETE_ARRAY(m_piYieldChangesPerReligion);
 #if defined(HH_MOD_API_TRADEROUTE_MODIFIERS)
 	SAFE_DELETE_ARRAY(m_piInternationalRouteYieldModifiers);
-#endif 
+#endif
 	SAFE_DELETE_ARRAY(m_piFlavorValue);
 	m_piUnitClassReplacements.clear();
 	CvDatabaseUtility::SafeDelete2DArray(m_ppiBuildingClassYieldModifiers);
@@ -1011,7 +1011,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiFeatureYieldChanges[FeatureID][YieldID] = yield;
 		}
 	}
-	
+
 	//CityYieldFromUnimprovedFeature
 	{
 		kUtility.Initialize2DArray(m_ppiCityYieldFromUnimprovedFeature, "Features", "Yields");
@@ -1034,7 +1034,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiCityYieldFromUnimprovedFeature[FeatureID][YieldID] = yield;
 		}
 	}
-	
+
 	//UnimprovedFeatureYieldChanges
 	{
 		kUtility.Initialize2DArray(m_ppiUnimprovedFeatureYieldChanges, "Features", "Yields");
@@ -1057,7 +1057,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiUnimprovedFeatureYieldChanges[FeatureID][YieldID] = yield;
 		}
 	}
-	
+
 	//ResourceYieldChanges
 	{
 		kUtility.Initialize2DArray(m_ppiResourceYieldChanges, "Resources", "Yields");
@@ -1080,7 +1080,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiResourceYieldChanges[ResourceID][YieldID] = yield;
 		}
 	}
-	
+
 	//TerrainYieldChanges
 	{
 		kUtility.Initialize2DArray(m_ppiTerrainYieldChanges, "Terrains", "Yields");
@@ -1103,7 +1103,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiTerrainYieldChanges[TerrainID][YieldID] = yield;
 		}
 	}
-	
+
 	//TradeRouteYieldChange
 	{
 		kUtility.Initialize2DArray(m_ppiTradeRouteYieldChange, "Domains", "Yields");
@@ -1126,7 +1126,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiTradeRouteYieldChange[DomainID][YieldID] = yield;
 		}
 	}
-	
+
 	//SpecialistYieldChanges
 	{
 		kUtility.Initialize2DArray(m_ppiSpecialistYieldChanges, "Specialists", "Yields");
@@ -1149,7 +1149,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiSpecialistYieldChanges[SpecialistID][YieldID] = yield;
 		}
 	}
-	
+
 	//GreatPersonExpendedYield
 	{
 		kUtility.Initialize2DArray(m_ppiGreatPersonExpendedYield, "GreatPersons", "Yields");
@@ -1172,7 +1172,7 @@ bool CvPolicyEntry::CacheResults(Database::Results& kResults, CvDatabaseUtility&
 			m_ppiGreatPersonExpendedYield[GreatPersonID][YieldID] = yield;
 		}
 	}
-	
+
 	kUtility.PopulateArrayByValue(m_piGoldenAgeGreatPersonRateModifier, "GreatPersons", "Policy_GoldenAgeGreatPersonRateModifier", "GreatPersonType", "PolicyType", szPolicyType, "Modifier");
 	kUtility.SetYields(m_piYieldFromKills, "Policy_YieldFromKills", "PolicyType", szPolicyType);
 	kUtility.SetYields(m_piYieldFromBarbarianKills, "Policy_YieldFromBarbarianKills", "PolicyType", szPolicyType);
@@ -2835,7 +2835,7 @@ bool CvPolicyEntry::IsFaithPurchaseUnitClass(const int eUnitClass, const int eCu
 	if (it != m_FaithPurchaseUnitClasses.end())
 	{
 		const int eRequiredEra = it->second;
-		
+
 		if (eRequiredEra == NO_ERA || eCurrentEra >= eRequiredEra)
 		{
 			return true;
@@ -3689,7 +3689,7 @@ int CvPolicyEntry::GetYieldForLiberation(int i) const
 	PRECONDITION(i > -1, "Index out of bounds");
 	return m_piYieldForLiberation[i];
 }
-/// Influence in all CS whenever you liberate a city 
+/// Influence in all CS whenever you liberate a city
 int CvPolicyEntry::GetInfluenceForLiberation() const
 {
 	return m_iInfluenceForLiberation;
@@ -4007,7 +4007,8 @@ CvPlayerPolicies::CvPlayerPolicies():
 	m_paePolicyBlockedBranchCheck(NULL),
 	m_pPolicies(NULL),
 	m_pPolicyAI(NULL),
-	m_pPlayer(NULL)
+	m_pPlayer(NULL),
+	m_bTenetCacheDirty(true)
 {
 	m_vBuildingClassHappinessModifier.resize(GC.getNumBuildingClassInfos(), 0);
 }
@@ -4052,7 +4053,7 @@ void CvPlayerPolicies::Init(CvPolicyXMLEntries* pPolicies, CvPlayer* pPlayer, bo
 
 	ASSERT(m_paePolicyBlockedBranchCheck==NULL, "about to leak memory, CvPlayerPolicies::m_paePolicyBlockedBranchCheck");
 	m_paePolicyBlockedBranchCheck = FNEW(PolicyBranchTypes[m_pPolicies->GetNumPolicies()], c_eCiv5GameplayDLL, 0);
-	
+
 	// Create AI object
 	m_pPolicyAI = FNEW(CvPolicyAI(this), c_eCiv5GameplayDLL, 0);
 
@@ -4074,6 +4075,13 @@ void CvPlayerPolicies::Uninit()
 	SAFE_DELETE_ARRAY(m_pabPolicyBranchFinished);
 	SAFE_DELETE(m_pPolicyAI);
 	SAFE_DELETE_ARRAY(m_paePolicyBlockedBranchCheck);
+}
+
+/// Invalidate tenet cache when policies change
+void CvPlayerPolicies::InvalidateTenetCache()
+{
+	m_bTenetCacheDirty = true;
+	m_cachedAvailableTenets.clear();
 }
 
 /// Reset policy status array to all false
@@ -4106,6 +4114,10 @@ void CvPlayerPolicies::Reset()
 
 	// Reset AI too
 	m_pPolicyAI->Reset();
+
+	// Invalidate tenet cache
+	m_bTenetCacheDirty = true;
+	m_cachedAvailableTenets.clear();
 
 
 	ASSERT( m_pPolicies->GetNumPolicies() == m_pPolicies->GetNumPolicies());
@@ -4184,6 +4196,7 @@ void CvPlayerPolicies::Read(FDataStream& kStream)
 	Serialize(*this, serialVisitor);
 
 	UpdateModifierCache();
+	InvalidateTenetCache();
 }
 
 /// Serialization write
@@ -4268,11 +4281,12 @@ void CvPlayerPolicies::SetPolicy(PolicyTypes eIndex, bool bNewValue, bool bFree)
 		m_pabHasPolicy[eIndex] = bNewValue;
 		m_pabFreePolicy[eIndex] = bFree;
 		int iChange = bNewValue ? 1 : -1;
-		if (bFree) 
+		if (bFree)
 			iChange = 0;
 
 		GetPlayer()->ChangeNumPolicies(iChange);
 		UpdateModifierCache();
+		InvalidateTenetCache();
 
 		// The cost of the next policy scales with how many we own, so refresh it here rather than at the call sites
 		GetPlayer()->DoUpdateNextPolicyCost();
@@ -4887,7 +4901,7 @@ int CvPlayerPolicies::GetNextPolicyCost(bool bIgnoreCities, int iCityOffset, int
 			iCost *= GC.getGame().getHandicapInfo().getAIPolicyPercent();
 			iCost /= 100;
 			iCost *= std::max(0, ((GC.getGame().getHandicapInfo().getAIPolicyPerEraModifier() * GC.getGame().getCurrentEra()) + 100));
-			iCost /= 100;			
+			iCost /= 100;
 		}
 
 		int iExtraCatchUP = m_pPlayer->getHandicapInfo().getPolicyCatchUpMod();
@@ -5168,7 +5182,7 @@ void CvPlayerPolicies::DoUnlockPolicyBranch(PolicyBranchTypes eBranchType)
 	m_pPlayer->doInstantGreatPersonProgress(INSTANT_YIELD_TYPE_POLICY_UNLOCK);
 
 	int iLoop = 0;
-	for (CvCity* pLoopCity = m_pPlayer->firstCity(&iLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iLoop)) 
+	for (CvCity* pLoopCity = m_pPlayer->firstCity(&iLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iLoop))
 	{
 		pLoopCity->GetCityCitizens()->SetDirty(true);
 	}
@@ -5304,6 +5318,7 @@ void CvPlayerPolicies::SetPolicyBranchUnlocked(PolicyBranchTypes eBranchType, bo
 		}
 
 		// Need to set this before instant yields etc. since those can trigger new policy unlocks which check this flag
+		InvalidateTenetCache();
 		m_pabPolicyBranchUnlocked[eBranchType] = bNewValue;
 
 		// Unlocked?
@@ -5408,7 +5423,7 @@ int CvPlayerPolicies::GetNumPolicyBranchesUnlocked() const
 
 	return iCount;
 }
- 
+
 /// We're going to be using eBranchType now
 void CvPlayerPolicies::DoSwitchToPolicyBranch(PolicyBranchTypes eBranchType)
 {
@@ -5591,7 +5606,7 @@ bool CvPlayerPolicies::IsPolicyBlocked(PolicyTypes eType) const
 
 bool CvPlayerPolicies::CanAdoptIdeology(PolicyBranchTypes eIdeology) const
 {
-	if (MOD_EVENTS_IDEOLOGIES) 
+	if (MOD_EVENTS_IDEOLOGIES)
 	{
 		if (GAMEEVENTINVOKE_TESTALL(GAMEEVENT_PlayerCanAdoptIdeology, m_pPlayer->GetID(), eIdeology) == GAMEEVENTRETURN_FALSE)
 			return false;
@@ -6148,6 +6163,18 @@ bool CvPlayerPolicies::IsTimeToChooseIdeology() const
 /// List of tenets that can be adopted for an Ideology
 std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(PolicyBranchTypes eBranch, int iLevel)
 {
+	// Check cache first
+	std::pair<PolicyBranchTypes, int> cacheKey(eBranch, iLevel);
+	if (!m_bTenetCacheDirty)
+	{
+		std::map<std::pair<PolicyBranchTypes, int>, std::vector<PolicyTypes> >::iterator it =
+			m_cachedAvailableTenets.find(cacheKey);
+		if (it != m_cachedAvailableTenets.end())
+		{
+			return it->second;
+		}
+	}
+
 	std::vector<PolicyTypes> availableTenets;
 
 	CvPolicyXMLEntries* pkPolicies = GC.GetGamePolicies();
@@ -6166,6 +6193,10 @@ std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(PolicyBranchTypes 
 			availableTenets.push_back(eTenet);
 		}
 	}
+
+	// Cache the result
+	m_cachedAvailableTenets[cacheKey] = availableTenets;
+	m_bTenetCacheDirty = false;
 
 	return availableTenets;
 }
@@ -6224,7 +6255,7 @@ bool CvPlayerPolicies::CanGetAdvancedTenet() const
 	{
 		return false;
 	}
-		
+
 	CvPolicyXMLEntries* pkPolicies = GC.GetGamePolicies();
 	for(int iI = 0; iI < GC.getNumPolicyInfos(); iI++)
 	{

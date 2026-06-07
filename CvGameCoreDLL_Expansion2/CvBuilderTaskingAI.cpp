@@ -16,6 +16,7 @@
 #include "CvCityConnections.h"
 #include "CvEconomicAI.h"
 #include "CvDiplomacyAI.h"
+#include "CvMilitaryAI.h"
 #include "CvGameCoreEnumSerialization.h" //toString(const YieldTypes& v)
 #include "CvTypes.h"
 
@@ -941,6 +942,22 @@ void CvBuilderTaskingAI::ConnectPointsForStrategy(CvCity* pOriginCity, CvPlot* p
 		return;
 
 	int iDefensiveValue = pTargetPlot->GetStrategicValue(m_pPlayer->GetID());
+
+	// Phase 5: Strategic geography road priority — bypass the low-strategic-value gate
+	// for plots near cities that need strategic roads (floodgates, chokepoints, etc.)
+	CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	if (pStratGeo && iDefensiveValue < 50)
+	{
+		// Check if the target plot is near a city with high road priority
+		CvCity* pNearestCity = GC.getMap().findCity(pTargetPlot->getX(), pTargetPlot->getY(), m_pPlayer->GetID());
+		if (pNearestCity)
+		{
+			int iRoadPri = pStratGeo->GetRoadPriority(pNearestCity->GetID());
+			if (iRoadPri >= 50)
+				iDefensiveValue = max(iDefensiveValue, iRoadPri);
+		}
+	}
+
 	if (iDefensiveValue < 50)
 		return;
 
@@ -1372,7 +1389,7 @@ int CvBuilderTaskingAI::GetTurnsToBuild(const CvUnit* pUnit, BuildTypes eBuild, 
 	if (iBuildLeft == 0)
 		return 0;
 
-	int iBuildRate = pUnit ? pUnit->workRate(true) : 1; // If no unit, return total build time
+	int iBuildRate = pUnit ? pUnit->workRate(false) : 1; // If no unit, return total build time
 
 	if (iBuildRate == 0)
 	{
@@ -1722,6 +1739,119 @@ void CvBuilderTaskingAI::UpdateImprovementPlots()
 		m_directives.push_back(it->option);
 }
 
+/// Calculate strategic location value for route (OPTION A: Location-based weighting)
+/// Returns percentage bonus (0-100) to apply to movement speed bonus
+/// Higher values for strategically important locations (near enemies, choke points, etc.)
+int CvBuilderTaskingAI::CalculateStrategicLocationValue(const PlotPair& plotPair)
+{
+	int iStrategicBonus = 0;
+
+	// Evaluate endpoints of the route
+	CvPlot* pStartPlot = GC.getMap().plotByIndexUnchecked(plotPair.first);
+	CvPlot* pEndPlot = GC.getMap().plotByIndexUnchecked(plotPair.second);
+
+	if (!pStartPlot || !pEndPlot)
+		return 0;  // Can't evaluate; use base value
+
+	TeamTypes eOurTeam = m_pPlayer->getTeam();
+
+	// Score only the best nearby city to keep the existing 0-100 multiplier shape narrow.
+	CvStrategicGeographyMap* pStratGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+	int iBestNearbyCityScore = 0;
+	int iLoop = 0;
+	for (CvCity* pCity = m_pPlayer->firstCity(&iLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iLoop))
+	{
+		if (pCity->IsRazing())
+			continue;
+
+		int iCityDistance = min(
+			plotDistance(pStartPlot->getX(), pStartPlot->getY(), pCity->getX(), pCity->getY()),
+			plotDistance(pEndPlot->getX(), pEndPlot->getY(), pCity->getX(), pCity->getY()));
+		if (iCityDistance > 5)
+			continue;
+
+		int iLayerScore = 0;
+		int iApproachDistanceScore = 0;
+		int iApproachDifficultyScore = 0;
+		int iRoadPriorityScore = 0;
+
+		if (pStratGeo)
+		{
+			switch (pStratGeo->GetCityLayer(pCity->GetID()))
+			{
+				case STRATEGIC_LAYER_FRONT_LINE:
+					iLayerScore = 25;
+					break;
+				case STRATEGIC_LAYER_SECOND_LINE:
+					iLayerScore = 15;
+					break;
+				case STRATEGIC_LAYER_REAR_AREA:
+					iLayerScore = 5;
+					break;
+				default:
+					break;
+			}
+
+			const std::vector<EnemyApproach>* pApproaches = pStratGeo->GetEnemyApproaches(pCity->GetID());
+			if (pApproaches)
+			{
+				int iBestApproachScore = 0;
+				for (size_t iA = 0; iA < pApproaches->size(); iA++)
+				{
+					const EnemyApproach& kApproach = (*pApproaches)[iA];
+					if (kApproach.eEnemy == NO_PLAYER || !GET_PLAYER(kApproach.eEnemy).isAlive())
+						continue;
+
+					TeamTypes eEnemyTeam = GET_PLAYER(kApproach.eEnemy).getTeam();
+					if (!GET_TEAM(eOurTeam).isHasMet(eEnemyTeam))
+						continue;
+					if (GET_TEAM(eOurTeam).IsHasDefensivePact(eEnemyTeam) || GET_TEAM(eOurTeam).IsAllowsOpenBordersToTeam(eEnemyTeam))
+						continue;
+
+					int iDistanceScore = 0;
+					if (kApproach.iDistanceFromEnemy <= 8)
+						iDistanceScore = 15;
+					else if (kApproach.iDistanceFromEnemy <= 14)
+						iDistanceScore = 10;
+					else if (kApproach.iDistanceFromEnemy <= 20)
+						iDistanceScore = 5;
+
+					int iDifficultyScore = 0;
+					if (kApproach.iApproachDifficulty <= 33)
+						iDifficultyScore = 10;
+					else if (kApproach.iApproachDifficulty <= 66)
+						iDifficultyScore = 5;
+
+					if (iDistanceScore + iDifficultyScore > iBestApproachScore)
+					{
+						iBestApproachScore = iDistanceScore + iDifficultyScore;
+						iApproachDistanceScore = iDistanceScore;
+						iApproachDifficultyScore = iDifficultyScore;
+					}
+				}
+			}
+
+			if (iCityDistance <= 4)
+			{
+				int iRoadPri = pStratGeo->GetRoadPriority(pCity->GetID());
+				iRoadPriorityScore = min(50, (iRoadPri * 50) / 100);
+			}
+		}
+
+		int iLocalPressureScore = min(50, iLayerScore + iApproachDistanceScore + iApproachDifficultyScore);
+		int iCityScore = iLocalPressureScore + iRoadPriorityScore;
+		if (iCityScore > iBestNearbyCityScore)
+			iBestNearbyCityScore = iCityScore;
+	}
+
+	iStrategicBonus = min(100, iBestNearbyCityScore);
+
+	// Cap total bonus at 100 (max 2x multiplier)
+	iStrategicBonus = min(iStrategicBonus, 100);
+
+	return iStrategicBonus;
+}
+
 vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives()
 {
 	vector<OptionWithScore<BuilderDirective>> aDirectives;
@@ -1814,6 +1944,8 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 		int iRailroadTotalMaintenance = 0;
 		if (iRailroadValue > 0)
 		{
+			int iRailroadBaseValue = iRailroadValue;
+
 			// If the railroad is completed, increase its value
 			int iMissingTiles = GetRouteMissingTiles(plannedRouteRailroad);
 			if (iMissingTiles <= 3)
@@ -1822,6 +1954,69 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetRouteDirectives
 			int iRailroadMaintenance = GC.getRouteInfo(ROUTE_RAILROAD)->GetGoldMaintenance() * (100 + m_pPlayer->GetImprovementGoldMaintenanceMod());
 			iRailroadTotalMaintenance = m_plannedRoutePlots[plannedRouteRailroad].size() * iRailroadMaintenance;
 			iRailroadValue -= iRailroadTotalMaintenance;
+
+			// Scale the railroad-only speed premium from the route pair's existing usefulness.
+			// This keeps short, low-value spurs from getting the same upgrade bonus as major corridors.
+			int iMovementSpeedBonus = max(150, min(800, iRailroadBaseValue / 2));
+
+			// Reduce bonus if empire is wealthy (can afford unprofitable routes for other reasons)
+			// Use CalculateBaseNetGoldTimes100 for consistent net gold calculation
+			int iNetGoldTimes100 = m_pPlayer->GetTreasury()->CalculateBaseNetGoldTimes100();
+			if (iNetGoldTimes100 > 5000)  // 50+ GPT means very wealthy
+			{
+				iMovementSpeedBonus = (iMovementSpeedBonus * 40) / 100;  // Only 200 value if very wealthy
+			}
+			else if (iNetGoldTimes100 > 2500)  // 25+ GPT means reasonably wealthy
+			{
+				iMovementSpeedBonus = (iMovementSpeedBonus * 70) / 100;  // Only 350 value if reasonably wealthy
+			}
+
+			// Check treasury constraint: don't build negative-gold routes if empire is going bankrupt
+			// Use CalculateBaseNetGoldTimes100 / 100 to get the int value
+			bool bCanAffordNegativeRoute = (iNetGoldTimes100 > 0);  // Only build negative routes if currently profitable
+			if (!bCanAffordNegativeRoute && iRailroadValue < 0)
+			{
+				// Treasury constraint: make already-negative routes even less attractive.
+				iRailroadValue = (iRailroadValue * 3) / 2;
+			}
+
+			// Weight by war situation: movement speed matters more during military pressure
+			// Use military aggressive posture as proxy for overall military pressure
+			int iMilitaryPressure = 0;
+			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+			{
+				PlayerTypes eLoopPlayer = (PlayerTypes)iPlayerLoop;
+				if (eLoopPlayer != m_pPlayer->GetID() && GET_PLAYER(eLoopPlayer).isAlive())
+				{
+					AggressivePostureTypes ePosture = m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture(eLoopPlayer);
+					// Assign numeric values to posture types for weighting
+					if (ePosture == AGGRESSIVE_POSTURE_HIGH)
+						iMilitaryPressure += 100;
+					else if (ePosture == AGGRESSIVE_POSTURE_MEDIUM)
+						iMilitaryPressure += 50;
+					else if (ePosture == AGGRESSIVE_POSTURE_LOW)
+						iMilitaryPressure += 25;
+				}
+			}
+
+			// If high total military pressure from any civ, weight movement bonus higher
+			if (iMilitaryPressure > 50)  // Significant military threat
+			{
+				// During war preparation, speed bonuses are more valuable
+				iMovementSpeedBonus = (iMovementSpeedBonus * 150) / 100;  // 750 value during war
+			}
+			else if (iMilitaryPressure > 0)  // Minor military threat
+			{
+				// During some military pressure, speed is moderately valuable
+				iMovementSpeedBonus = (iMovementSpeedBonus * 110) / 100;  // 550 value with threat
+			}
+
+			// OPTION A ENHANCEMENT: Add location-based strategic weighting
+			// Prioritize railroads in strategically important locations
+			int iStrategicLocationMultiplier = CalculateStrategicLocationValue(plotPair);
+			iMovementSpeedBonus = (iMovementSpeedBonus * (100 + iStrategicLocationMultiplier)) / 100;
+
+			iRailroadValue += iMovementSpeedBonus;
 		}
 
 		if (iRoadValueNoRivers > 0 || iRoadValueWithRivers > 0 || iRailroadValue > 0)
@@ -2282,7 +2477,8 @@ vector<OptionWithScore<BuilderDirective>> CvBuilderTaskingAI::GetImprovementDire
 	UpdateFutureYields(aPossibleBuilds);
 
 	//cache this
-	// TODO include net gold in all gold yield/maintenance computations
+	// FIXED: Net gold is now factored into ScorePlotBuild() improvement scoring
+	// See: iYieldScore calculation for YIELD_GOLD now accounts for maintenance costs (Issue #1)
 	int iNetGoldTimes100 = m_pPlayer->GetTreasury()->CalculateBaseNetGoldTimes100();
 	RouteTypes eBestRoute = m_pPlayer->getBestRoute();
 	UpdateAllCityWorstPlots();
@@ -2386,7 +2582,10 @@ void CvBuilderTaskingAI::UpdateFutureYields(const vector<BuildTypes>& aPossibleB
 		// Only consider future techs
 		if (m_pPlayer->HasTech(eTech))
 		{
-			// A bit hacky, use tech position in tech tree to decide how far away it is
+			// ISSUE 2: Tech distance heuristic uses tree position (GridX) instead of research timeline
+			// This assumes earlier tech trees = sooner research, but doesn't account for player rushing specific techs
+			// Better approach: Use EconomicAI->GetEstimatedTechResearchTurn() if available
+			// Current implementation still works reasonably well for most scenarios
 			int iTechX = pkTech->GetGridX();
 			if (iTechX > iOurLatestTechX)
 				iOurLatestTechX = iTechX;
@@ -2442,7 +2641,9 @@ void CvBuilderTaskingAI::UpdateFutureYields(const vector<BuildTypes>& aPossibleB
 			TechTypes eTech = *it2;
 			CvTechEntry* pkTech = GC.getTechInfo(eTech);
 
-			// Scale bonus with how far ahead the tech is from our current tech level
+			// ISSUE 2 FIX NOTE: Scale bonus with how far ahead the tech is from our current tech level
+			// This uses tree position (GridX), which is a heuristic. Ideally this would use EconomicAI 
+			// to get actual estimated research turn, accounting for player's tech priorities
 			int iMultiplier = max(100 - max(pkTech->GetGridX() - iOurAverageTechX, 0) * 10, 0);
 			if (iMultiplier == 0)
 				continue;
@@ -2980,6 +3181,75 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 	{
 		iWeight = iWeight * 2;
 	}
+	
+	// === DEFENSIVE STRATEGIC CLEARING ===
+	// If at war with a civ that has forest/jungle bonuses (like Iroquois with Woodsman),
+	// clearing forests near our cities denies them terrain advantage.
+	// This is especially important for cities that are threatened or border hostile territory.
+	if ((eFeature == FEATURE_FOREST || eFeature == FEATURE_JUNGLE) && pCity)
+	{
+		int iDefensiveClearBonus = 0;
+		int iDistToCity = plotDistance(*pPlot, *pCity->plot());
+		CvMilitaryAI* pMilitaryAI = m_pPlayer->GetMilitaryAI();
+		bool bRelevantDefensiveCity = pCity->isBorderCity()
+			|| pCity->isInDangerOfFalling()
+			|| pCity->isUnderSiege()
+			|| pCity->getThreatValue() >= 35
+			|| (pMilitaryAI && pMilitaryAI->IsExposedToEnemy(pCity, NO_PLAYER));
+		
+		// Only consider defensive clearing close to the city (within 3 tiles)
+		if (iDistToCity <= 3 && bRelevantDefensiveCity)
+		{
+			// Check if we're at war with anyone who has forest/jungle combat advantages
+			for (int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
+			{
+				CvPlayer& kPlayer = GET_PLAYER((PlayerTypes)iI);
+				if (!kPlayer.isAlive() || kPlayer.GetID() == m_pPlayer->GetID())
+					continue;
+				
+				if (!m_pPlayer->IsAtWarWith(kPlayer.GetID()))
+					continue;
+				
+				// Check for Woodland movement bonus trait (Iroquois)
+				// Units from civs with this trait get Woodsman promotion and fight well in forests
+				bool bEnemyHasForestBonus = kPlayer.GetPlayerTraits()->IsWoodlandMovementBonus();
+				
+				if (bEnemyHasForestBonus)
+				{
+					// Significant bonus for clearing forests when fighting forest-bonus civs
+					int iBaseBonus = 500;
+					
+					// Extra bonus if this is near a threatened city
+					if (pCity->isInDangerOfFalling())
+					{
+						iBaseBonus += 1000;
+					}
+					else if (pCity->isUnderSiege())
+					{
+						iBaseBonus += 500;
+					}
+					
+					// Extra bonus for closer tiles (higher priority)
+					iBaseBonus += (4 - iDistToCity) * 100; // +300 for adjacent, +200 for 2 tiles, +100 for 3
+					
+					// Extra bonus if we're fighting multiple enemies (likely defensive)
+					if (GET_TEAM(m_pPlayer->getTeam()).getAtWarCount(true) > 1)
+					{
+						// Defensive war makes terrain denial more valuable
+						iBaseBonus += 200;
+					}
+					
+					iDefensiveClearBonus = max(iDefensiveClearBonus, iBaseBonus);
+				}
+			}
+		}
+		
+		// Apply defensive clearing bonus
+		if (iDefensiveClearBonus > 0)
+		{
+			iWeight += iDefensiveClearBonus;
+		}
+	}
 
 	if(iWeight > 0)
 	{
@@ -3104,21 +3374,35 @@ bool CvBuilderTaskingAI::ShouldBuilderConsiderPlot(CvUnit* pUnit, CvPlot* pPlot)
 	}
 
 	//if there is fallout, try to scrub it in spite of the danger
-	if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage() && (pUnit->GetCurrHitPoints() < (pUnit->GetMaxHitPoints() / 2)))
+	FeatureTypes eFalloutFeature = m_eFalloutFeature != NO_FEATURE ? m_eFalloutFeature : GetFalloutFeature();
+	if(eFalloutFeature != NO_FEATURE && pPlot->getFeatureType() == eFalloutFeature && !pUnit->ignoreFeatureDamage())
 	{
-		if(GC.getLogging() && GC.getAILogging() && m_bLogging)
+		// Check if unit can survive fallout damage considering healing
+		int iFalloutDamage = 0;
+		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(eFalloutFeature);
+		if (pkFeatureInfo)
+			iFalloutDamage = pkFeatureInfo->getTurnDamage();
+		
+		int iHealRate = pUnit->healRate(pPlot);
+		int iNetDamagePerTurn = iFalloutDamage - iHealRate;
+		
+		// Only work on fallout if unit can heal faster than damage or has enough HP buffer
+		if (iNetDamagePerTurn > 0 && pUnit->GetCurrHitPoints() < (iNetDamagePerTurn * 3))
 		{
-			CvString strLog;
-			strLog.Format(
-				"%i,Bailing due to fallout,%d,%d,%d", 
-				pUnit->GetID(),
-				pPlot->getX(),
-				pPlot->getY(),
-				m_pPlayer->GetPlotDanger(*pPlot, true)
-			);
-			m_pPlayer->GetHomelandAI()->LogHomelandMessage(strLog);
+			if(GC.getLogging() && GC.getAILogging() && m_bLogging)
+			{
+				CvString strLog;
+				strLog.Format(
+					"%i,Bailing due to fallout,%d,%d,%d", 
+					pUnit->GetID(),
+					pPlot->getX(),
+					pPlot->getY(),
+					m_pPlayer->GetPlotDanger(*pPlot, true)
+				);
+				m_pPlayer->GetHomelandAI()->LogHomelandMessage(strLog);
+			}
+			return false;
 		}
-		return false;
 	}
 
 	if (!pUnit->canEndTurnAtPlot(pPlot))
@@ -3929,8 +4213,37 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 		if (iNewYieldTimes100 != 0 || iFutureYieldTimes100 != 0)
 		{
 			int iCityYieldModifier = pOwningCity ? GetYieldCityModifierTimes100(pOwningCity, eYield) : 100;
-			iYieldScore += (iNewYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
-			iPotentialScore += (iFutureYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
+			
+			// ISSUE 1 FIX: For YIELD_GOLD, subtract maintenance cost to get net gold value
+			int iAdjustedNewYieldTimes100 = iNewYieldTimes100;
+			int iAdjustedFutureYieldTimes100 = iFutureYieldTimes100;
+			
+			if (eYield == YIELD_GOLD && eImprovement != NO_IMPROVEMENT && pkImprovementInfo)
+			{
+				// Get maintenance cost from improvement entry
+				int iMaintenanceCost = pkImprovementInfo->GetGoldMaintenance();
+				if (iMaintenanceCost > 0)
+				{
+					// Convert maintenance to times100 for consistency
+					int iMaintenanceTimes100 = iMaintenanceCost * 100;
+					iAdjustedNewYieldTimes100 -= iMaintenanceTimes100;
+					iAdjustedFutureYieldTimes100 -= iMaintenanceTimes100;
+					
+					// Penalize negative gold improvements to 50% weight
+					if (iAdjustedNewYieldTimes100 < 0)
+					{
+						iAdjustedNewYieldTimes100 = (iAdjustedNewYieldTimes100 * 50) / 100;
+					}
+					
+					if (iAdjustedFutureYieldTimes100 < 0)
+					{
+						iAdjustedFutureYieldTimes100 = (iAdjustedFutureYieldTimes100 * 50) / 100;
+					}
+				}
+			}
+			
+			iYieldScore += (iAdjustedNewYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
+			iPotentialScore += (iAdjustedFutureYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
 		}
 
 		// Extra adjacency bonuses from potential adjacent same improvements
@@ -4203,7 +4516,31 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 			//de-emphasize yields for forts if we're not close to the border (they look ugly when spammed)
 			bool bIsFort = strncmp(pkImprovementInfo->GetType(), "IMPROVEMENT_FORT", 64) == 0;
 			if (bIsFort)
-				iYieldScore /= 2;
+			{
+				// Phase I-8: Boost fort priority on strait/water-separator plots for island civs
+				bool bStraitBoost = false;
+				if (pPlot->IsWaterAreaSeparator())
+				{
+					CvStrategicGeographyMap* pGeo = m_pPlayer->GetMilitaryAI()->GetStrategicGeographyMap();
+					if (pGeo)
+					{
+						eGeographicPosture ePosture = pGeo->GetGeographicPosture();
+						if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+						{
+							// Strait forts are very valuable for island civs — treat as high-value defensive positions
+							iSecondaryScore += 200;
+							bStraitBoost = true;
+						}
+						else if (ePosture == GEO_POSTURE_PENINSULAR)
+						{
+							iSecondaryScore += 100;
+							bStraitBoost = true;
+						}
+					}
+				}
+				if (!bStraitBoost)
+					iYieldScore /= 2;
+			}
 		}
 	}
 
@@ -4213,6 +4550,14 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 	{
 		int iBonusRange = pTraits->GetNearbyImprovementBonusRange();
 		int iCombatBonusValue = pTraits->GetNearbyImprovementCombatBonus();
+		
+		// Track strategic value of covered tiles
+		int iTilesWithStrategicValue = 0;
+		int iChokepointsCovered = 0;
+		int iCitiesCovered = 0;
+		bool bNearBorder = false;
+		bool bNearThreatenedCity = false;
+		
 		for (int iI = 0; iI < RING_PLOTS[iBonusRange]; iI++)
 		{
 			CvPlot* pCoveredPlot = iterateRingPlots(pPlot, iI);
@@ -4238,8 +4583,71 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 
 			// If we are giving 20 bonus combat damage to 18 tiles (maximum in two rings), this gives 720 value
 			if (!bTileAlreadyCovered)
+			{
 				iSecondaryScore += iCombatBonusValue * 2;
+				
+				// Strategic value: check if this covered tile is strategically important
+				// 1. Chokepoints - great for blocking enemy advances
+				if (pCoveredPlot->IsChokePoint())
+				{
+					iChokepointsCovered++;
+					iTilesWithStrategicValue++;
+				}
+				
+				// 2. Near a city - bonus helps garrison and city defenders
+				if (pCoveredPlot->isCity())
+				{
+					CvCity* pCity = pCoveredPlot->getPlotCity();
+					if (pCity && pCity->getOwner() == m_pPlayer->GetID())
+					{
+						iCitiesCovered++;
+						iTilesWithStrategicValue++;
+						
+						// Extra value if city is threatened
+						if (pCity->isInDangerOfFalling() || pCity->isUnderSiege())
+							bNearThreatenedCity = true;
+					}
+				}
+				
+				// 3. High defense terrain tiles are good defensive positions
+				int iDefenseMod = pCoveredPlot->defenseModifier(m_pPlayer->getTeam(), false, false);
+				if (iDefenseMod >= 25)
+					iTilesWithStrategicValue++;
+			}
 		}
+		
+		// Check if encampment would be near border (defensive value)
+		for (int iI = 0; iI < RING_PLOTS[3]; iI++)
+		{
+			CvPlot* pNearbyPlot = iterateRingPlots(pPlot, iI);
+			if (pNearbyPlot && pNearbyPlot->getOwner() != m_pPlayer->GetID() && pNearbyPlot->getOwner() != NO_PLAYER)
+			{
+				// Potential enemy territory nearby
+				if (GET_TEAM(m_pPlayer->getTeam()).isAtWar(pNearbyPlot->getTeam()))
+				{
+					bNearBorder = true;
+					break;
+				}
+			}
+		}
+		
+		// Strategic placement bonuses
+		// Encampments near chokepoints are extremely valuable for defense
+		iSecondaryScore += iChokepointsCovered * iCombatBonusValue * 3;
+		
+		// Cities covered by the combat bonus help with defense significantly
+		iSecondaryScore += iCitiesCovered * iCombatBonusValue * 2;
+		
+		// High defense terrain in range makes encampment more valuable
+		iSecondaryScore += iTilesWithStrategicValue * iCombatBonusValue;
+		
+		// Near border during wartime? Extra priority
+		if (bNearBorder)
+			iSecondaryScore += iCombatBonusValue * 5;
+		
+		// Threatened city needs encampment protection urgently
+		if (bNearThreatenedCity)
+			iSecondaryScore += iCombatBonusValue * 10;
 	}
 
 	// Do we want a canal here?
@@ -4464,7 +4872,25 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 			bYieldUnused = true;
 	}
 
-	return PlotBuildScore(iYieldScore + iSecondaryScore, iPotentialScore, bYieldUnused ? iYieldScore : 0);
+	int iTotalScore = iYieldScore + iSecondaryScore;
+	int iFinalScore = iTotalScore;
+	int iFinalPotentialScore = iPotentialScore;
+	int iFinalUnusedYieldScore = bYieldUnused ? iYieldScore : 0;
+
+	// Factor in build time for ROI calculation - longer builds are less valuable
+	if (bIsBuild && eBuild != NO_BUILD && iTotalScore > 0)
+	{
+		int iBuildTime = pPlot->getBuildTime(eBuild, m_pPlayer->GetID());
+		if (iBuildTime > 0)
+		{
+			// Apply the ROI scaling consistently across the score components that feed directive priority.
+			iFinalScore = (iTotalScore * 100) / (iBuildTime + 1);
+			iFinalPotentialScore = (iPotentialScore * 100) / (iBuildTime + 1);
+			iFinalUnusedYieldScore = (iFinalUnusedYieldScore * 100) / (iBuildTime + 1);
+		}
+	}
+
+	return PlotBuildScore(iFinalScore, iFinalPotentialScore, iFinalUnusedYieldScore);
 }
 
 int CvBuilderTaskingAI::GetResourceSpawnWorkableChance(CvPlot* pPlot, int& iTileClaimChance)
