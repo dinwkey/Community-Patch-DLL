@@ -11,6 +11,8 @@
 #define CIV5_MILITARY_AI_H
 
 #include "CvEnumMap.h"
+#include "CvStrategicGeographyMap.h"
+struct TradeConnection;
 
 enum DefenseState
 {
@@ -289,6 +291,20 @@ public:
 	{
 		return m_iNumFreeCarriers;
 	}
+	int GetNumMissileUnits() const
+	{
+		return m_iNumMissileUnits;
+	}
+	int GetMemoryThreatWeight() const
+	{
+		return m_iMemoryThreatWeight;
+	}
+	int GetCoopWarRiskScore() const
+	{
+		return m_iCoopWarRiskScore;
+	}
+	bool IsStrategicReserveCity(int iCityID) const;
+	const vector<int>& GetStrategicReserveCities() const { return m_strategicReserveCities; }
 
 private:
 
@@ -298,6 +314,47 @@ private:
 	void UpdateDefenseState();
 	void UpdateMilitaryStrategies();
 	void UpdateOperations();
+	
+	// Issue 4.1 helper functions for enhanced threat assessment
+	int CalculateProximityWeightedThreat(DomainTypes eDomain);
+	bool AreEnemiesMovingTowardUs(DomainTypes eDomain);
+	int GetAlliedThreatMultiplier();
+	int CalculateMemoryThreatWeight() const;
+
+	// Strategic reserve & coop-war risk subsystem
+	void ComputeStrategicReserveCities();
+	int ComputeCoopWarRiskScore() const;
+	
+	// Issue 7.2: Urgent flavor propagation for immediate threat response
+	void PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues);
+
+	// Issue 7.2: Trade route escort evaluation
+	enum EscortRecommendation
+	{
+		ESCORT_RECOMMENDED,
+		ESCORT_NOT_WORTH,
+		ESCORT_REROUTE
+	};
+	EscortRecommendation EvaluateTradeUnitEscortMission(int iTradeConnectionID, int* piEscortValue = NULL) const;
+	CvUnit* AssignEscortToReturningTradeUnit(int iTradeConnectionID);
+	int GetTradeUnitReturnValue(int iTradeConnectionID) const;
+
+	// Terrain-aware grouping helpers (Issue: Terrain-aware grouping)
+	int GetLocalTerrainRoughness(const CvPlot* pCenter, int iRadius) const;
+	void ApplyTerrainAwareTempFlavors(const CvPlot* pCenter);
+
+	// Diplomatic Considerations: trade-route-aware grouping
+	void ApplyTradeRouteDefenseFlavors();
+	int GetTradeRouteEconomicValue(const TradeConnection& kConnection) const;
+
+	// Dynamic Rebalancing: Units regroup based on combat losses (Issue: Dynamic Rebalancing)
+	void DetectCombatLosses();
+	int EvaluateArmyBalance() const;
+	void TriggerFormationRebalance();
+	void ApplyLossAdaptationFlavors();
+	void EvaluateTacticalRetreat();
+	int GetUnitCountByType() const;
+
 	void DoNuke(PlayerTypes ePlayer);
 	void CheckLandDefenses(PlayerTypes eEnemy, CvCity* pThreatenedCity);
 	void CheckSeaDefenses(PlayerTypes ePlayer, CvCity* pThreatenedCity);
@@ -322,6 +379,14 @@ private:
 	int* m_paiTurnStrategyAdopted;
 	CvEnumMap<FlavorTypes, int> m_aiTempFlavors;
 	int m_aiWarFocus[MAX_MAJOR_CIVS];
+
+	// Dynamic Rebalancing: Unit count tracking for loss detection (Issue: Dynamic Rebalancing)
+	int m_iPreviousMilitaryUnitCount;  // last known military unit count
+	int m_iLastRebalanceTurn;  // track when rebalancing last occurred
+	int m_iArmyBalanceScore;  // 0-100 score of army health
+	int m_iMemoryThreatWeight; // cached per-turn memory threat score
+	int m_iCoopWarRiskScore;   // 0-100 coop-war threat level (recomputed each turn)
+	vector<int> m_strategicReserveCities; // city IDs that should maintain a garrison reserve
 
 	// Internal calculated values - must be serialized
 	int m_iNumberOfTimesOpsBuildSkippedOver;
@@ -363,6 +428,19 @@ private:
 
 	DefenseState m_eLandDefenseState;
 	DefenseState m_eNavalDefenseState;
+
+	// Strategic Geography Map — persistent terrain-aware defense layer
+	CvStrategicGeographyMap* m_pStrategyMap;
+public:
+	CvStrategicGeographyMap* GetStrategicGeographyMap() { return m_pStrategyMap; }
+	const CvStrategicGeographyMap* GetStrategicGeographyMap() const { return m_pStrategyMap; }
+	eGeographicPosture GetGeographicPosture() const
+	{
+		return m_pStrategyMap ? m_pStrategyMap->GetGeographicPosture() : GEO_POSTURE_CONTINENTAL;
+	}
+
+	// Phase I-5: Convoy risk assessment (public so CvStrategicGeographyMap can call it)
+	eTransitRisk AssessTransitRisk(CvPlot* pOrigin, CvPlot* pDestination, bool bIsHighValue) const;
 };
 
 FDataStream& operator>>(FDataStream&, CvMilitaryAI&);
@@ -426,6 +504,7 @@ MultiunitFormationTypes GetCurrentBestFormationTypeForLandAttack();
 MultiunitFormationTypes GetCurrentBestFormationTypeForCombinedAttack();
 MultiunitFormationTypes GetCurrentBestFormationTypeForPureNavalAttack();
 CvPlot* GetCoastalWaterNearPlot(CvPlot *pTarget, bool bCheckTeam = false);
+int GetBlockadedCitySeverity(CvCity* pCity, int* piLandPercent);
 bool NeedShipInArea(PlayerTypes ePlayer, CvLandmass* pWaterBody);
 
 bool ArmyPathIsGood(const SPath& path, PlayerTypes eAttacker, PlayerTypes eIntendedEnemy, int iThresholdForDiscard);

@@ -415,8 +415,9 @@ void CvArmyAI::UpdateCheckpointTurnsAndRemoveBadUnits()
 				int iTurnsToReachCheckpoint = pUnit->TurnsToReachTarget(pCurrentArmyPlot, iFlags, pOperation->GetMaximumRecruitTurns());
 				m_FormationEntries[iI].SetCurrentTurnsToCheckpoint(iTurnsToReachCheckpoint);
 
-				//if we're already moving to target, the current army plot is moving, so we cannot check progress against ...
-				if (!m_FormationEntries[iI].IsMakingProgressTowardsCheckpoint())
+				// While moving to destination, the checkpoint is the army center of mass and can drift every turn.
+				// Using that moving target for no-progress eviction spuriously removes lagging units from dispersed armies.
+				if (m_eAIState != ARMYAISTATE_MOVING_TO_DESTINATION && !m_FormationEntries[iI].IsMakingProgressTowardsCheckpoint())
 				{
 					CvString strMsg;
 					strMsg.Format("Removing %s %d from army %d because no progress to checkpoint (%d:%d). ETA %d; prev %d; prev %d", 
