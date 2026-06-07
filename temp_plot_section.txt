@@ -1,0 +1,28 @@
+This plot is ABOUT TO BE owned. Pop Goody Huts/remove barb camps, etc. Otherwise it will try to increase/reduce the # of Improvements we have in our borders, and these guys shouldn't apply to that count
+		if(eNewValue != NO_PLAYER)
+		{
+			// Pop Goody Huts here
+			if(isGoody())
+			{
+				GET_PLAYER(eNewValue).doGoody(this, NULL);
+			eImprovement = NO_IMPROVEMENT;
+		}
+
+		// If there's a camp here, clear it
+		if(eImprovement == GD_INT_GET(BARBARIAN_CAMP_IMPROVEMENT))
+				eImprovement = NO_IMPROVEMENT;
+			}
+
+			// Transfer responsibility of routes and improvements if the plot is now owned by someone else
+			if (eImprovement != NO_IMPROVEMENT)
+			{
+				SetPlayerResponsibleForImprovement(eNewValue);
+			}
+			if (getRouteType() != NO_ROUTE && !isCity())
+			{
+				SetPlayerResponsibleForRoute(eNewValue);
+			}
+		}
+		else
+		{
+			// Transfer responsibility of improvements back
