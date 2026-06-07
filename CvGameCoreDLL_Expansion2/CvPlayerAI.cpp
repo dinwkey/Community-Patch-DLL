@@ -273,7 +273,7 @@ void CvPlayerAI::AI_unitUpdate(bool bUpdateHomelandAI)
 	if(isHuman(ISHUMAN_AI_UNITS))
 	{
 		CvUnit::dispatchingNetMessage(true);
-		GetTacticalAI()->UpdateVisibility();
+		GetTacticalAI()->UpdateForHomelandSupport();
 		GetHomelandAI()->Update(bUpdateHomelandAI);
 		GetTacticalAI()->CleanUp();
 		CvUnit::dispatchingNetMessage(false);
@@ -283,7 +283,7 @@ void CvPlayerAI::AI_unitUpdate(bool bUpdateHomelandAI)
 		// Now let the tactical AI run.  Putting it after the operations update allows units who have
 		// just been handed off to the tactical AI to get a move in the same turn they switch between
 		GetTacticalAI()->Update();
-		GetHomelandAI()->Update(true);
+		GetHomelandAI()->Update(bUpdateHomelandAI);
 		GetTacticalAI()->CleanUp();
 	}
 }
@@ -507,7 +507,11 @@ void CvPlayerAI::AI_chooseFreeGreatPerson()
 			// Pick the person based on our victory method
 			if (GetDiplomacyAI()->IsGoingForWorldConquest())
 			{
-				eDesiredGreatPerson = GetMilitaryAI()->GetWarType() == WARTYPE_SEA ? GetSpecificUnitType("UNITCLASS_GREAT_ADMIRAL") : GetSpecificUnitType("UNITCLASS_GREAT_GENERAL");
+				eGeographicPosture ePosture = GetMilitaryAI()->GetGeographicPosture();
+				if (ePosture == GEO_POSTURE_ISLAND || ePosture == GEO_POSTURE_ARCHIPELAGO)
+					eDesiredGreatPerson = GetSpecificUnitType("UNITCLASS_GREAT_ADMIRAL");
+				else
+					eDesiredGreatPerson = GetMilitaryAI()->GetWarType() == WARTYPE_SEA ? GetSpecificUnitType("UNITCLASS_GREAT_ADMIRAL") : GetSpecificUnitType("UNITCLASS_GREAT_GENERAL");
 			}
 			else if (GetDiplomacyAI()->IsGoingForCultureVictory())
 			{

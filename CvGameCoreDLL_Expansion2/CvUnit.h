@@ -2354,6 +2354,7 @@ protected:
 	bool m_bMovedThisTurn;
 	bool m_bHasWithdrawnThisTurn;
 	bool m_bFortified;
+	bool m_bCachedCanAcquireAnyPromotion;
 	int m_iBlitzCount;
 	int m_iAmphibCount;
 	int m_iRiverCrossingNoPenaltyCount;

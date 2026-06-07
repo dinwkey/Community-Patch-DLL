@@ -23,6 +23,7 @@
 #include "CvCitySpecializationAI.h"
 #include "CvEconomicAI.h"
 #include "CvMilitaryAI.h"
+#include "CvTacticalAI.h"
 #include "CvNotifications.h"
 #include "CvUnitCombat.h"
 #include "CvTypes.h"
@@ -2596,17 +2597,20 @@ void CvCity::doTurn()
 
 		UpdateCityYieldFromYield();
 
-		bool bWeGrew = false;
-		int iDifference = getYieldRateTimes100(YIELD_FOOD);
-		if (isFoodProduction() || getFood() <= 5 || iDifference <= 0)
-		{
-			doGrowth();
-			bWeGrew = true;
-		}
+	// Growth processing: done early for food production (settlers), low food storage, or starvation to allow citizen reallocation
+	bool bGrowthProcessed = false;
+	int iPopulationBeforeGrowth = getPopulation();
+	int iDifference = getYieldRateTimes100(YIELD_FOOD);
+	if (isFoodProduction() || getFood() <= 5 || iDifference <= 0)
+	{
+		doGrowth();
+		bGrowthProcessed = true;
+	}
+
+	doDecay();
+	doMeltdown();
 
 		doProduction(!doCheckProduction());
-		doDecay();
-		doMeltdown();
 
 		if (GET_PLAYER(getOwner()).isMajorCiv())
 			DoRandomFranchise();
@@ -2670,14 +2674,18 @@ void CvCity::doTurn()
 			}
 		}
 
-		if (!bWeGrew)
-		{
-			doGrowth();
-		}
-		GetCityCitizens()->DoTurn();
+	// Process growth if not already done, but only if population hasn't changed (safety check against double-growth)
+	if (!bGrowthProcessed && getPopulation() == iPopulationBeforeGrowth)
+	{
+		doGrowth();
+		bGrowthProcessed = true;
+	}
 
-		// sending notifications on when routes are connected to the capital
-		if (!isCapital())
+	// Update citizen assignments after growth processing
+	GetCityCitizens()->DoTurn();
+
+	// sending notifications on when routes are connected to the capital
+	if (!isCapital())
 		{
 			CvNotifications* pNotifications = GET_PLAYER(m_eOwner).GetNotifications();
 			if (pNotifications)
@@ -10594,11 +10602,8 @@ int CvCity::getFoodTurnsLeft() const
 	{
 		if (iFoodNeededToGrow > 0)
 		{
-			int iTurnsLeft = iFoodNeededToGrow / iDeltaPerTurn;
-			//correct for truncation
-			if (iTurnsLeft * iDeltaPerTurn < iFoodNeededToGrow)
-				iTurnsLeft++;
-
+			// Use ceiling division: (a + b - 1) / b for positive integers
+			int iTurnsLeft = (iFoodNeededToGrow + iDeltaPerTurn - 1) / iDeltaPerTurn;
 			return iTurnsLeft;
 		}
 		else //already over the threshold
@@ -10607,11 +10612,9 @@ int CvCity::getFoodTurnsLeft() const
 	//starving
 	else if (iDeltaPerTurn < 0)
 	{
-		int iTurnsLeft = iFoodStored / iDeltaPerTurn;
-		//correct for truncation
-		if (iTurnsLeft * iDeltaPerTurn < iFoodStored)
-			iTurnsLeft++;
-
+		// For negative division (starvation), calculate turns until food reaches 0
+		// Use ceiling of absolute values then negate
+		int iTurnsLeft = (iFoodStored + (-iDeltaPerTurn) - 1) / (-iDeltaPerTurn);
 		return -iTurnsLeft;
 	}
 
@@ -12977,26 +12980,24 @@ int CvCity::getProductionModifier(UnitTypes eUnit, CvString* toolTipSink, bool b
 	// Production bonus for having a particular building
 	iTempMod = 0;
 	int iBuildingMod = 0;
-	BuildingTypes eBuilding;
-	for (int iI = 0; iI < GC.getNumBuildingInfos(); iI++)
+	// Performance optimization: iterate only through buildings this city actually has
+	const std::vector<BuildingTypes>& buildingsInCity = GetCityBuildings()->GetAllBuildingsHere();
+	for (std::vector<BuildingTypes>::const_iterator it = buildingsInCity.begin(); it != buildingsInCity.end(); ++it)
 	{
-		eBuilding = (BuildingTypes)iI;
+		BuildingTypes eBuilding = *it;
 		CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
 		if (pkBuildingInfo)
 		{
-			if (GetCityBuildings()->GetNumBuilding(eBuilding) > 0)
+			iTempMod = pkUnitInfo->GetBuildingProductionModifier(eBuilding);
+
+			if (iTempMod != 0)
 			{
-				iTempMod = pkUnitInfo->GetBuildingProductionModifier(eBuilding);
+				iTempMod *= GetCityBuildings()->GetNumBuilding(eBuilding);
 
-				if (iTempMod != 0)
+				iBuildingMod += iTempMod;
+				if (toolTipSink && iTempMod)
 				{
-					iTempMod *= GetCityBuildings()->GetNumBuilding(eBuilding);
-
-					iBuildingMod += iTempMod;
-					if (toolTipSink && iTempMod)
-					{
-						GC.getGame().BuildProdModHelpText(toolTipSink, "TXT_KEY_PRODMOD_UNIT_WITH_BUILDING", iTempMod, pkBuildingInfo->GetDescription());
-					}
+					GC.getGame().BuildProdModHelpText(toolTipSink, "TXT_KEY_PRODMOD_UNIT_WITH_BUILDING", iTempMod, pkBuildingInfo->GetDescription());
 				}
 			}
 		}
@@ -16388,9 +16389,56 @@ bool CvCity::NeedsGarrison() const
 
 	CvPlayer& kPlayer = GET_PLAYER(getOwner());
 
+	// Hard capital garrison rule: the capital needs a garrison when at war AND
+	// bordered by or exposed to an enemy. If the capital is deep inland with no
+	// enemy border contact, skip this — the homeland AI handles interior cities.
+	// Losing the capital is catastrophic (2x war value, +40 capitulation score).
+	if (isCapital() && kPlayer.IsAtWarAnyMajor())
+	{
+		// Check if capital borders any unfriendly civ or is on an enemy army path
+		if (isBorderCity() || kPlayer.GetMilitaryAI()->IsExposedToEnemy(this, NO_PLAYER))
+			return true;
+	}
+
+	// Extended Memory: garrison if siege units spotted OR coordinated attack detected
+	if (kPlayer.isMajorCiv())
+	{
+		const CvUnitSightingManager& sightMgr = kPlayer.GetUnitSightingManager();
+		if (sightMgr.CountSiegeUnitsNearCity(this, 6) >= 2)
+			return true;
+		// Multi-unit convergence: 4+ units heading toward us, or 2+ with siege
+		if (sightMgr.IsCoordinatedAttackOnCity(this))
+			return true;
+	}
+
 	//this allows the player to use the garrison for settler escorts
 	if (kPlayer.IsEarlyExpansionPhase())
-		return false;
+	{
+		bool bThreatened = false;
+		TeamTypes eTeam = kPlayer.getTeam();
+		for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; ++iPlayer)
+		{
+			PlayerTypes eOther = (PlayerTypes)iPlayer;
+			if (eOther == kPlayer.GetID())
+				continue;
+			CvPlayer& kOther = GET_PLAYER(eOther);
+			if (!kOther.isAlive() || kOther.isMinorCiv())
+				continue;
+			if (GET_TEAM(eTeam).isAtWar(kOther.getTeam()))
+			{
+				bThreatened = true;
+				break;
+			}
+			CivApproachTypes eApproach = kPlayer.GetDiplomacyAI()->GetCivApproach(eOther);
+			if (eApproach == CIV_APPROACH_WAR || eApproach == CIV_APPROACH_HOSTILE || eApproach == CIV_APPROACH_GUARDED)
+			{
+				bThreatened = true;
+				break;
+			}
+		}
+		if (!bThreatened)
+			return false;
+	}
 
 	return kPlayer.GetMilitaryAI()->IsExposedToEnemy(this, NO_PLAYER);
 }
@@ -24740,6 +24788,10 @@ void CvCity::ChangeYieldPerAllyTimes100(YieldTypes eIndex, int iChange)
 	if (iChange != 0)
 	{
 		m_aiYieldPerAllyTimes100[eIndex] = m_aiYieldPerAllyTimes100[eIndex] + iChange;
+		if (m_aiYieldPerAllyTimes100[eIndex] < 0)
+		{
+			m_aiYieldPerAllyTimes100[eIndex] = 0;
+		}
 		ASSERT(GetYieldPerAllyTimes100(eIndex) >= 0);
 	}
 }
@@ -24764,6 +24816,10 @@ void CvCity::ChangeYieldPerFriendTimes100(YieldTypes eIndex, int iChange)
 	if (iChange != 0)
 	{
 		m_aiYieldPerFriendTimes100[eIndex] = m_aiYieldPerFriendTimes100[eIndex] + iChange;
+		if (m_aiYieldPerFriendTimes100[eIndex] < 0)
+		{
+			m_aiYieldPerFriendTimes100[eIndex] = 0;
+		}
 		ASSERT(GetYieldPerFriendTimes100(eIndex) >= 0);
 	}
 }
@@ -28148,8 +28204,8 @@ CvPlot* CvCity::GetNextBuyablePlot(bool bForPurchase)
 	if (aiPlotList.empty())
 		return NULL;
 
-	uint uPickedIndex = GC.getGame().urandLimitExclusive(aiPlotList.size(), CvSeeder(getFoodTimes100()).mix(GET_PLAYER(m_eOwner).GetNumPlots()));
-	return GC.getMap().plotByIndex(aiPlotList[uPickedIndex]);
+	// Pick the best plot (first in sorted list) instead of random
+	return GC.getMap().plotByIndex(aiPlotList[0]);
 }
 
 //	--------------------------------------------------------------------------------
@@ -28513,7 +28569,8 @@ int CvCity::GetBuyPlotCost(int iPlotX, int iPlotY) const
 	}
 
 	// Base cost
-	int iCost = GET_PLAYER(getOwner()).GetBuyPlotCost();
+	const int iBaseCost = GET_PLAYER(getOwner()).GetBuyPlotCost();
+	int iCost = iBaseCost;
 
 	const int iMaxRange = getBuyPlotDistance();
 	if (plotDistance(iPlotX, iPlotY, getX(), getY()) > iMaxRange)
@@ -28568,17 +28625,58 @@ int CvCity::GetBuyPlotCost(int iPlotX, int iPlotY) const
 	iCost = iCost * (105 - pPlot->countMatchingAdjacentPlots(NO_DOMAIN, getOwner(), NO_PLAYER, NO_PLAYER) * 5); //we know that one is always owned
 	iCost /= 100;
 
+	// PHASE 2: Defensive terrain bonuses for strategic plot selection
+	// Hills provide natural defense - reduce cost
+	if (pPlot->isHills())
+	{
+		iCost -= 30; // Defensive terrain bonus
+	}
+
+	// Rivers provide barriers - slight cost reduction
+	if (pPlot->isRiver())
+	{
+		iCost -= 20; // River barrier bonus
+	}
+
+	// Adjacency expansion chain bonus - reduce cost for plots claimable by neighbors
+	int iAdjacentClaimable = pPlot->countMatchingAdjacentPlots(NO_DOMAIN, getOwner(), NO_PLAYER, NO_PLAYER) - 1;
+	if (iAdjacentClaimable > 0)
+	{
+		iCost -= (15 * iAdjacentClaimable); // Expansion chain bonus per adjacent claimable plot
+	}
+
 	// Game Speed Mod
-	iCost *= GC.getGame().getGameSpeedInfo().getGoldPercent();
+	const int iGameSpeedPercent = GC.getGame().getGameSpeedInfo().getGoldPercent();
+	iCost *= iGameSpeedPercent;
 	iCost /= 100;
 
 	iCost *= (100 + getPlotBuyCostModifier());
 	iCost /= 100;
 
+	// Ensure plot-specific discounts never drop below the base plot cost (scaled by speed and city modifier)
+	int iBaseCostScaled = iBaseCost;
+	iBaseCostScaled *= iGameSpeedPercent;
+	iBaseCostScaled /= 100;
+	iBaseCostScaled *= (100 + getPlotBuyCostModifier());
+	iBaseCostScaled /= 100;
+
 	// Now round so the number looks neat
 	int iDivisor = /*5*/ max(1, GD_INT_GET(PLOT_COST_APPEARANCE_DIVISOR));
 	iCost = (iCost + iDivisor / 2) / iDivisor;
 	iCost *= iDivisor;
+
+	iBaseCostScaled = (iBaseCostScaled + iDivisor / 2) / iDivisor;
+	iBaseCostScaled *= iDivisor;
+
+	// Prevent plot costs from falling below the base cost or below 1 rounding step
+	if (iCost < iBaseCostScaled)
+	{
+		iCost = iBaseCostScaled;
+	}
+	if (iCost < iDivisor)
+	{
+		iCost = iDivisor;
+	}
 
 	return iCost;
 }
@@ -32666,6 +32764,18 @@ void CvCity::read(FDataStream& kStream)
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
 
+	for (int i = 0; i < NUM_YIELD_TYPES; i++)
+	{
+		if (m_aiYieldPerAllyTimes100[i] < 0)
+		{
+			m_aiYieldPerAllyTimes100[i] = 0;
+		}
+		if (m_aiYieldPerFriendTimes100[i] < 0)
+		{
+			m_aiYieldPerFriendTimes100[i] = 0;
+		}
+	}
+
 	GetCityStrategyAI()->PrecalcYieldStats();
 
 	CvCityManager::OnCityCreated(this);
@@ -33183,6 +33293,94 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 	int iBestScore = 0;
 	CvUnit* pBestTarget = NULL;
 
+	// COMBINED ARMS DEFENSE COORDINATION
+	// Check what friendly defenders can contribute to coordinated fire
+	bool bHasGarrison = HasGarrison();
+	bool bGarrisonCanAttack = false;
+	CvUnit* pGarrison = NULL;
+	int iGarrisonRange = 0;
+	if (bHasGarrison)
+	{
+		pGarrison = GetGarrisonedUnit();
+		if (pGarrison && pGarrison->IsCanAttackRanged() && pGarrison->canMove() && !pGarrison->isOutOfAttacks())
+		{
+			bGarrisonCanAttack = true;
+			iGarrisonRange = pGarrison->GetRange();
+		}
+	}
+
+	// Count friendly naval ranged defenders that can provide fire support
+	int iFriendlyNavalRanged = 0;
+	for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
+	{
+		CvPlot* pAdj = plotDirection(getX(), getY(), (DirectionTypes)iDir);
+		if (pAdj && pAdj->isWater())
+		{
+			CvUnit* pNaval = pAdj->getBestDefender(getOwner());
+			if (pNaval && pNaval->getDomainType() == DOMAIN_SEA && pNaval->IsCanAttackRanged() &&
+				pNaval->canMove() && !pNaval->isOutOfAttacks())
+			{
+				iFriendlyNavalRanged++;
+			}
+		}
+	}
+
+	// Check for air support from nearby airbases/carriers
+	bool bAirSupportAvailable = false;
+	CvPlayer& kOwner = GET_PLAYER(getOwner());
+	int iLoop = 0;
+	for (CvUnit* pLoopUnit = kOwner.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = kOwner.nextUnit(&iLoop))
+	{
+		if (pLoopUnit->getDomainType() == DOMAIN_AIR && pLoopUnit->IsCanAttackRanged() &&
+			pLoopUnit->canMove() && !pLoopUnit->isOutOfAttacks())
+		{
+			// Check if air unit can reach any plot in our bombardment range
+			if (plotDistance(pLoopUnit->getX(), pLoopUnit->getY(), getX(), getY()) <= pLoopUnit->GetRange() + iRange)
+			{
+				bAirSupportAvailable = true;
+				break;
+			}
+		}
+	}
+
+	// Track total friendly firepower for threat assessment
+	int iTotalFriendlyFirepower = 1; // City counts as 1
+	if (bGarrisonCanAttack) iTotalFriendlyFirepower++;
+	iTotalFriendlyFirepower += iFriendlyNavalRanged;
+	if (bAirSupportAvailable) iTotalFriendlyFirepower++;
+
+	// Prefer ranged threats over melee unless city HP is in immediate capture danger.
+	// This avoids wasting city shots on front melee screens while archers/siege keep firing.
+	bool bHasSiegeOrRangedThreat = false;
+	bool bHasSiegeThreat = false;
+	CvPlot* pScanCenter = plot();
+	for (int iRing = 1; iRing <= min(5, iRange); iRing++)
+	{
+		for (int i = RING_PLOTS[iRing - 1]; i < RING_PLOTS[iRing]; i++)
+		{
+			CvPlot* pTargetPlot = iterateRingPlots(pScanCenter, i);
+			if (!pTargetPlot)
+				continue;
+
+			if (!canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+				continue;
+
+			CvUnit* pTarget = rangedStrikeTarget(pTargetPlot);
+			if (!pTarget)
+				continue;
+
+			UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
+			bool bCanReachCity = (iRing <= pTarget->GetRange() + pTarget->baseMoves(false));
+
+			if ((eUnitAI == UNITAI_CITY_BOMBARD || pTarget->IsCanAttackRanged()) && bCanReachCity)
+			{
+				bHasSiegeOrRangedThreat = true;
+				if (eUnitAI == UNITAI_CITY_BOMBARD)
+					bHasSiegeThreat = true;
+			}
+		}
+	}
+
 	CvPlot* pPlot = plot();
 	for (int iRing=1; iRing<=min(5,iRange); iRing++)
 	{
@@ -33197,37 +33395,293 @@ CvUnit* CvCity::getBestRangedStrikeTarget() const
 			{
 				//a bit redundant with the internal of canRangeStrikeAt but that's life
 				CvUnit* pTarget = rangedStrikeTarget(pTargetPlot);
+				if (!pTarget)
+					continue;
+
 				int iDamage = rangeCombatDamage(pTarget, false, NULL);
-				int iBonus = 0;
 				if (iDamage > 0)
 				{
-					int iCurrHitPoints = pTarget->GetCurrHitPoints();
+					int iScore = iDamage;
 
-					// It's good to kill units
-					if (iDamage >= iCurrHitPoints)
-						iBonus += 15;
+					// COMBINED ARMS DEFENSE: Calculate if this target can be killed with coordinated fire
+					int iCombinedDamage = iDamage;
+					bool bGarrisonCanReachTarget = (bGarrisonCanAttack && iRing <= iGarrisonRange);
 
-					// it's good to damage city bombard units
-					if (pTarget->getUnitInfo().GetDefaultUnitAIType() == UNITAI_CITY_BOMBARD)
-						iBonus += 10;
+					// Estimate garrison damage if it can attack this target
+					if (bGarrisonCanReachTarget && pGarrison->canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+					{
+						int iUnused = 0;
+						int iGarrisonDamage = pGarrison->GetRangeCombatDamage(pTarget, NULL, 0, iUnused, false);
+						iCombinedDamage += iGarrisonDamage;
+					}
+
+					// Check if naval ranged can contribute
+					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES && iFriendlyNavalRanged > 0; iDir++)
+					{
+						CvPlot* pAdj = plotDirection(getX(), getY(), (DirectionTypes)iDir);
+						if (pAdj && pAdj->isWater())
+						{
+							CvUnit* pNaval = pAdj->getBestDefender(getOwner());
+							if (pNaval && pNaval->getDomainType() == DOMAIN_SEA && pNaval->IsCanAttackRanged() && pNaval->canRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY()))
+							{
+								int iUnused = 0;
+								int iNavalDamage = pNaval->GetRangeCombatDamage(pTarget, NULL, 0, iUnused, false);
+								iCombinedDamage += iNavalDamage;
+							}
+						}
+					}
+
+					// THREAT ASSESSMENT: Determine if this unit can potentially attack our city
+					UnitAITypes eUnitAI = pTarget->AI_getUnitAIType();
+					bool bIsNaval = (pTarget->getDomainType() == DOMAIN_SEA);
+					bool bCanReachCity = false;
+					bool bMovedThisTurn = (pTarget->getLastMoveTurn() == GC.getGame().getGameTurn());
+					if (pTarget->IsCanAttackRanged() || eUnitAI == UNITAI_CITY_BOMBARD)
+						bCanReachCity = (iRing <= pTarget->GetRange() + pTarget->baseMoves(false));
+					else
+						bCanReachCity = (iRing <= 1 + pTarget->baseMoves(false));
+
+					int iTargetHP = pTarget->GetCurrHitPoints();
+					int iCityHP = GetMaxHitPoints() - getDamage();
+					int iCityHPPercent = (iCityHP * 100) / GetMaxHitPoints();
+
+					// RETREAT DETECTION via Extended Memory System (Phase 3)
+					bool bRetreating = false;
+					bool bConfirmedAttacking = false;
+					const CvUnitSightingManager& sightMgr = kOwner.GetUnitSightingManager();
+					const UnitSighting* pSighting = sightMgr.GetSighting(pTarget->getOwner(), pTarget->GetID());
+					if (pSighting && !pSighting->IsExpired(GC.getGame().getGameTurn()))
+					{
+						UnitPredictedIntent eIntent = sightMgr.InferUnitIntentNearCity(pSighting, getX(), getY(), GC.getGame().getGameTurn(), bMovedThisTurn);
+						bRetreating = (eIntent == UNIT_INTENT_RETREAT);
+						bConfirmedAttacking = (eIntent == UNIT_INTENT_ATTACK_CITY);
+					}
+					else
+					{
+						bRetreating = (bMovedThisTurn && iTargetHP <= pTarget->GetMaxHitPoints() / 2);
+					}
+
+					if (iDamage >= iTargetHP)
+					{
+						if (bCanReachCity || iCityHPPercent > 50)
+							iScore += 200;
+						else
+							iScore += 80;
+					}
+					else if (iCombinedDamage >= iTargetHP && iDamage >= iTargetHP / 2)
+					{
+						if (bCanReachCity || iCityHPPercent > 50)
+							iScore += 150;
+						else
+							iScore += 60;
+					}
+					else if (iDamage >= iTargetHP * 2 / 3)
+					{
+						iScore += 50;
+					}
+					else if (iCombinedDamage >= iTargetHP * 2 / 3)
+					{
+						iScore += 30;
+					}
+
+					// THREAT TO CITY TYPE ASSESSMENT
+					if (eUnitAI == UNITAI_CITY_BOMBARD)
+					{
+						iScore += 100;
+						if (bCanReachCity)
+							iScore += 40;
+					}
+					else if (eUnitAI == UNITAI_RANGED || pTarget->IsCanAttackRanged())
+					{
+						if (bIsNaval)
+						{
+							iScore += 50;
+							if (bCanReachCity)
+								iScore += 10;
+						}
+						else
+						{
+							iScore += 75;
+							if (bCanReachCity)
+								iScore += 20;
+						}
+					}
+					else if (eUnitAI == UNITAI_ATTACK_AIR || eUnitAI == UNITAI_MISSILE_AIR)
+					{
+						iScore += 60;
+					}
+					else if (iRing == 1 && iTargetHP < pTarget->GetMaxHitPoints() / 2)
+					{
+						if (bIsNaval)
+						{
+							if (iCityHPPercent <= 50)
+								iScore += 90;
+							else
+								iScore += 30;
+						}
+						else
+						{
+							iScore += 90;
+						}
+					}
+
+					// Strongly deprioritize melee while ranged/siege threats are available,
+					// unless an adjacent melee can actually one-shot capture the city now.
+					if (bHasSiegeOrRangedThreat && eUnitAI != UNITAI_CITY_BOMBARD && !pTarget->IsCanAttackRanged())
+					{
+						bool bImmediateCaptureThreat = false;
+						if (iRing == 1 && pTarget->IsCanAttackWithMove() && pTarget->canMoveOrAttackInto(*plot()))
+						{
+							int iAttackerDamage = 0;
+							int iGarrisonDamage = 0;
+							int iProjectedCityDamage = TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(this, pTarget, pTargetPlot, iAttackerDamage, iGarrisonDamage, true, 0, 0, 0, true);
+							bImmediateCaptureThreat = (iProjectedCityDamage >= iCityHP);
+						}
+						if (!bImmediateCaptureThreat)
+							iScore -= bHasSiegeThreat ? 180 : 140;
+					}
+
+					if (!pTarget->isEmbarked() && !bCanReachCity && iDamage < iTargetHP)
+					{
+						iScore -= 30;
+						if (iTargetHP < pTarget->GetMaxHitPoints() / 2)
+							iScore -= 20;
+					}
+
+					if (bRetreating && iCityHPPercent <= 50 && eUnitAI != UNITAI_CITY_BOMBARD)
+					{
+						int iRetreatPenalty = 60;
+						if (!bCanReachCity)
+							iRetreatPenalty += 20;
+						iScore -= iRetreatPenalty;
+					}
+					else if (bConfirmedAttacking && bCanReachCity && iCityHPPercent <= 50)
+					{
+						iScore += 15;
+					}
+
+					// NAVAL MELEE CAPTURE THREAT - for coastal cities at critical HP
+					if (isCoastal() && pTarget->getDomainType() == DOMAIN_SEA && !pTarget->IsCanAttackRanged())
+					{
+						int iNavalMeleeBonus = 0;
+
+						if (iCityHPPercent <= 25)
+						{
+							iNavalMeleeBonus = 100;
+
+							if (iRing == 1)
+								iNavalMeleeBonus += 80;
+							else if (iRing == 2)
+								iNavalMeleeBonus += 40;
+						}
+						else if (iCityHPPercent <= 50 && iRing == 1)
+						{
+							iNavalMeleeBonus = 80;
+						}
+						else
+						{
+							iNavalMeleeBonus = 20;
+						}
+
+						if (iDamage >= iTargetHP)
+							iNavalMeleeBonus += 25;
+
+						iScore += iNavalMeleeBonus;
+					}
+
+					// Blockade breaker bonus - prioritize naval units that are blockading us
+					if (GetCityCitizens()->AnyPlotBlockaded() && pTarget->getDomainType() == DOMAIN_SEA)
+					{
+						if (pTargetPlot->isBlockaded(getOwner()))
+						{
+							iScore += 50;
+
+							if (iDamage >= iTargetHP)
+								iScore += 25;
+						}
+					}
+
+					// ESCORT PROTECTION CHECK - bonus for killing naval units protecting embarked units
+					if (pTarget->getDomainType() == DOMAIN_SEA && !pTarget->isEmbarked())
+					{
+						bool bProtectingEmbarked = false;
+						int iEmbarkedOnPlot = 0;
+						for (int iUnit = 0; iUnit < pTargetPlot->getNumUnits(); iUnit++)
+						{
+							CvUnit* pOtherUnit = pTargetPlot->getUnitByIndex(iUnit);
+							if (pOtherUnit && pOtherUnit != pTarget && pOtherUnit->isEmbarked() && GET_TEAM(pOtherUnit->getTeam()).isAtWar(getTeam()))
+							{
+								bProtectingEmbarked = true;
+								iEmbarkedOnPlot++;
+							}
+						}
+
+						if (bProtectingEmbarked && iDamage >= iTargetHP)
+						{
+							iScore += 50 + (iEmbarkedOnPlot * 20);
+
+							if (iRing == 1)
+								iScore += 40;
+						}
+					}
+
+					// EMBARKED UNIT PRIORITY - embarked units are extremely vulnerable!
+					if (pTarget->isEmbarked())
+					{
+						int iEmbarkedBonus = 60;
+
+						if (iDamage >= iTargetHP)
+							iEmbarkedBonus += 80;
+						else if (iDamage >= iTargetHP / 2)
+							iEmbarkedBonus += 40;
+
+						if (iRing == 1)
+						{
+							iEmbarkedBonus += 50;
+
+							if (iCityHPPercent <= 25 && !pTarget->IsCanAttackRanged())
+								iEmbarkedBonus += 60;
+						}
+						else if (iRing == 2)
+						{
+							iEmbarkedBonus += 20;
+						}
+
+						if (eUnitAI == UNITAI_CITY_BOMBARD)
+							iEmbarkedBonus += 40;
+
+						if (bRetreating && iCityHPPercent <= 50 && eUnitAI != UNITAI_CITY_BOMBARD)
+							iEmbarkedBonus = max(0, iEmbarkedBonus - 80);
+
+						iScore += iEmbarkedBonus;
+					}
 
 					// It's generally not useful to bombard civilians
-					else if (pTarget->IsCivilianUnit())
+					if (pTarget->IsCivilianUnit())
 					{
 						if (pTarget->IsGreatGeneral() || pTarget->IsGreatAdmiral())
 						{
 							// Killing great generals and admirals is good though
-							if (iDamage >= pTarget->GetCurrHitPoints())
-								iBonus = 10;
+							if (iDamage >= iTargetHP)
+								iScore += 50;
 							else
-								iDamage = 2;
+								iScore = min(iScore, 2);
 						}
 						else
-							iDamage = 1;
+						{
+							iScore = min(iScore, 1);
+						}
 					}
-					if (iDamage + iBonus > iBestScore)
+
+					// Small bonus for wounded units we can't quite kill - finish them off later
+					if (iTargetHP < pTarget->GetMaxHitPoints() && iDamage < iTargetHP && !pTarget->IsCivilianUnit())
 					{
-						iBestScore = iDamage + iBonus;
+						iScore += 25;
+					}
+
+					if (iScore > iBestScore)
+					{
+						iBestScore = iScore;
 						pBestTarget = pTarget;
 					}
 				}

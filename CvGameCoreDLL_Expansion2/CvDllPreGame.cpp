@@ -572,7 +572,7 @@ void CvDllPreGame::setAdminPassword(const CvString& p)
 	CvPreGame::setAdminPassword(p);
 }
 //------------------------------------------------------------------------------
-void CvDllPreGame::setAdvancedStartPoints(int a)
+void CvDllPreGame::setAdvancedStartPoints(int /*a*/)
 {
 	// Disabled
 }
@@ -672,7 +672,7 @@ void CvDllPreGame::setDLCAllowed(const GUID& kDLCID, bool bState)
 	CvPreGame::setDLCAllowed(kDLCID, bState);
 }
 //------------------------------------------------------------------------------
-void CvDllPreGame::setEarthMap(bool bIsEarthMap)
+void CvDllPreGame::setEarthMap(bool /*bIsEarthMap*/)
 {
 	//This function is no longer used, it only exists for interface compatibility.
 }

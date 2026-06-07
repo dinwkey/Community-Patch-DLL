@@ -16,12 +16,14 @@
 #include "CvUnit.h"
 #include "CvArmyAI.h"
 #include "LinkedList.h"
+#include <set>
 #include "CvPreGame.h"
 #include "CvAchievementUnlocker.h"
 #include "CvUnitCycler.h"
 #include "TContainer.h"
 #include "CvMinorCivAI.h"
 #include "CvSerialize.h"
+#include "CvUnitSightingManager.h"
 
 class CvPlayerPolicies;
 class CvEconomicAI;
@@ -63,6 +65,7 @@ typedef std::list<CvPopupInfo*> CvPopupQueue;
 typedef std::vector< std::pair<UnitCombatTypes, PromotionTypes> > UnitCombatPromotionArray;
 typedef std::vector< std::pair<UnitClassTypes, PromotionTypes> > UnitClassPromotionArray;
 typedef std::vector< std::pair<CivilizationTypes, LeaderHeadTypes> > CivLeaderArray;
+typedef std::set<std::pair<PlayerTypes,int>> UnitSet;  //also defined in CvDangerPlots.h
 
 const size_t INSTANT_YIELD_HISTORY_LENGTH = 30u;
 
@@ -199,6 +202,8 @@ public:
 	int GetNumUnitsInProduction(DomainTypes eDomain, bool bMilitaryOnly);
 	void UpdateDangerPlots();
 	void SetDangerPlotsDirty();
+	CvUnitSightingManager& GetUnitSightingManager() { return m_UnitSightingManager; }
+	const CvUnitSightingManager& GetUnitSightingManager() const { return m_UnitSightingManager; }
 
 	bool isHuman(IsHumanReason eIsHumanReason = OTHER_ISHUMAN_REASON) const;
 	bool isObserver() const;
@@ -2064,6 +2069,7 @@ public:
 	int getNumResourceUsed(ResourceTypes eIndex) const;
 	void changeNumResourceUsed(ResourceTypes eIndex, int iChange);
 	int getNumResourceFromBuildings(ResourceTypes eIndex) const;
+	int getNumResourceFromEvents(ResourceTypes eIndex) const;
 	int getNumResourceTotal(ResourceTypes eIndex, bool bIncludeImport = true) const;
 	int getNumResourcesFromOther(ResourceTypes eIndex) const;
 	void changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bFromBuilding = false, bool bCheckForMonopoly = true, bool bFromEvent = false);
@@ -2492,6 +2498,7 @@ public:
 	int GetPlotDanger(const CvCity* pCity, const CvUnit* pPretendGarrison = NULL, const SUnitIDValueContainer& unitDamageDealt = SUnitIDValueContainer());
 	int GetPlotDanger(const CvPlot& Plot, bool bFixedDamageOnly);
 	bool IsVanishedUnit(const IDInfo& id) const;
+	const UnitSet& GetVanishedUnits() const;
 	std::vector<CvUnit*> GetPossibleAttackers(const CvPlot& Plot, TeamTypes eTeamForVisibilityCheck);
 
 	bool IsKnownAttacker(const CvUnit* pAttacker);
@@ -3543,6 +3550,8 @@ protected:
 	std::vector<int> m_paiResourcesSiphoned;
 	std::vector<int> m_paiHighestResourceQuantity;
 	std::vector<byte> m_aiNumResourceFromGP;
+	std::vector<int> m_paiNumResourceTotalCached;
+	std::vector<int> m_paiNumResourceTotalCachedNoImport;
 	std::vector<int> m_paiImprovementCount;
 	std::vector<int> m_paiImprovementBuiltCount;
 	std::vector<int> m_paiTotalImprovementsBuilt;
@@ -3647,6 +3656,7 @@ protected:
 
 	// Danger plots!
 	CvDangerPlots* m_pDangerPlots;
+	CvUnitSightingManager m_UnitSightingManager;
 	// to track whether somebody stole our plot
 	int m_iPreviousBestSettlePlot;
 

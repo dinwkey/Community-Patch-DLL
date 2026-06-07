@@ -70,6 +70,107 @@ bool isEmpty(const char* szString)
 	return szString == NULL || szString[0] == '\0';
 }
 
+namespace
+{
+int CountActiveTileResourcesForPlayer(const CvPlayer& kPlayer, ResourceTypes eResource)
+{
+	int iCount = 0;
+
+	for (int iPlot = 0; iPlot < GC.getMap().numPlots(); ++iPlot)
+	{
+		CvPlot* pLoopPlot = GC.getMap().plotByIndexUnchecked(iPlot);
+		if (!pLoopPlot || pLoopPlot->getOwner() != kPlayer.GetID())
+			continue;
+
+		if (!pLoopPlot->IsResourceLinkedCityActive())
+			continue;
+
+		if (pLoopPlot->getResourceType() != eResource)
+			continue;
+
+		iCount += pLoopPlot->getNumResourceForPlayer(kPlayer.GetID(), /*bExtraResources*/ false, /*bIgnoreTechPrereq*/ true);
+	}
+
+	return iCount;
+}
+
+int CountBuildingResourcesForPlayer(const CvPlayer& kPlayer, ResourceTypes eResource)
+{
+	int iCount = 0;
+
+	for (int iLoop = 0; iLoop < GC.getMap().numPlots(); ++iLoop)
+	{
+		CvPlot* pLoopPlot = GC.getMap().plotByIndexUnchecked(iLoop);
+		if (!pLoopPlot || pLoopPlot->getOwner() != kPlayer.GetID())
+			continue;
+
+		if (pLoopPlot->getResourceType() != eResource)
+			continue;
+
+		const CvCity* pOwningCity = pLoopPlot->getOwningCity();
+		if (!pOwningCity)
+			continue;
+
+		const int iExtraLuxuryCount = pOwningCity->GetExtraResources(eResource);
+		if (iExtraLuxuryCount <= 0)
+			continue;
+
+		if (!pLoopPlot->IsResourceImprovedForOwner())
+			continue;
+
+		iCount += iExtraLuxuryCount;
+	}
+
+	for (int iLoop = 0; iLoop < GC.getNumBuildingInfos(); ++iLoop)
+	{
+		const BuildingTypes eBuilding = static_cast<BuildingTypes>(iLoop);
+		CvBuildingEntry* pBuildingInfo = GC.getBuildingInfo(eBuilding);
+		if (!pBuildingInfo)
+			continue;
+
+		const int iResourceQuantity = pBuildingInfo->GetResourceQuantity(eResource);
+		if (iResourceQuantity == 0)
+			continue;
+
+		int iCityLoop = 0;
+		for (const CvCity* pLoopCity = kPlayer.firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = kPlayer.nextCity(&iCityLoop))
+		{
+			CvCityBuildings* pCityBuildings = pLoopCity->GetCityBuildings();
+			if (!pCityBuildings)
+				continue;
+
+			const int iNumBuilding = pCityBuildings->GetNumBuilding(eBuilding);
+			if (iNumBuilding > 0)
+			{
+				iCount += iResourceQuantity * iNumBuilding;
+			}
+		}
+	}
+
+	CvLeague* pLeague = GC.getGame().GetGameLeagues()->GetActiveLeague();
+	if (pLeague && pLeague->IsMember(kPlayer.GetID()))
+	{
+		ActiveResolutionList vActiveResolutions = pLeague->GetActiveResolutions();
+		for (ActiveResolutionList::iterator it = vActiveResolutions.begin(); it != vActiveResolutions.end(); ++it)
+		{
+			if (it->GetEffects()->iResourceQuantity == 0)
+				continue;
+
+			if (it->GetProposerDecision()->GetType() != RESOLUTION_DECISION_ANY_LUXURY_RESOURCE)
+				continue;
+
+			const ResourceTypes eTargetLuxury = static_cast<ResourceTypes>(it->GetProposerDecision()->GetDecision());
+			if (eTargetLuxury == eResource)
+			{
+				iCount += it->GetEffects()->iResourceQuantity;
+			}
+		}
+	}
+
+	return iCount;
+}
+}
+
 // Public Functions...
 namespace FSerialization
 {
@@ -1049,6 +1150,8 @@ void CvPlayer::uninit()
 	m_paiResourcesSiphoned.clear();
 	m_paiHighestResourceQuantity.clear();
 	m_aiNumResourceFromGP.clear();
+	m_paiNumResourceTotalCached.clear();
+	m_paiNumResourceTotalCachedNoImport.clear();
 	m_paiImprovementCount.clear();
 	m_paiImprovementBuiltCount.clear();
 	m_paiTotalImprovementsBuilt.clear();
@@ -2071,6 +2174,7 @@ void CvPlayer::reset(PlayerTypes eID, bool bConstructorCall)
 		m_pWonderProductionAI->Init(GC.GetGameBuildings(), this, false);
 		m_pGrandStrategyAI->Init(GC.GetGameAIGrandStrategies(), this);
 		m_pDiplomacyAI->Init(this);
+		m_UnitSightingManager.Init(this);
 		m_pReligions->Init(this);
 		m_pReligionAI->Init(GC.GetGameBeliefs(), this);
 		m_pCorporations->Init(this);
@@ -2582,6 +2686,61 @@ void CvPlayer::initFreeUnits()
 
 void CvPlayer::addFreeUnitAI(UnitAITypes eUnitAI, bool bGameStart, int iCount, bool bCompleteKills)
 {
+	// City-States: ensure at least one ranged defender if they have none
+	if (isMinorCiv() && eUnitAI == UNITAI_DEFENSE && iCount > 0)
+	{
+		bool bHasRanged = false;
+		int iLoop = 0;
+		for (CvUnit* pLoopUnit = firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = nextUnit(&iLoop))
+		{
+			if (!pLoopUnit->IsCivilianUnit() && pLoopUnit->IsCanAttackRanged())
+			{
+				bHasRanged = true;
+				break;
+			}
+		}
+
+		if (!bHasRanged)
+		{
+			UnitTypes eBestRangedUnit = NO_UNIT;
+			int iBestRangedValue = 0;
+
+			for (int iI = 0; iI < GC.getNumUnitClassInfos(); iI++)
+			{
+				const UnitClassTypes eUnitClass = static_cast<UnitClassTypes>(iI);
+				UnitTypes eLoopUnit = GetSpecificUnitType(eUnitClass);
+				if (eLoopUnit == NO_UNIT)
+					continue;
+
+				CvUnitEntry* pkUnitInfo = GC.getUnitInfo(eLoopUnit);
+				if (!pkUnitInfo)
+					continue;
+
+				if (!pkUnitInfo->GetUnitAIType(UNITAI_RANGED) && pkUnitInfo->GetDefaultUnitAIType() != UNITAI_RANGED)
+					continue;
+
+				if (!canTrainUnit(eLoopUnit))
+					continue;
+
+				// Prefer higher-cost (stronger) ranged unit
+				int iValue = pkUnitInfo->GetProductionCost();
+				if (iValue > iBestRangedValue)
+				{
+					eBestRangedUnit = eLoopUnit;
+					iBestRangedValue = iValue;
+				}
+			}
+
+			if (eBestRangedUnit != NO_UNIT)
+			{
+				addFreeUnit(eBestRangedUnit, bGameStart, UNITAI_RANGED, bCompleteKills);
+				iCount--;
+				if (iCount <= 0)
+					return;
+			}
+		}
+	}
+
 	UnitTypes eBestUnit = NO_UNIT;
 	int iBestUnitValue = 0;
 
@@ -3920,17 +4079,7 @@ CvCity* CvPlayer::acquireCity(CvCity* pCity, bool bConquest, bool bGift, bool bO
 						vcGreatWorkData.push_back(kData);
 
 						CvPlayer &kOldOwner = GET_PLAYER(eOldOwner);
-						if (kOldOwner.GetCulture()->GetSwappableWritingIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableWritingIndex(-1);
-
-						if (kOldOwner.GetCulture()->GetSwappableArtifactIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableArtifactIndex(-1);
-
-						if (kOldOwner.GetCulture()->GetSwappableArtIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableArtIndex(-1);
-
-						if (kOldOwner.GetCulture()->GetSwappableMusicIndex() == iGreatWork)
-							kOldOwner.GetCulture()->SetSwappableMusicIndex(-1);
+						kOldOwner.GetCulture()->ClearSwappableGreatWorkIfMatches(iGreatWork);
 					}
 				}
 			}
@@ -4621,6 +4770,13 @@ CvCity* CvPlayer::acquireCity(CvCity* pCity, bool bConquest, bool bGift, bool bO
 		}
 	}
 
+	// Recompute military might immediately so that AI strength estimates are not stale
+	updateMightStatistics();
+
+	// Also invalidate the old owner's cache — they lost a city (and possibly garrison units)
+	if (eOldOwner != NO_PLAYER)
+		GET_PLAYER(eOldOwner).ResetMightCalcTurn();
+
 	return pNewCity;
 }
 
@@ -4988,6 +5144,10 @@ void CvPlayer::DoRevolutionPlayer(PlayerTypes ePlayer, int iOldCityID)
 void CvPlayer::UpdateCityThreatCriteria()
 {
 	CvTacticalAnalysisMap* pTactMap = GetTacticalAI()->GetTacticalAnalysisMap();
+	if (pTactMap)
+	{
+		pTactMap->RefreshIfOutdated();
+	}
 
 	int iLoopCity = 0;
 	for(CvCity* pLoopCity = firstCity(&iLoopCity); pLoopCity != NULL; pLoopCity = nextCity(&iLoopCity))
@@ -4997,8 +5157,8 @@ void CvPlayer::UpdateCityThreatCriteria()
 
 		if (pTactMap)
 		{
-			CvTacticalDominanceZone* pLandZone = pTactMap->GetZoneByCity(pLoopCity,false);
-			CvTacticalDominanceZone* pWaterZone = pTactMap->GetZoneByCity(pLoopCity,true);
+			CvTacticalDominanceZone* pLandZone = pTactMap->GetZoneByCityNoRefresh(pLoopCity,false);
+			CvTacticalDominanceZone* pWaterZone = pTactMap->GetZoneByCityNoRefresh(pLoopCity,true);
 
 			//todo: scale dominance contribution by exposure score?
 			if (pLandZone)
@@ -5055,8 +5215,121 @@ void CvPlayer::UpdateCityThreatCriteria()
 			}
 		}
 
-		//note: we don't consider a cities size or economic importance here
-		//after all, small border cities are especially vulnerable
+		// Strategic Geography: use layer classification + chokepoint/terrain data when available.
+		// Falls back to simple heuristics if the strategic map hasn't been computed yet.
+		CvStrategicGeographyMap* pStratMap = GetMilitaryAI()->GetStrategicGeographyMap();
+		if (pStratMap && pStratMap->HasAnyCityData())
+		{
+			// Use the geography-derived priority modifier (layer + chokepoints + terrain defense)
+			iThreatValue += pStratMap->GetDefensePriorityModifier(pLoopCity->GetID());
+
+			// Original major capitals we captured are also strategically valuable
+			if (!pLoopCity->isCapital() && pLoopCity->IsOriginalMajorCapital())
+				iThreatValue += 75;
+		}
+		else
+		{
+			// Fallback: simple capital/core heuristic (pre-strategic-map)
+			if (pLoopCity->isCapital())
+				iThreatValue += 150;
+			else if (pLoopCity->IsOriginalMajorCapital())
+				iThreatValue += 75;
+
+			CvCity* pCapitalFallback = getCapitalCity();
+			if (pCapitalFallback && pLoopCity != pCapitalFallback)
+			{
+				int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapitalFallback->getX(), pCapitalFallback->getY());
+				if (iDistToCapital <= 6)
+					iThreatValue += 40;
+				else if (iDistToCapital <= 10)
+					iThreatValue += 15;
+			}
+		}
+
+		// Large / high-value cities get a small bonus - losing them is more costly
+		int iPop = pLoopCity->getPopulation();
+		if (iPop >= 15)
+			iThreatValue += 30;
+		else if (iPop >= 10)
+			iThreatValue += 15;
+		else if (iPop >= 6)
+			iThreatValue += 5;
+
+		// City triage in multi-front wars: deprioritize overextended cities that are
+		// surrounded by enemy cities and far from our core. These cities are expendable
+		// if we need to concentrate defense on more important positions.
+		int iNumWars = CountNumDangerousMajorsAtWarWith(true, false);
+		CvCity* pCapital = getCapitalCity();
+		if (iNumWars >= 2 && pCapital && pLoopCity != pCapital)
+		{
+			int iDistToCapital = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pCapital->getX(), pCapital->getY());
+
+			// Count nearby enemy cities vs nearby friendly cities
+			int iNearbyEnemyCities = 0;
+			int iNearbyFriendlyCities = 0;
+			int iCityLoop = 0;
+			for (CvCity* pOtherCity = firstCity(&iCityLoop); pOtherCity != NULL; pOtherCity = nextCity(&iCityLoop))
+			{
+				if (pOtherCity == pLoopCity) continue;
+				int iDist = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pOtherCity->getX(), pOtherCity->getY());
+				if (iDist <= 8)
+					iNearbyFriendlyCities++;
+			}
+
+			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+			{
+				PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
+				if (eEnemy == GetID() || !IsAtWarWith(eEnemy))
+					continue;
+				int iEnemyCityLoop = 0;
+				for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iEnemyCityLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iEnemyCityLoop))
+				{
+					int iDist = plotDistance(pLoopCity->getX(), pLoopCity->getY(), pEnemyCity->getX(), pEnemyCity->getY());
+					if (iDist <= 8)
+						iNearbyEnemyCities++;
+				}
+			}
+
+			// If this city is surrounded by enemy cities (3+) and far from capital,
+			// reduce its defense priority - it's likely indefensible and resources
+			// are better spent defending core territory
+			if (iNearbyEnemyCities >= 3 && iDistToCapital > 10 && iNearbyFriendlyCities <= 1)
+			{
+				iThreatValue -= 80; // significant penalty for overextended isolated city
+			}
+			else if (iNearbyEnemyCities >= 2 && iDistToCapital > 15 && iNearbyFriendlyCities == 0)
+			{
+				iThreatValue -= 50; // moderate penalty for distant isolated city
+			}
+
+			// Phase 2: Salient-aware adjustments from strategic geography map
+			CvStrategicGeographyMap* pStratGeoMap = GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pStratGeoMap)
+			{
+				if (pStratGeoMap->IsExpendableSalient(pLoopCity->GetID()))
+				{
+					// Expendable salient: compound the triage penalty — actively shed this city
+					iThreatValue -= 30;
+				}
+				else if (pStratGeoMap->IsDefensibleSalient(pLoopCity->GetID()))
+				{
+					// Defensible salient: partially offset the triage penalty — hedgehog is viable
+					iThreatValue += 20;
+				}
+
+				// Phase 4: Floodgate cities — losing them exposes multiple other cities.
+				// Override triage penalties: floodgate cities are critical even if surrounded.
+				if (pStratGeoMap->IsCityFloodgate(pLoopCity->GetID()))
+				{
+					iThreatValue += 40;
+				}
+			}
+		}
+
+		// Ensure threat value doesn't go negative
+		if (iThreatValue < 0)
+			iThreatValue = 0;
+
 		pLoopCity->setThreatValue(iThreatValue);
 	}
 }
@@ -8797,7 +9070,9 @@ void CvPlayer::DoLiberatePlayer(PlayerTypes ePlayer, int iOldCityID, bool bForce
 				pDiploAI->SetSpyPromiseState(*it, NO_PROMISE_STATE);
 				pDiploAI->SetNoConvertPromiseState(*it, NO_PROMISE_STATE);
 				pDiploAI->SetNoDiggingPromiseState(*it, NO_PROMISE_STATE);
+				pDiploAI->SetNoPlunderPromiseState(*it, NO_PROMISE_STATE);
 				pDiploAI->SetBrokeCoopWarPromise(*it, false);
+				pDiploAI->SetPlayerAskedNotToPlunder(*it, false);
 
 				pDiploAI->SetOtherPlayerNumProtectedMinorsKilled(*it, 0);
 				pDiploAI->SetOtherPlayerNumProtectedMinorsAttacked(*it, 0);
@@ -9089,7 +9364,7 @@ void CvPlayer::DoLiberatePlayer(PlayerTypes ePlayer, int iOldCityID, bool bForce
 	}
 
 	vector<PlayerTypes> v = kLiberatedTeam.getPlayers();
-	GetDiplomacyAI()->DoReevaluatePlayers(v, false, !bAlive);
+	GetDiplomacyAI()->DoReevaluatePlayers(v, false, !bAlive, !bAlive);
 
 	if (MOD_EVENTS_LIBERATION)
 	{
@@ -9208,6 +9483,9 @@ CvUnit* CvPlayer::initUnit(UnitTypes eUnit, int iX, int iY, UnitAITypes eUnitAI,
 		m_bEverTrainedBuilder = true;
 	}
 
+	if (pkUnitInfo->IsMilitarySupport())
+		ResetMightCalcTurn();
+
 	m_kPlayerAchievements.AddUnit(pUnit);
 	return pUnit;
 }
@@ -9226,6 +9504,9 @@ CvUnit* CvPlayer::initUnitWithNameOffset(UnitTypes eUnit, int nameOffset, int iX
 	{
 		m_bEverTrainedBuilder = true;
 	}
+
+	if (pkUnitInfo->IsMilitarySupport())
+		ResetMightCalcTurn();
 
 	m_kPlayerAchievements.AddUnit(pUnit);
 
@@ -9252,6 +9533,9 @@ CvUnit* CvPlayer::initNamedUnit(UnitTypes eUnit, const char* strKey, int iX, int
 	{
 		m_bEverTrainedBuilder = true;
 	}
+
+	if (pkUnitInfo->IsMilitarySupport())
+		ResetMightCalcTurn();
 
 	pUnit->SetGreatWork(NO_GREAT_WORK);
 
@@ -10312,6 +10596,19 @@ void CvPlayer::doTurn()
 
 	if(isHuman(ISHUMAN_ACHIEVEMENTS) && !GC.getGame().isGameMultiPlayer())
 		checkArmySizeAchievement();
+
+	// Memory optimization: periodically trim excess capacity from resource vectors
+	// This prevents STL containers from accumulating excess capacity in long games
+	if (GC.getGame().getGameTurn() % 20 == 0)
+	{
+		// Trim resource tracking vectors if they've grown beyond 2x their current size
+		if (m_paiNumResourceUsed.capacity() > m_paiNumResourceUsed.size() * 2)
+			std::vector<int>(m_paiNumResourceUsed).swap(m_paiNumResourceUsed);
+		if (m_paiNumResourceFromTiles.capacity() > m_paiNumResourceFromTiles.size() * 2)
+			std::vector<int>(m_paiNumResourceFromTiles).swap(m_paiNumResourceFromTiles);
+		if (m_paiNumResourceUnimproved.capacity() > m_paiNumResourceUnimproved.size() * 2)
+			std::vector<int>(m_paiNumResourceUnimproved).swap(m_paiNumResourceUnimproved);
+	}
 
 	if( (bHasActiveDiploRequest || GC.GetEngineUserInterface()->isDiploActive()) && !GC.getGame().isGameMultiPlayer() && !isHuman(ISHUMAN_AI_DIPLOMACY))
 	{
@@ -18457,8 +18754,9 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 		int iGreatWorkID;
 		CvCity* pCity;
 		BuildingClassTypes eBuildingClass;
+		int iSlotIndex;
 
-		GreatWorkInfo(int id, CvCity* c, BuildingClassTypes bc) : iGreatWorkID(id), pCity(c), eBuildingClass(bc) {}
+		GreatWorkInfo(int id, CvCity* c, BuildingClassTypes bc, int iSlot) : iGreatWorkID(id), pCity(c), eBuildingClass(bc), iSlotIndex(iSlot) {}
 	};
 
 	CvWeightedVector<GreatWorkInfo> artChoices;
@@ -18498,7 +18796,7 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 						if (GetCulture()->ControlsGreatWork(iGreatWorkIndex))
 							continue;
 
-						artChoices.push_back(GreatWorkInfo(iGreatWorkIndex, pPlayerCity, eBuildingClass), iDistance);
+						artChoices.push_back(GreatWorkInfo(iGreatWorkIndex, pPlayerCity, eBuildingClass, iI), iDistance);
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvGameCulture* pCulture = GC.getGame().GetGameCulture();
@@ -18537,10 +18835,15 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 		const int iGWIndex = greatWork.iGreatWorkID;
 		const CvCity* pGWCity = greatWork.pCity;
 		const BuildingClassTypes eBuildingClass = greatWork.eBuildingClass;
+		const int iOldSlotIndex = greatWork.iSlotIndex;
+
+		if (pGWCity == NULL)
+			continue;
 
 		BuildingTypes eBuilding = pGWCity->GetBuildingTypeFromClass(eBuildingClass);
 		CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);
-		ASSERT(pkBuildingInfo);
+		if (!pkBuildingInfo)
+			continue;
 
 		// Create the GW at the best slot
 		BuildingClassTypes eNewBuildingClass = NO_BUILDINGCLASS;
@@ -18552,8 +18855,10 @@ void CvPlayer::DoFreeGreatWorkOnConquest(CvCity* pCity)
 			continue;
 
 		// Now perform the steal
-		pGWCity->GetCityBuildings()->SetBuildingGreatWork(eBuildingClass, iI, -1);
+		kPlayer.GetCulture()->ClearSwappableGreatWorkIfMatches(iGWIndex);
+		pGWCity->GetCityBuildings()->SetBuildingGreatWork(eBuildingClass, iOldSlotIndex, -1);
 		pNewGWCity->GetCityBuildings()->SetBuildingGreatWork(eNewBuildingClass, iNewSlotIndex, iGWIndex);
+		iStuffStolen++;
 		iPlundered++;
 		iNotificationArtwork = iGWIndex;
 		if (GC.getLogging() && GC.getAILogging())
@@ -21431,6 +21736,14 @@ CvCity *CvPlayer::GetMostUnhappyCity()
 			if (pLoopCity->IsPuppet())
 				iUnhappiness *= 2;
 
+			// 10-turn grace period for recently conquered or settled cities
+			int iTurnsSinceAcquired = GC.getGame().getGameTurn() - pLoopCity->getGameTurnAcquired();
+			if (iTurnsSinceAcquired < 10)
+			{
+				// Cities are immune to flipping for 10 turns
+				continue;
+			}
+
 			CvCity* pOwnCapital = getCapitalCity();
 			if (pOwnCapital)
 			{
@@ -21454,6 +21767,50 @@ CvCity *CvPlayer::GetMostUnhappyCity()
 			{
 				iHighestUnhappiness = iUnhappiness;
 				pRtnValue = pLoopCity;
+			}
+
+			// Graduated flip risk notifications
+			if (isHuman() && iUnhappiness > 0)
+			{
+				int iFlipRiskPercent = min(100, (iUnhappiness * 100) / max(1, iHighestUnhappiness));
+
+				// Check if we should send a notification (at 75%, 90%, 100% thresholds)
+				if (iFlipRiskPercent >= 100)
+				{
+					CvNotifications* pNotifications = GetNotifications();
+					if (pNotifications)
+					{
+						Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_CITY_FLIP_CRITICAL");
+						strMessage << pLoopCity->getNameKey();
+						Localization::String strSummary = Localization::Lookup("TXT_KEY_NOTIFICATION_SUMMARY_CITY_FLIP_CRITICAL");
+						strSummary << pLoopCity->getNameKey();
+						pNotifications->Add(NOTIFICATION_CITY_REVOLT_POSSIBLE, strMessage.toUTF8(), strSummary.toUTF8(), pLoopCity->getX(), pLoopCity->getY(), pLoopCity->GetID());
+					}
+				}
+				else if (iFlipRiskPercent >= 90)
+				{
+					CvNotifications* pNotifications = GetNotifications();
+					if (pNotifications)
+					{
+						Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_CITY_FLIP_HIGH");
+						strMessage << pLoopCity->getNameKey();
+						Localization::String strSummary = Localization::Lookup("TXT_KEY_NOTIFICATION_SUMMARY_CITY_FLIP_HIGH");
+						strSummary << pLoopCity->getNameKey();
+						pNotifications->Add(NOTIFICATION_CITY_REVOLT_POSSIBLE, strMessage.toUTF8(), strSummary.toUTF8(), pLoopCity->getX(), pLoopCity->getY(), pLoopCity->GetID());
+					}
+				}
+				else if (iFlipRiskPercent >= 75)
+				{
+					CvNotifications* pNotifications = GetNotifications();
+					if (pNotifications)
+					{
+						Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_CITY_FLIP_WARNING");
+						strMessage << pLoopCity->getNameKey();
+						Localization::String strSummary = Localization::Lookup("TXT_KEY_NOTIFICATION_SUMMARY_CITY_FLIP_WARNING");
+						strSummary << pLoopCity->getNameKey();
+						pNotifications->Add(NOTIFICATION_CITY_REVOLT_POSSIBLE, strMessage.toUTF8(), strSummary.toUTF8(), pLoopCity->getX(), pLoopCity->getY(), pLoopCity->GetID());
+					}
+				}
 			}
 		}
 	}
@@ -23446,7 +23803,6 @@ void CvPlayer::ChangeHappinessFromAnnexedMinor(PlayerTypes eMinor, int iSign, Er
 		
 		int iBonus = 0;
 
-		static EraTypes eCurrentEra = GET_TEAM(getTeam()).GetCurrentEra();
 		static EraTypes eIndustrial = (EraTypes)GC.getInfoTypeForString("ERA_INDUSTRIAL", true);
 		static EraTypes eMedieval = (EraTypes)GC.getInfoTypeForString("ERA_MEDIEVAL", true);
 
@@ -32845,15 +33201,36 @@ void CvPlayer::setCombatExperienceTimes100(int iExperienceTimes100, CvUnit* pFro
 											{
 												if (pFromUnit && !MOD_LOCAL_GENERALS_NEAREST_CITY)
 												{
-													CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pFromUnit->plot()->getX(), pFromUnit->plot()->getY(), pFromUnit->getName().GetCString());
-													createGreatGeneral(eUnit, pFromUnit->plot()->getX(), pFromUnit->plot()->getY(), false);
+													CvPlot* pFromPlot = pFromUnit->plot();
+													if (pFromPlot)
+													{
+														CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pFromPlot->getX(), pFromPlot->getY(), pFromUnit->getName().GetCString());
+														createGreatGeneral(eUnit, pFromPlot->getX(), pFromPlot->getY(), false);
+													}
+													else if (pBestCity)
+													{
+														pBestCity->createGreatGeneral(eUnit, false);
+													}
 												}
 												else if (pFromUnit && MOD_LOCAL_GENERALS_NEAREST_CITY)
 												{
-													CvCity* pNearestCity = GetClosestCityByPathLength(pFromUnit->plot());
+													CvPlot* pFromPlot = pFromUnit->plot();
+													CvCity* pNearestCity = pFromPlot ? GetClosestCityByPathLength(pFromPlot) : NULL;
 
-													CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), pFromUnit->getName().GetCString());
-													createGreatGeneral(eUnit, pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), false);
+													if (pNearestCity != NULL)
+													{
+														CUSTOMLOG("Create Great General at (%d, %d) from unit %s", pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), pFromUnit->getName().GetCString());
+														createGreatGeneral(eUnit, pNearestCity->plot()->getX(), pNearestCity->plot()->getY(), false);
+													}
+													else if (pFromPlot)
+													{
+														CUSTOMLOG("Create Great General at plot (%d, %d) from unit %s", pFromPlot->getX(), pFromPlot->getY(), pFromUnit->getName().GetCString());
+														createGreatGeneral(eUnit, pFromPlot->getX(), pFromPlot->getY(), false);
+													}
+													else if (pBestCity)
+													{
+														pBestCity->createGreatGeneral(eUnit, false);
+													}
 												}
 												else
 												{
@@ -33672,6 +34049,16 @@ void CvPlayer::setTurnActive(bool bNewValue, bool bDoTurn) // R: bDoTurn default
 					}
 				}
 				const char* szResName = GC.getResourceInfo((ResourceTypes)iJ)->GetText();
+				if (m_paiNumResourceFromTiles[iJ] != iCntImproved)
+				{
+					CUSTOMLOG("Resource counter mismatch (improved) for %s. Stored: %d, counted: %d. Auto-correcting.", szResName, m_paiNumResourceFromTiles[iJ], iCntImproved);
+					m_paiNumResourceFromTiles[iJ] = iCntImproved;
+				}
+				if (m_paiNumResourceUnimproved[iJ] != iCntUnimproved)
+				{
+					CUSTOMLOG("Resource counter mismatch (unimproved) for %s. Stored: %d, counted: %d. Auto-correcting.", szResName, m_paiNumResourceUnimproved[iJ], iCntUnimproved);
+					m_paiNumResourceUnimproved[iJ] = iCntUnimproved;
+				}
 				ASSERT(m_paiNumResourceFromTiles[iJ] == iCntImproved, "Mismatch m_paiNumResourceFromTiles for Player %d (%s), Resource %s. Stored: %d, counted: %d.", GetID(), getCivilizationShortDescription(), szResName, m_paiNumResourceFromTiles[iJ], iCntImproved);
 				ASSERT(m_paiNumResourceUnimproved[iJ] == iCntUnimproved, "Mismatch m_paiNumResourceUnimproved for Player %d (%s), Resource %s. Stored: %d, counted: %d.", GetID(), getCivilizationShortDescription(), szResName, m_paiNumResourceUnimproved[iJ], iCntUnimproved);
 			}
@@ -33780,16 +34167,12 @@ void CvPlayer::setTurnActive(bool bNewValue, bool bDoTurn) // R: bDoTurn default
 		CvMap& theMap = GC.getMap();
 		m_bTurnActive = bNewValue; // R: this is causing the AI playing twice in one turn bug
 
-		// DN: There is a strange issue with players missing their turns after loading a game, with the AI getting two turns in a row.
-		// It seems *to me* that Civ is incorrectly thinking telling us that the players have already indicated they have finished their turns
-		// A hacky solution to this is to tell Civ to cancel the player turn complete state.
-		// Otherwise they get their turn ended in the next call to updateMoves after the condition (!player.isEndTurn() && gDLL->HasReceivedTurnComplete(player.GetID()) && player.isHuman())
-		// R: the function CancelActivePlayerEndTurn() does not help with this issue, because player.isEndTurn() == False, only gDLL->HasReceivedTurnComplete(player.GetID()) seems to catch this issue, was there a wrong gDLL->sendTurnComplete() somewhere?
-		// in addition, this bug does not advance the turn count
-		// also, the players do not really miss their turns, what actually happens is that the AI plays twice in one turn
+		// DN: Saves can resume with a stale turn-complete signal still set in the EXE/network layer.
+		// If we do not clear it on the first post-load activation, updateMoves() will consume that stale flag and end the
+		// newly activated human turn immediately before any moves run, which presents as the AI taking an extra turn.
 		if(bNewValue)
 			if(kGame.isFirstActivationOfPlayersAfterLoad())
-				if(isHuman() && isAlive() && isSimultaneousTurns() && isLocalPlayer())
+				if(isHuman() && isAlive() && isLocalPlayer())
 					if(gDLL->HasReceivedTurnComplete(GetID()))
 						gDLL->sendTurnUnready();
 
@@ -33888,8 +34271,10 @@ void CvPlayer::setTurnActive(bool bNewValue, bool bDoTurn) // R: bDoTurn default
 				//no tactical AI for human, only make sure we have current postures in case we want the AI to take over (debugging)
 				if (isHuman(ISHUMAN_AI_UNITS) || /* if MP, invalidate for AI too */ kGame.isNetworkMultiPlayer()) {
 					GetTacticalAI()->GetTacticalAnalysisMap()->Invalidate();
-					GetHomelandAI()->Invalidate();
 				}
+
+				// HomelandAI uses NeedsUpdate() for both human automation and full AI players.
+				GetHomelandAI()->Invalidate();
 
 				if(kGame.isFinalInitialized())
 				{
@@ -36792,6 +37177,21 @@ void CvPlayer::DoUpdateWarDamageAndWeariness(bool bDamageOnly)
 	}
 
 	// Loop through all (known) Players
+	// First pass: compute total war value lost across all enemies for multi-war correction
+	int iTotalWarValueLost = 0;
+	int iNumActiveWars = 0;
+	for (int iPreLoop = 0; iPreLoop < MAX_CIV_PLAYERS; iPreLoop++)
+	{
+		PlayerTypes ePrePlayer = (PlayerTypes)iPreLoop;
+		if (GET_PLAYER(ePrePlayer).getTeam() == getTeam() || !GET_PLAYER(ePrePlayer).isAlive())
+			continue;
+		if (!IsAtWarWith(ePrePlayer))
+			continue;
+
+		iTotalWarValueLost += GetWarValueLost(ePrePlayer);
+		iNumActiveWars++;
+	}
+
 	for (int iPlayerLoop = 0; iPlayerLoop < MAX_CIV_PLAYERS; iPlayerLoop++)
 	{
 		PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
@@ -36816,7 +37216,38 @@ void CvPlayer::DoUpdateWarDamageAndWeariness(bool bDamageOnly)
 		{
 			if (iCurrentValue > 0)
 			{
-				iValueLostRatio = (iWarValueLost * 200) / iCurrentValue; // 2x the value so that odd values in GetWarScore() are possible
+				// Capital loss denominator floor: when high-value cities are lost (especially
+				// the capital with its 2x multiplier), iCurrentValue drops sharply, which
+				// cascades the ratio upward for ALL losses. To prevent this, use a floor
+				// for the denominator based on the per-opponent losses (not total losses
+				// across all wars, which would double-correct with the multi-war fix below).
+				// This prevents losing 2/7 cities from producing a 53% damage ratio.
+				int iEstimatedPreWarValue = iCurrentValue + (iWarValueLost * 2 / 3);
+				// The denominator floor is 60% of estimated pre-war value
+				// This means even catastrophic losses can't inflate the ratio beyond reason
+				int iDenominatorFloor = (iEstimatedPreWarValue * 60) / 100;
+				int iEffectiveDenominator = max(iCurrentValue, iDenominatorFloor);
+
+				iValueLostRatio = (iWarValueLost * 200) / iEffectiveDenominator; // 2x the value so that odd values in GetWarScore() are possible
+
+				// Multi-war cascading fix: when fighting multiple wars, the global iCurrentValue
+				// has been reduced by losses to ALL enemies, which inflates the damage ratio
+				// against each individual enemy (cascading pessimism). Correct this by estimating
+				// what iCurrentValue would be if we only counted losses to THIS enemy.
+				// Correction: add back losses to OTHER enemies to the denominator.
+				if (iNumActiveWars >= 2 && iTotalWarValueLost > iWarValueLost)
+				{
+					int iOtherLosses = iTotalWarValueLost - iWarValueLost;
+					// The corrected denominator includes value lost to other enemies
+					// (since that wasn't lost to THIS enemy, it shouldn't penalize this ratio)
+					int iCorrectedCurrentValue = iCurrentValue + (iOtherLosses / 3); // partial correction - don't fully undo the loss
+					if (iCorrectedCurrentValue > 0)
+					{
+						int iCorrectedRatio = (iWarValueLost * 200) / iCorrectedCurrentValue;
+						// Use the average of raw and corrected to avoid over-correction
+						iValueLostRatio = (iValueLostRatio + iCorrectedRatio) / 2;
+					}
+				}
 			}
 			else
 			{
@@ -37032,8 +37463,113 @@ int CvPlayer::GetWarScore(PlayerTypes ePlayer) const
 
 	int iWarDamageWeInflicted = GET_PLAYER(ePlayer).GetWarDamageValue(GetID());
 	int iWarDamageTheyInflicted = GetWarDamageValue(ePlayer);
+	int iWarScore = iWarDamageWeInflicted - iWarDamageTheyInflicted;
 
-	return range(iWarDamageWeInflicted - iWarDamageTheyInflicted, -100, 100);
+	if (iWarScore < -50)
+	{
+		int iOurCities = getNumCities();
+		int iTheirCities = GET_PLAYER(ePlayer).getNumCities();
+
+		if (iOurCities >= 3 && iTheirCities > 0)
+		{
+			StrengthTypes eMilStrength = GetDiplomacyAI()->GetRawMilitaryStrengthComparedToUs(ePlayer);
+			int iDampening = 0;
+
+			if (iOurCities >= iTheirCities)
+				iDampening += 15;
+			else if (iOurCities * 2 >= iTheirCities)
+				iDampening += 8;
+
+			if (eMilStrength <= STRENGTH_AVERAGE)
+				iDampening += 15;
+			else if (eMilStrength <= STRENGTH_STRONG)
+				iDampening += 8;
+			else if (eMilStrength <= STRENGTH_POWERFUL)
+				iDampening += 3;
+
+			const CvStrategicGeographyMap* pGeoMap = GetMilitaryAI()->GetStrategicGeographyMap();
+			if (pGeoMap)
+			{
+				int iDefensibilityScore = 0;
+				int iCityLoop = 0;
+				int iCitiesEvaluated = 0;
+				for (const CvCity* pCity = firstCity(&iCityLoop); pCity != NULL; pCity = nextCity(&iCityLoop))
+				{
+					const StrategicCityAnalysis* pAnalysis = pGeoMap->GetCityAnalysis(pCity->GetID());
+					if (!pAnalysis)
+						continue;
+
+					bool bLikelyNextFront = pCity->isCapital()
+						|| pCity->getThreatValue() >= 25
+						|| pCity->isUnderSiege()
+						|| GetMilitaryAI()->IsExposedToEnemy(const_cast<CvCity*>(pCity), ePlayer)
+						|| pAnalysis->bIsFrontLine
+						|| pAnalysis->bIsChokepointCity
+						|| pAnalysis->bIsFloodgate;
+
+					int iCityScore = 0;
+
+					if (pAnalysis->bIsChokepointCity)
+					{
+						iCityScore += 12;
+						if (pAnalysis->iApproachCorridors <= 1)
+							iCityScore += 8;
+					}
+
+					if (pAnalysis->bIsFloodgate)
+						iCityScore += 10;
+
+					if (pAnalysis->iTerrainDefenseScore >= 40)
+						iCityScore += 8;
+					else if (pAnalysis->iTerrainDefenseScore >= 25)
+						iCityScore += 5;
+					else if (pAnalysis->iTerrainDefenseScore >= 15)
+						iCityScore += 2;
+
+					if (pAnalysis->iApproachCorridors <= 2 && !pAnalysis->bIsChokepointCity)
+						iCityScore += 4;
+
+					if (pAnalysis->bIsDefensibleSalient && !pAnalysis->bEnemyHasIndirectFire)
+						iCityScore += 6;
+
+					if (pAnalysis->eLayer == STRATEGIC_LAYER_CORE || pAnalysis->eLayer == STRATEGIC_LAYER_REAR_AREA)
+						iCityScore += 3;
+
+					if (!bLikelyNextFront)
+						iCityScore /= 2;
+
+					if (iCityScore <= 0)
+						continue;
+
+					iDefensibilityScore += iCityScore;
+					iCitiesEvaluated++;
+				}
+
+				if (iCitiesEvaluated > 0)
+				{
+					int iAvgDefensibility = iDefensibilityScore / iCitiesEvaluated;
+					if (iAvgDefensibility >= 25)
+						iDampening += 15;
+					else if (iAvgDefensibility >= 15)
+						iDampening += 10;
+					else if (iAvgDefensibility >= 10)
+						iDampening += 6;
+					else if (iAvgDefensibility >= 5)
+						iDampening += 3;
+				}
+			}
+
+			iDampening = min(iDampening, 35);
+			if (iDampening > 0)
+			{
+				int iExcess = -iWarScore - 50;
+				int iReduction = (iExcess * iDampening * 2) / 100;
+				iWarScore += iReduction;
+			}
+		}
+	}
+
+	return range(iWarScore, -100, 100);
 }
 
 /// What was the war score the most recent time we made peace, modified by game speed?
@@ -37689,6 +38225,9 @@ void CvPlayer::DoDistanceGift(PlayerTypes eFromPlayer, CvUnit* pUnit)
 	}
 
 	AddIncomingUnit(eFromPlayer, pUnit);
+
+	// Recompute military might immediately so that AI strength estimates are not stale
+	updateMightStatistics();
 }
 /// Someone sent us a present!
 void CvPlayer::AddIncomingUnit(PlayerTypes eFromPlayer, CvUnit* pUnit)
@@ -38297,28 +38836,63 @@ int CvPlayer::getNumResourceFromBuildings(ResourceTypes eIndex) const
 	return m_paiNumResourceFromBuildings[eIndex];
 }
 
+int CvPlayer::getNumResourceFromEvents(ResourceTypes eIndex) const
+{
+	PRECONDITION(eIndex >= 0, "eIndex is expected to be non-negative (invalid Index)");
+	PRECONDITION(eIndex < GC.getNumResourceInfos(), "eIndex is expected to be within maximum bounds (invalid Index)");
+
+	return m_paiNumResourceFromEvents[eIndex];
+}
+
 int CvPlayer::getNumResourceTotal(ResourceTypes eIndex, bool bIncludeImport) const
 {
 	PRECONDITION(eIndex >= 0, "eIndex is expected to be non-negative (invalid Index)");
 	PRECONDITION(eIndex < GC.getNumResourceInfos(), "eIndex is expected to be within maximum bounds (invalid Index)");
 
-	int iTotalNumResource = m_paiNumResourceFromTiles[eIndex];
-	iTotalNumResource += m_paiNumResourceFromBuildings[eIndex];
-	iTotalNumResource += m_paiNumResourceFromEvents[eIndex];
-
-	//add resources from other sources, ex Corporations, Policies, Religion
-	iTotalNumResource += getNumResourcesFromOther(eIndex);
-
-	if(bIncludeImport)
+	// Check if cache is valid (size matches resource count)
+	const int iNumResources = GC.getNumResourceInfos();
+	if (bIncludeImport)
 	{
-		iTotalNumResource += getResourceFromMinors(eIndex);
-		iTotalNumResource += getResourceImportFromMajor(eIndex);
-		iTotalNumResource += getResourceSiphoned(eIndex);
+		if ((int)m_paiNumResourceTotalCached.size() == iNumResources)
+		{
+			return m_paiNumResourceTotalCached[eIndex];
+		}
+	}
+	else
+	{
+		if ((int)m_paiNumResourceTotalCachedNoImport.size() == iNumResources)
+		{
+			return m_paiNumResourceTotalCachedNoImport[eIndex];
+		}
 	}
 
-	iTotalNumResource -= getResourceExport(eIndex);
+	// Cache miss - calculate and rebuild entire cache for all resources
+	std::vector<int>& cache = bIncludeImport ? const_cast<std::vector<int>&>(m_paiNumResourceTotalCached) : const_cast<std::vector<int>&>(m_paiNumResourceTotalCachedNoImport);
+	cache.resize(iNumResources);
 
-	return iTotalNumResource;
+	for (int i = 0; i < iNumResources; i++)
+	{
+		ResourceTypes eResource = (ResourceTypes)i;
+		int iTotalNumResource = m_paiNumResourceFromTiles[eResource];
+		iTotalNumResource += m_paiNumResourceFromBuildings[eResource];
+		iTotalNumResource += m_paiNumResourceFromEvents[eResource];
+
+		//add resources from other sources, ex Corporations, Policies, Religion
+		iTotalNumResource += getNumResourcesFromOther(eResource);
+
+		if(bIncludeImport)
+		{
+			iTotalNumResource += getResourceFromMinors(eResource);
+			iTotalNumResource += getResourceImportFromMajor(eResource);
+			iTotalNumResource += getResourceSiphoned(eResource);
+		}
+
+		iTotalNumResource -= getResourceExport(eResource);
+
+		cache[i] = iTotalNumResource;
+	}
+
+	return cache[eIndex];
 }
 void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bFromBuilding, bool bCheckForMonopoly, bool bFromEvent)
 {
@@ -38335,11 +38909,25 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 		else if (!bFromBuilding)
 		{
 			m_paiNumResourceFromTiles[eIndex] = m_paiNumResourceFromTiles[eIndex] + iChange;
+			if (m_paiNumResourceFromTiles[eIndex] < 0)
+			{
+				const int iRecountedTileResources = CountActiveTileResourcesForPlayer(*this, eIndex);
+				CUSTOMLOG("Improved resource counter underflow for Player %d (%s), Resource %s. Delta: %d, stored after change: %d, recounted: %d. Auto-correcting.",
+					GetID(), getCivilizationShortDescription(), GC.getResourceInfo(eIndex)->GetText(), iChange, m_paiNumResourceFromTiles[eIndex], iRecountedTileResources);
+				m_paiNumResourceFromTiles[eIndex] = iRecountedTileResources;
+			}
 			ASSERT(m_paiNumResourceFromTiles[eIndex] >= 0);
 		}
 		else
 		{
 			m_paiNumResourceFromBuildings[eIndex] = m_paiNumResourceFromBuildings[eIndex] + iChange;
+			if (m_paiNumResourceFromBuildings[eIndex] < 0)
+			{
+				const int iRecountedBuildingResources = CountBuildingResourcesForPlayer(*this, eIndex);
+				CUSTOMLOG("Building resource counter underflow for Player %d (%s), Resource %s. Delta: %d, stored after change: %d, recounted: %d. Auto-correcting.",
+					GetID(), getCivilizationShortDescription(), GC.getResourceInfo(eIndex)->GetText(), iChange, m_paiNumResourceFromBuildings[eIndex], iRecountedBuildingResources);
+				m_paiNumResourceFromBuildings[eIndex] = max(0, iRecountedBuildingResources);
+			}
 			ASSERT(m_paiNumResourceFromBuildings[eIndex] >= 0);
 		}
 
@@ -38366,10 +38954,39 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 					CvResourceInfo* pResource = GC.getResourceInfo(eIndex);
 					if (pResource)
 					{
-						if (GET_PLAYER(eBestRelationsPlayer).IsResourceRevealed(eIndex))
+						// Determine how much to propagate to the ally.
+						// For positive deltas: only credit if the ally can currently see the resource
+						// (existing behavior; matches gameplay expectation that an ally can't benefit
+						// from a resource they can't see yet).
+						// For negative deltas: clamp the decrement to what we actually exported to
+						// this ally. This keeps the per-minor invariant
+						//   ally.m_paiResourceFromMinors[X] >= contributions from this minor
+						// even when reveal flipped between the credit and the decrement (e.g. a
+						// PolicyReveal was adopted after the resource was placed: the original +N
+						// was skipped because not revealed, but a later -N would otherwise fire and
+						// silently subtract from other allied minors' contributions). Reveal-flip
+						// reconciliation only fires for tech reveals to the current ally
+						// (CvTeam::processTech -> DoUpdateAlliesResourceBonus); other reveal sources
+						// such as getPolicyReveal do not reconcile, hence the clamp here.
+						int iPropChange = iChange;
+						if (iPropChange > 0)
 						{
-							GET_PLAYER(eBestRelationsPlayer).changeResourceFromMinors(eIndex, iChange);
-							changeResourceExport(eIndex, iChange);
+							if (!GET_PLAYER(eBestRelationsPlayer).IsResourceRevealed(eIndex))
+								iPropChange = 0;
+						}
+						else // iPropChange < 0
+						{
+							int iCurrentExport = getResourceExport(eIndex);
+							if (iCurrentExport <= 0)
+								iPropChange = 0;
+							else if (-iPropChange > iCurrentExport)
+								iPropChange = -iCurrentExport;
+						}
+
+						if (iPropChange != 0)
+						{
+							GET_PLAYER(eBestRelationsPlayer).changeResourceFromMinors(eIndex, iPropChange);
+							changeResourceExport(eIndex, iPropChange);
 
 							CvNotifications* pNotifications = GET_PLAYER(eBestRelationsPlayer).GetNotifications();
 							if (pNotifications && !GetMinorCivAI()->IsDisableNotifications())
@@ -38378,7 +38995,7 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 								Localization::String strSummary;
 
 								// Adding Resources
-								if (iChange > 0)
+								if (iPropChange > 0)
 								{
 									strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_MINOR_BFF_NEW_RESOURCE");
 									strMessage << getNameKey() << GC.getResourceInfo(eIndex)->GetDescriptionKey();
@@ -38418,6 +39035,10 @@ void CvPlayer::changeNumResourceTotal(ResourceTypes eIndex, int iChange, bool bF
 		{
 			GET_PLAYER((PlayerTypes)iPlayerLoop).UpdateResourcesSiphoned();
 		}
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 
 	GC.GetEngineUserInterface()->setDirty(GameData_DIRTY_BIT, true);
@@ -39557,6 +40178,10 @@ void CvPlayer::changeResourceExport(ResourceTypes eIndex, int iChange)
 		ASSERT(getResourceExport(eIndex) >= 0);
 
 		CalculateNetHappiness();
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -39587,6 +40212,10 @@ void CvPlayer::changeResourceImportFromMajor(ResourceTypes eIndex, int iChange)
 		{
 			CheckForMonopoly(eIndex);
 		}
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -39617,6 +40246,13 @@ void CvPlayer::changeResourceFromMinors(ResourceTypes eIndex, int iChange)
 	if(iChange != 0)
 	{
 		m_paiResourceFromMinors[eIndex] = m_paiResourceFromMinors[eIndex] + iChange;
+		if (m_paiResourceFromMinors[eIndex] < 0)
+		{
+			CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eIndex);
+			CUSTOMLOG("ResourceFromMinors counter underflow for Player %d (%s), Resource %s. Delta: %d, stored after change: %d. Clamping to 0.",
+				GetID(), getCivilizationShortDescription(), pkResourceInfo ? pkResourceInfo->GetText() : "?", iChange, m_paiResourceFromMinors[eIndex]);
+			m_paiResourceFromMinors[eIndex] = 0;
+		}
 		ASSERT(getResourceFromMinors(eIndex) >= 0);
 
 		CalculateNetHappiness();
@@ -39624,6 +40260,10 @@ void CvPlayer::changeResourceFromMinors(ResourceTypes eIndex, int iChange)
 
 		if (IsCSResourcesCountMonopolies())
 			CheckForMonopoly(eIndex);
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -39684,6 +40324,10 @@ void CvPlayer::changeResourceSiphoned(ResourceTypes eIndex, int iChange)
 		ASSERT(getResourceSiphoned(eIndex) >= 0);
 
 		CalculateNetHappiness();
+
+		// Invalidate resource total cache
+		m_paiNumResourceTotalCached.clear();
+		m_paiNumResourceTotalCachedNoImport.clear();
 	}
 }
 
@@ -45827,6 +46471,8 @@ void CvPlayer::Read(FDataStream& kStream)
 	// Perform shared serialize
 	CvStreamLoadVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+	m_UnitSightingManager.Init(this);
+	m_UnitSightingManager.Read(kStream);
 
 	if (MOD_WH_MILITARY_LOG && isHuman()) //Not serialized so shouldn't have any effect on savegames
 	{
@@ -45869,6 +46515,7 @@ void CvPlayer::Write(FDataStream& kStream) const
 	// Perform shared serialize
 	CvStreamSaveVisitor serialVisitor(kStream);
 	Serialize(*this, serialVisitor);
+	m_UnitSightingManager.Write(kStream);
 }
 
 void CvPlayer::createGreatGeneral(UnitTypes eGreatPersonUnit, int iX, int iY, bool bIsFree)
@@ -46565,6 +47212,12 @@ int CvPlayer::GetBuyPlotCost() const
 		iCost /= 100;
 	}
 
+	// Prevent zero or negative plot costs
+	if (iCost < 1)
+	{
+		iCost = 1;
+	}
+
 	return iCost;
 }
 
@@ -46739,6 +47392,11 @@ bool CvPlayer::IsVanishedUnit(const IDInfo& id) const
 	return units.find(make_pair(id.eOwner,id.iID)) != units.end();
 }
 
+const UnitSet& CvPlayer::GetVanishedUnits() const
+{
+	return m_pDangerPlots->GetVanishedUnits();
+}
+
 std::vector<CvUnit*> CvPlayer::GetPossibleAttackers(const CvPlot& Plot, TeamTypes eTeamForVisibilityCheck)
 {
 	if (m_pDangerPlots->IsDirty())
@@ -46749,17 +47407,18 @@ std::vector<CvUnit*> CvPlayer::GetPossibleAttackers(const CvPlot& Plot, TeamType
 
 bool CvPlayer::IsKnownAttacker(const CvUnit* pAttacker)
 {
-	if (m_pDangerPlots->IsDirty())
-		m_pDangerPlots->UpdateDanger();
-
+	// Optimization: Don't trigger full UpdateDanger() here.
+	// IsKnownAttacker only checks if a unit is in the known units set -
+	// it doesn't need updated danger values to answer that question.
 	return m_pDangerPlots->IsKnownAttacker(pAttacker);
 }
 
 bool CvPlayer::AddKnownAttacker(const CvUnit* pAttacker)
 {
-	if (m_pDangerPlots->IsDirty())
-		m_pDangerPlots->UpdateDanger();
-
+	// Option A optimization: Don't trigger full UpdateDanger() here.
+	// The underlying AddKnownAttacker() does an incremental UpdateDangerSingleUnit()
+	// which is fast (~0.1ms) vs full UpdateDanger() (~40ms).
+	// Full danger recalc will happen at the proper update points (turn start, before tactical AI).
 	return m_pDangerPlots->AddKnownAttacker(pAttacker);
 }
 
@@ -47432,6 +48091,7 @@ ostream& operator<<(ostream& os, const CvPlot* pPlot)
 CvPlot* CvPlayer::GetBestSettlePlot(CvUnit* pUnit, CvAIOperation* pOpToIgnore, bool bForceLogging) const
 {
 	std::vector<SPlotWithScore> vSettlePlots;
+	vSettlePlots.reserve(64);
 
 	//--------
 	bool bLogging = (GC.getLogging() && GC.getAILogging()) || bForceLogging;
@@ -47444,9 +48104,11 @@ CvPlot* CvPlayer::GetBestSettlePlot(CvUnit* pUnit, CvAIOperation* pOpToIgnore, b
 	TeamTypes eTeam = pUnit ? pUnit->getTeam() : getTeam();
 
 	//in case we're not getting the cached data, we need to prepare some things
-	vector<int> ignorePlots(GC.getMap().numPlots(), 0); //these are the plots whose yield we ignore
+	//only allocate when logging - this vector is ~67KB on Giant maps and was being allocated unconditionally
+	vector<int> ignorePlots;
 	if (bLogging)
 	{
+		ignorePlots.assign(GC.getMap().numPlots(), 0);
 		GC.getGame().GetSettlerSiteEvaluator()->ComputeFlavorMultipliers(this);
 		for (int iI = 0; iI < GC.getMap().numPlots(); iI++)
 		{
@@ -47620,6 +48282,8 @@ CvPlot* CvPlayer::GetBestSettlePlot(CvUnit* pUnit, CvAIOperation* pOpToIgnore, b
 		pLog->Msg( "#x,y,terrain,plotype,feature,owner,area,revealed,danger,fertility,distancescale,value,comments\n" );
 		pLog->Msg( dump.str().c_str() );
 		pLog->Close();
+		//filename includes the turn number so every call creates a new FILogFile in the manager cache - delete it to prevent accumulating leaked log objects
+		LOGFILEMGR.DeleteLog(pLog);
 	}
 
 	if (vSettlePlots.empty())
@@ -50830,7 +51494,8 @@ void CvPlayer::updatePlotFoundValues()
 		return;
 
 	//OutputDebugString(CvString::format("updating plot found values for player %d in turn %d\n",GetID(),GC.getGame().getGameTurn()).c_str());
-	m_viPlotFoundValues = std::vector<int>(GC.getMap().numPlots(), -1);
+	//reuse existing allocation if possible instead of creating a new vector each turn
+	m_viPlotFoundValues.assign(GC.getMap().numPlots(), -1);
 
 	//don't need to update if not going to settle
 	if (isBarbarian())
