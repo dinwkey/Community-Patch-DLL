@@ -1221,33 +1221,25 @@ int PathDestValid(int iToX, int iToY, const SPathFinderUserData&, const CvAStar*
 
 //	--------------------------------------------------------------------------------
 /// Standard path finder - determine heuristic cost
-/// UMP-005: Unit-specific heuristic based on actual unit speed for tighter search space
+/// UMP-005: Unit-specific heuristic based on actual unit speed.
 int PathHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, int iDestX, int iDestY, const CvAStar* finder)
 {
-	//for the heuristic to be admissible, it needs to never overestimate the cost of reaching the target
-	//a regular step by a unit costs PATH_BASE_COST*MOVE_DENOMINATOR/MOVES_PER_TURN
-	//we use a conservative estimate: assume unit can move 4 plots per turn (fast unit on roads)
-	//this ensures admissibility even for very fast units while being tighter than the old hardcoded value
-	
-	// UMP-005 PHASE 2: Use unit-specific base moves if available for tighter heuristic
-	// This significantly improves pathfinding performance for slow units (workers, embarked, ships)
-	// while maintaining admissibility (heuristic never overestimates)
-	int iEstimatedMovesPerTurn = 4;  // Default: assume fast unit (horse, modern unit)
-	
-	// Get unit-specific base moves for tighter heuristic
+	// For A*, the heuristic must never overestimate the remaining path cost.
+	// PathCost normalizes movement by unit speed, so faster units need a lower
+	// per-plot estimate. Use the fastest cached movement mode and assume cheap
+	// route movement (10 plots per movement point, i.e. 6 movement-cost units).
+	int iFastestBaseMoves = 6;
 	if (finder != NULL)
 	{
 		const UnitPathCacheData* pCacheData = reinterpret_cast<const UnitPathCacheData*>(finder->GetScratchBuffer());
 		if (pCacheData != NULL)
 		{
-			// Use unit's actual base moves (assume embarked for conservative estimate)
-			int iBaseMoves = pCacheData->baseMoves(true);  // embarked = true for conservative (slower)
-			// Use half speed as conservative admissible estimate (accounts for terrain/ZOC)
-			iEstimatedMovesPerTurn = std::max(iBaseMoves / 2, 1);
+			iFastestBaseMoves = max(iFastestBaseMoves, pCacheData->baseMoves(false));
+			iFastestBaseMoves = max(iFastestBaseMoves, pCacheData->baseMoves(true));
 		}
 	}
-	
-	return plotDistance(iNextX, iNextY, iDestX, iDestY)*PATH_BASE_COST*iEstimatedMovesPerTurn;
+
+	return plotDistance(iNextX, iNextY, iDestX, iDestY) * PATH_BASE_COST * 6 / max(1, iFastestBaseMoves);
 }
 
 //	--------------------------------------------------------------------------------
