@@ -150,7 +150,8 @@ void CvUnitMission::PushMission(CvUnit* hUnit, MissionTypes eMission, int iData1
 							removeMission.iFlags = iFlags;
 							removeMission.iPushTurn = GC.getGame().getGameTurn();
 							
-							hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
+							if (!bAppend)
+								hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
 							InsertAtEndMissionQueue(hUnit, removeMission, !bAppend);
 							UnitClassTypes eArchaeologistClass = (UnitClassTypes)GC.getInfoTypeForString("UNITCLASS_ARCHAEOLOGIST", true);
 							if (hUnit != NULL && hUnit->getUnitClassType() != eArchaeologistClass)
@@ -170,7 +171,8 @@ void CvUnitMission::PushMission(CvUnit* hUnit, MissionTypes eMission, int iData1
 	mission.iFlags = iFlags;
 	mission.iPushTurn = GC.getGame().getGameTurn();
 
-	hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
+	if (!bAppend)
+		hUnit->SetMissionAI(eMissionAI, pMissionAIPlot, pMissionAIUnit);
 
 	InsertAtEndMissionQueue(hUnit, mission, !bAppend);
 
@@ -197,9 +199,11 @@ void CvUnitMission::PushMission(CvUnit* hUnit, MissionTypes eMission, int iData1
 void CvUnitMission::PopMission(CvUnit* hUnit)
 {
 	PRECONDITION(hUnit->getOwner() != NO_PLAYER);
+	MissionData* pTailNode = TailMissionData(hUnit->m_missionQueue);
+	const bool bPoppingActiveMission = (pTailNode != NULL && pTailNode == HeadMissionData(hUnit->m_missionQueue));
 
 	// Update Resource info
-	if(hUnit->getBuildType() != NO_BUILD)
+	if(bPoppingActiveMission && hUnit->getBuildType() != NO_BUILD)
 	{
 		ImprovementTypes eImprovement = NO_IMPROVEMENT;
 		RouteTypes eRoute = NO_ROUTE;
@@ -250,8 +254,6 @@ void CvUnitMission::PopMission(CvUnit* hUnit)
 		CvInterfacePtr<ICvUnit1> pDllUnit(new CvDllUnit(hUnit));
 		gDLL->GameplayUnitWork(pDllUnit.get(), -1);
 	}
-
-	MissionData* pTailNode = TailMissionData(hUnit->m_missionQueue);
 
 	if(pTailNode != NULL)
 	{
@@ -662,7 +664,12 @@ void CvUnitMission::ContinueMission(CvUnit* hUnit, int iSteps)
 
 			else if(kMissionData.eMissionType == CvTypes::getMISSION_RANGE_ATTACK())
 			{
-				if(CvUnitCombat::AttackRanged(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
+				CvPlot* pTargetPlot = GC.getMap().plot(kMissionData.iData1, kMissionData.iData2);
+				if(!pTargetPlot || !hUnit->canRangeStrikeAt(kMissionData.iData1, kMissionData.iData2))
+				{
+					bDone = true;
+				}
+				else if(CvUnitCombat::AttackRanged(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
 				{
 					bDone = true;
 				}
@@ -670,7 +677,12 @@ void CvUnitMission::ContinueMission(CvUnit* hUnit, int iSteps)
 
 			else if(kMissionData.eMissionType == CvTypes::getMISSION_NUKE())
 			{
-				if(CvUnitCombat::AttackNuclear(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
+				CvPlot* pTargetPlot = GC.getMap().plot(kMissionData.iData1, kMissionData.iData2);
+				if(!pTargetPlot || !hUnit->canNukeAt(hUnit->plot(), kMissionData.iData1, kMissionData.iData2))
+				{
+					bDone = true;
+				}
+				else if(CvUnitCombat::AttackNuclear(*hUnit, kMissionData.iData1, kMissionData.iData2, (kMissionData.iFlags &  CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT)?CvUnitCombat::ATTACK_OPTION_NO_DEFENSIVE_SUPPORT:CvUnitCombat::ATTACK_OPTION_NONE) != CvUnitCombat::ATTACK_ABORTED)
 				{
 					bDone = true;
 				}
@@ -1019,6 +1031,10 @@ bool CvUnitMission::CanStartMission(CvUnit* hUnit, int iMission, int iData1, int
 		if (iData1 != NO_PLAYER && iData2 != NO_UNIT)
 		{
 			pTargetUnit = GET_PLAYER((PlayerTypes)iData1).getUnit(iData2);
+			if (!pTargetUnit)
+			{
+				return false;
+			}
 
 			if (pTargetUnit->IsImmobile())
 			{
@@ -1032,6 +1048,21 @@ bool CvUnitMission::CanStartMission(CvUnit* hUnit, int iMission, int iData1, int
 		}
 		else
 			return false;
+	}
+	else if(iMission == CvTypes::getMISSION_WAIT_FOR())
+	{
+		PRECONDITION(iData1 != NO_PLAYER, "iData1 should be a valid Player");
+		PRECONDITION(iData2 != NO_UNIT, "iData2 should be a valid Unit ID");
+		if(iData1 != NO_PLAYER && iData2 != NO_UNIT)
+		{
+			pTargetUnit = GET_PLAYER((PlayerTypes)iData1).getUnit(iData2);
+			if(pTargetUnit)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 	else if(iMission == CvTypes::getMISSION_SKIP())
 	{
@@ -1504,7 +1535,16 @@ void CvUnitMission::StartMission(CvUnit* hUnit)
 				pkQueueData->eMissionType == CvTypes::getMISSION_ROUTE_TO())
 			{
 				//make sure the path cache is current (not for air units, their movement is actually an airstrike)
-				CvPlot* pDestPlot = GC.getMap().plot(pkQueueData->iData1, pkQueueData->iData2);
+				CvPlot* pDestPlot = NULL;
+				if (pkQueueData->eMissionType == CvTypes::getMISSION_MOVE_TO_UNIT())
+				{
+					CvUnit* pTargetUnit = GET_PLAYER((PlayerTypes)pkQueueData->iData1).getUnit(pkQueueData->iData2);
+					pDestPlot = pTargetUnit ? pTargetUnit->plot() : NULL;
+				}
+				else
+				{
+					pDestPlot = GC.getMap().plot(pkQueueData->iData1, pkQueueData->iData2);
+				}
 				if (hUnit->getDomainType()!=DOMAIN_AIR)
 				{
 					hUnit->GeneratePath(pDestPlot, pkQueueData->iFlags);
@@ -2136,12 +2176,17 @@ MissionData* CvUnitMission::DeleteMissionData(CvUnit* hUnit, MissionData* pNode)
 	PRECONDITION(hUnit->getOwner() != NO_PLAYER);
 
 	MissionQueue& kQueue = hUnit->m_missionQueue;
-	if(pNode == HeadMissionData(kQueue))
+	const bool bDeletedHeadMission = (pNode == HeadMissionData(kQueue));
+	if(bDeletedHeadMission)
 	{
 		DeactivateHeadMission(hUnit, /*iUnitCycleTimer*/ 1);
 	}
 
 	pNextMissionNode = kQueue.deleteNode(pNode);
+	if(kQueue.getLength() == 0 || bDeletedHeadMission)
+	{
+		hUnit->SetMissionAI(NO_MISSIONAI, NULL, NULL);
+	}
 	if(pNextMissionNode == HeadMissionData(kQueue))
 	{
 		ActivateHeadMission(hUnit);
@@ -2170,6 +2215,8 @@ void CvUnitMission::ClearMissionQueue(CvUnit* hUnit, bool bKeepPathCache, int iU
 	{
 		PopMission(hUnit);
 	}
+
+	hUnit->SetMissionAI(NO_MISSIONAI, NULL, NULL);
 
 	if (!bKeepPathCache)
 	{
