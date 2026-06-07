@@ -59,6 +59,7 @@ local UI_GetHeadSelectedCity = UI.GetHeadSelectedCity
 local UI_GetNumCurrentDeals = UI.GetNumCurrentDeals
 local UI_LoadCurrentDeal = UI.LoadCurrentDeal
 local YieldTypes = YieldTypes
+local g_numYieldTypes = (Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes()) or (YieldTypes and YieldTypes.NUM_YIELD_TYPES) or 0
 local L
 do
 	local _L = Locale.ConvertTextKey
@@ -510,7 +511,7 @@ local function GetSpecialistYields( city, specialist )
 		-- Culture
 		local cultureFromSpecialist = city:GetCultureFromSpecialist( specialistID )
 		-- Yield
-		for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+		for yieldID = 0, g_numYieldTypes-1 do
 			local specialistYield = city:GetSpecialistYield( specialistID, yieldID )
 			if specialistYield ~= 0 then
 				tip = S( "%s %+i%s", tip, specialistYield, tostring(YieldIcons[ yieldID ]) )
@@ -656,7 +657,7 @@ local function GetHelpTextForBuilding( buildingID, bExcludeName, bExcludeHeader,
 		local yieldModifier = 0
 		thisBuildingAndYieldTypes.YieldType = yield.Type
 
-		if Game and buildingClassID and yieldID < YieldTypes.NUM_YIELD_TYPES then -- weed out strange Communitas yields
+		if Game and buildingClassID and yieldID < g_numYieldTypes then -- weed out database-only yields unsupported by the runtime DLL
 			yieldChange = Game.GetBuildingYieldChange( buildingID, yieldID )
 			yieldModifier = Game.GetBuildingYieldModifier( buildingID, yieldID )
 			if activePlayer then

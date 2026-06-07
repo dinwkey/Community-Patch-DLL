@@ -229,8 +229,6 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR) then
 		bMyMode = true;
-	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
 		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_AI_REQUEST_DENOUNCE) then
@@ -246,6 +244,8 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_CONVERSIONS) then
 		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_DIGGING) then
+		bMyMode = true;
+	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
 		bMyMode = true;
 	elseif (iDiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_WAR_DECLARED_BY_HUMAN) then
 		print("DiploUIStateTypes.DIPLO_UI_STATE_WAR_DECLARED_BY_HUMAN");
@@ -283,6 +283,7 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 		local strButton9Text = -1;
 		local strButton10Text = -1;
 		local strButton11Text = -1;
+		local strButton12Text = -1;
 		
 		local strButton1Tooltip = "";
 		local strButton2Tooltip = "";
@@ -295,6 +296,7 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 		local strButton9Tooltip = "";
 		local strButton10Tooltip = "";
 		local strButton11Tooltip = "";
+		local strButton12Tooltip = "";
 		
 		-- Make sure none of the buttons start disabled
  		Controls.Button1:SetDisabled(false);
@@ -308,6 +310,7 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 		Controls.Button9:SetDisabled(false);
 		Controls.Button10:SetDisabled(false);
 		Controls.Button11:SetDisabled(false);
+		Controls.Button12:SetDisabled(false);
 		
 		local bHideBackButton = false;
 	    
@@ -377,6 +380,15 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 				-- Ask the AI player not to dig up my artifacts
 				if (activePlayer:GetNegativeArchaeologyPoints(g_iAIPlayer) > 0 and not pAIPlayer:IsAskedToStopDigging(iActivePlayer)) then
 					strButton6Text = Locale.ConvertTextKey("TXT_KEY_DIPLO_DISCUSS_MESSAGE_STOP_DIGGING");
+				end
+
+				-----------------------
+				--	STOP PLUNDERING --
+				-----------------------
+
+				-- Ask the AI player (Morocco) not to plunder our trade routes
+				if (activePlayer:GetNumTradeRoutesPlundered(g_iAIPlayer) > 0 and not pAIPlayer:IsAskedToStopPlundering(iActivePlayer)) then
+					strButton12Text = Locale.ConvertTextKey("TXT_KEY_DIPLO_DISCUSS_MESSAGE_STOP_PLUNDERING");
 				end
 
 				-----------------------
@@ -584,11 +596,6 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 			end
 -- END
 			bHideBackButton = true;
-		-- AI shows up saying it's time to declare war against someone
-		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_COOP_WAR_NOW" );
-			strButton2Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_CHANGED_MIND" );
-			bHideBackButton = true;
 		-- AI asking player to make RA in the future - NOT CURRENTLY IN USE
 		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
 			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_YES_LET_US_PREPARE" );
@@ -666,6 +673,12 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_DIGGING) then
 			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_DONT_STOP_DIGGING" );
 			strButton2Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_STOP_DIGGING" );
+			bHideBackButton = true;
+		
+		-- Player plundered AI's trade route
+		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
+			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_DONT_STOP_PLUNDERING" );
+			strButton2Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_STOP_PLUNDERING" );
 			bHideBackButton = true;
 		end
 	    
@@ -756,6 +769,14 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 			Controls.Button11Label:SetText(strButton11Text);
 			Controls.Button11:SetHide(false);
 			Controls.Button11:SetToolTipString(strButton11Tooltip);
+		end
+		
+		if (strButton12Text == -1) then
+			Controls.Button12:SetHide(true);
+		else
+			Controls.Button12Label:SetText(strButton12Text);
+			Controls.Button12:SetHide(false);
+			Controls.Button12:SetToolTipString(strButton12Tooltip);
 		end
 		
 		-- Some situations we force the human to answer - he can't back out
@@ -963,11 +984,6 @@ function OnButton1()
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR) then
 		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
 	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
-	    
-    -- AI asking to declare war against someone NOW - we agree
-	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
-	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_NOW_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
     
     -- AI asking to make RA in the future - we agree
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
@@ -1002,6 +1018,10 @@ function OnButton1()
     -- AI asking you to stop digging
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_DIGGING) then
 	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_STOP_DIGGING, g_iAIPlayer, iButtonID, iAgainstPlayer);
+	
+    -- AI asking you to stop plundering trade routes
+	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
+	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_PLUNDERED_TRADE_ROUTE_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer);
 	 
     -- Default mode - TBR
     elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT) then
@@ -1139,11 +1159,6 @@ function OnButton2()
 		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
 	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
     
-    -- AI asking to declare war against someone NOW - we tell him no
-	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_COOP_WAR_TIME) then
-		local iAgainstPlayer = g_iDiploData;	-- This should be set when receiving the leader message
-	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_COOP_WAR_NOW_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer );
-    
     -- AI asking to make RA in the future - we tell him sorry
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_PLAN_RESEARCH_AGREEMENT) then
 	    Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_PLAN_RA_RESPONSE, g_iAIPlayer, iButtonID, 0 );
@@ -1178,6 +1193,10 @@ function OnButton2()
     -- AI asking you to stop aggressive archaeology	
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_DIGGING) then
 	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_STOP_DIGGING, g_iAIPlayer, iButtonID, iAgainstPlayer);
+
+    -- AI asking you to stop plundering trade routes	
+	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
+	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_PLUNDERED_TRADE_ROUTE_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer);
 
     -- Default mode
     elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT) then
@@ -1476,6 +1495,34 @@ function OnButton11()
 	end	 
 end
 Controls.Button11:RegisterCallback( Mouse.eLClick, OnButton11 );
+
+----------------------------------------------------------------
+-- BUTTON 12
+----------------------------------------------------------------
+function OnButton12()
+	g_InstanceManager:ResetInstances();
+    	
+	local pPlayer = Players[Game.GetActivePlayer()];
+	local pTeam = Teams[pPlayer:GetTeam()];
+	local pAIPlayer = Players[g_iAIPlayer];
+	local pAITeam = Teams[pAIPlayer:GetTeam()];
+
+	local iButtonID = 12;
+
+	-- Discussion mode brought up by the human
+	if (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DISCUSS_HUMAN_INVOKED) then
+		-- Discussion Root Mode
+		if (g_iInvokedDiscussionMode == g_iModeDiscussionRoot) then
+			-- Ask AI to stop plundering our trade routes (Morocco UA)
+			Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_HUMAN_DISCUSSION_STOP_PLUNDERING, g_iAIPlayer, 0, 0 );
+		end
+    -- Default mode
+    elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT) then
+		
+	end	 
+end
+Controls.Button12:RegisterCallback( Mouse.eLClick, OnButton12 );
+
 ----------------------------------------------------------------
 -- Time to show the leaders!
 ----------------------------------------------------------------

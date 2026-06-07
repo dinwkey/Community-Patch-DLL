@@ -113,6 +113,7 @@ local UI_GetHeadSelectedCity = UI.GetHeadSelectedCity
 local UI_GetUnitPortraitIcon = UI.GetUnitPortraitIcon
 local YieldDisplayTypes_AREA = YieldDisplayTypes.AREA
 local YieldTypes = YieldTypes
+local g_numYieldTypes = Game and Game.GetNumYieldTypes and Game.GetNumYieldTypes() or YieldTypes.NUM_YIELD_TYPES
 
 
 -------------------------------
@@ -427,7 +428,7 @@ local function GetSpecialistYields( city, specialist )
 		local cultureFromSpecialist, specialistYield = city:GetCultureFromSpecialist( specialistID )
 		local specialistCultureModifier, specialistYieldModifier = city:GetCultureRateModifier() + ( cityOwner and ( cityOwner:GetCultureCityModifier() + ( city:GetNumWorldWonders() > 0 and cityOwner:GetCultureWonderMultiplier() or 0 ) or 0 ) )
 		-- Yield
-		for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+		for yieldID = 0, g_numYieldTypes-1 do
 			specialistYield = city:GetSpecialistYield( specialistID, yieldID )
 			specialistYieldModifier = city:GetBaseYieldRateModifier( yieldID )
 			if yieldID == YieldTypes.YIELD_CULTURE then
@@ -817,7 +818,7 @@ local function SetupBuildingList( city, buildings, buildingIM )
 --			tips:insertLocalizedIfNonZero( "TXT_KEY_STAT_POSITIVE_YIELD_MOD", "[ICON_HEALTH_1]", healthModifier )
 		end
 		local buildingYieldRate, buildingYieldPerPop, buildingYieldModifier, cityYieldRate, cityYieldRateModifier, isProducing
-		for yieldID = 0, YieldTypes.NUM_YIELD_TYPES-1 do
+		for yieldID = 0, g_numYieldTypes-1 do
 			isProducing = isNotResistance
 			thisBuildingAndYieldTypes.YieldType = (GameInfo.Yields[yieldID] or {}).Type or -1
 			-- Yield changes from the building

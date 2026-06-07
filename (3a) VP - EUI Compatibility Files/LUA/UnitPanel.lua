@@ -415,7 +415,13 @@ end
 local function getUnitBuildProgressData( plot, buildID, unit )
 	local buildProgress = plot:GetBuildProgress( buildID )
 	local buildTime = plot:GetBuildTime( buildID, g_activePlayerID )
-	local buildTurnsLeft = plot:GetBuildTurnsLeft( buildID, g_activePlayerID)
+	local buildTurnsLeft = plot:GetBuildTurnsLeft( buildID, g_activePlayerID )
+	if buildTurnsLeft > 99999 and unit then
+		local nominalWorkRate = unit:WorkRate( true )
+		if nominalWorkRate and nominalWorkRate > 0 then
+			buildTurnsLeft = math_ceil( math_max( 0, buildTime - buildProgress ) / nominalWorkRate )
+		end
+	end
 	return buildTurnsLeft, buildProgress, buildTime
 end
 
@@ -1102,8 +1108,12 @@ local function UpdateUnitActions( unit )
 			local buildTurnsLeft, buildProgress, buildTime
 			if action.SubType == ActionSubTypes.ACTIONSUBTYPE_BUILD then
 				buildTurnsLeft, buildProgress, buildTime = getUnitBuildProgressData( plot, action.MissionData, unit )
-				instance.WorkerProgressBar:SetPercent( buildProgress / buildTime )
-				if buildTurnsLeft < 1 then buildTurnsLeft = nil end
+				if buildTime and buildTime > 0 then
+					instance.WorkerProgressBar:SetPercent( buildProgress / buildTime )
+				else
+					instance.WorkerProgressBar:SetPercent( 0 )
+				end
+				if buildTurnsLeft < 1 or buildTurnsLeft > 99999 then buildTurnsLeft = nil end
 			end
 			instance.WorkerProgressBar:SetHide( not buildProgress )
 			instance.UnitActionText:SetText( buildTurnsLeft )

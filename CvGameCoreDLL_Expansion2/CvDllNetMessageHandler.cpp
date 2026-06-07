@@ -56,7 +56,7 @@ void* CvDllNetMessageHandler::operator new(size_t bytes)
 	return CvDllGameContext::Allocate(bytes);
 }
 //------------------------------------------------------------------------------
-void CvDllNetMessageHandler::ResponseAdvancedStartAction(PlayerTypes ePlayer, AdvancedStartActionTypes eAction, int iX, int iY, int iData, bool bAdd)
+void CvDllNetMessageHandler::ResponseAdvancedStartAction(PlayerTypes /*ePlayer*/, AdvancedStartActionTypes /*eAction*/, int /*iX*/, int /*iY*/, int /*iData*/, bool /*bAdd*/)
 {
 	// Disabled
 }
@@ -252,7 +252,7 @@ void CvDllNetMessageHandler::ResponseCitySwapOrder(PlayerTypes ePlayer, int iCit
 	}
 }
 //------------------------------------------------------------------------------
-void CvDllNetMessageHandler::ResponseChooseElection(PlayerTypes ePlayer, int iSelection, int iVoteId)
+void CvDllNetMessageHandler::ResponseChooseElection(PlayerTypes /*ePlayer*/, int /*iSelection*/, int /*iVoteId*/)
 {
 	// Unused
 }
@@ -416,7 +416,7 @@ void CvDllNetMessageHandler::ResponseFoundReligion(PlayerTypes ePlayer, Religion
 	}
 }
 //------------------------------------------------------------------------------
-void CvDllNetMessageHandler::ResponseEnhanceReligion(PlayerTypes ePlayer, ReligionTypes eReligion, const char* szCustomName, BeliefTypes eBelief1, BeliefTypes eBelief2, int iCityX, int iCityY)
+void CvDllNetMessageHandler::ResponseEnhanceReligion(PlayerTypes ePlayer, ReligionTypes eReligion, const char* /*szCustomName*/, BeliefTypes eBelief1, BeliefTypes eBelief2, int iCityX, int iCityY)
 {
 	//safeguard
 	if (!GC.getGame().isFinalInitialized() || PlayerInvalid(ePlayer))
@@ -1118,7 +1118,7 @@ void CvDllNetMessageHandler::ResponseSetCityAvoidGrowth(PlayerTypes ePlayer, int
 	}
 }
 //------------------------------------------------------------------------------
-void CvDllNetMessageHandler::ResponseSwapUnits(PlayerTypes ePlayer, int iUnitID, MissionTypes eMission, int iData1, int iData2, int iFlags, bool bShift)
+void CvDllNetMessageHandler::ResponseSwapUnits(PlayerTypes ePlayer, int iUnitID, MissionTypes /*eMission*/, int iData1, int iData2, int /*iFlags*/, bool bShift)
 {
 	//safeguard
 	if (!GC.getGame().isFinalInitialized() || PlayerInvalid(ePlayer))
