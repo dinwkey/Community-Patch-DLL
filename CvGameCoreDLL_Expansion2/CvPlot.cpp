@@ -13855,10 +13855,7 @@ void CvPlot::Serialize(Plot& plot, Visitor& visitor)
 	visitor(plot.m_iUnitPlotGAExperience);
 	visitor(plot.m_iPlotChangeMoves);
 	visitor(plot.m_iRestoreMoves);
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_PLOT_FREE_MOVE_ACROSS)
-		visitor(plot.m_iFreeMoveAcross);
-	else if (bLoading)
-		mutPlot.m_iFreeMoveAcross = 0;
+	visitor(plot.m_iFreeMoveAcross);
 
 	visitor(plot.m_eOwner);
 	visitor(plot.m_ePlotType);

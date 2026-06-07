@@ -2108,30 +2108,14 @@ int CvActiveResolution::GetTurnEnacted() const
 template<typename ActiveResolution, typename Visitor>
 void CvActiveResolution::Serialize(ActiveResolution& activeResolution, Visitor& visitor)
 {
-	const bool bLoading = visitor.isLoading();
-	CvActiveResolution& mutActiveResolution = const_cast<CvActiveResolution&>(activeResolution);
-
 	activeResolution.CvResolution::serialize(visitor);
 	visitor(activeResolution.m_iTurnEnacted);
-	if (GC.getSaveVersion() >= CvGlobals::SAVE_VERSION_LEAGUE_TARGET_CITY_STATE_RESTORE)
+	visitor(activeResolution.m_bTargetCityStateStateCaptured);
+	visitor(activeResolution.m_eCachedTargetCityStatePermanentAlly);
+	visitor(activeResolution.m_bCachedTargetCityStateNoAlly);
+	for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
 	{
-		visitor(activeResolution.m_bTargetCityStateStateCaptured);
-		visitor(activeResolution.m_eCachedTargetCityStatePermanentAlly);
-		visitor(activeResolution.m_bCachedTargetCityStateNoAlly);
-		for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
-		{
-			visitor(activeResolution.m_aiOpenDoorFriendshipChange[iMajor]);
-		}
-	}
-	else if (bLoading)
-	{
-		mutActiveResolution.m_bTargetCityStateStateCaptured = false;
-		mutActiveResolution.m_eCachedTargetCityStatePermanentAlly = NO_PLAYER;
-		mutActiveResolution.m_bCachedTargetCityStateNoAlly = false;
-		for (int iMajor = 0; iMajor < MAX_MAJOR_CIVS; iMajor++)
-		{
-			mutActiveResolution.m_aiOpenDoorFriendshipChange[iMajor] = 0;
-		}
+		visitor(activeResolution.m_aiOpenDoorFriendshipChange[iMajor]);
 	}
 }
 
