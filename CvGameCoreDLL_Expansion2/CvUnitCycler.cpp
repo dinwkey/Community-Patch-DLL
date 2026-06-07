@@ -171,7 +171,7 @@ void CvUnitCycler::Rebuild(CvUnit* pkStartUnit /* = NULL */)
 }
 
 //	---------------------------------------------------------------------------
-void CvUnitCycler::AddUnit(int iID)
+void CvUnitCycler::AddUnit(int /*iID*/)
 {
 	Rebuild();
 }

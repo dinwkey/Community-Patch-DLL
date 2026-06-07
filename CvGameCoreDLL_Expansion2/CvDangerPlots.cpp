@@ -140,21 +140,39 @@ void CvDangerPlots::UpdateDanger()
 	{
 		CvPlayer& thisPlayer = GET_PLAYER(m_ePlayer);
 		PlotIndexContainer plotsWithOwnedUnitsLikelyToBeKilled;
+		const int iMaxDangerPasses = 3;
+		bool bPassTurnChange = bTurnChange;
+		bool bPassWarChange = bWarChange;
 
-		//first pass
-		UpdateDangerInternal(plotsWithOwnedUnitsLikelyToBeKilled, bTurnChange, bWarChange);
-
-		//find out which units might die and therefore won't have a ZOC
-		int iLoop;
-		for (CvUnit* pLoopUnit = thisPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = thisPlayer.nextUnit(&iLoop))
+		for (int iPass = 0; iPass < iMaxDangerPasses; iPass++)
 		{
-			if (pLoopUnit->IsCombatUnit() && pLoopUnit->GetDanger() > pLoopUnit->GetCurrHitPoints())
-				plotsWithOwnedUnitsLikelyToBeKilled.push_back(pLoopUnit->plot()->GetPlotIndex());
-		}
+			UpdateDangerInternal(plotsWithOwnedUnitsLikelyToBeKilled, bPassTurnChange, bPassWarChange);
+			bPassTurnChange = false;
+			bPassWarChange = true;
 
-		//second pass
-		if (!plotsWithOwnedUnitsLikelyToBeKilled.empty())
-			UpdateDangerInternal(plotsWithOwnedUnitsLikelyToBeKilled, false, true); //turn change already processed
+			PlotIndexContainer plotsLikelyToBeKilledNextPass;
+
+			// find out which units might die and therefore won't have a ZOC
+			int iLoop;
+			for (CvUnit* pLoopUnit = thisPlayer.firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = thisPlayer.nextUnit(&iLoop))
+			{
+				if (pLoopUnit->IsCombatUnit() && pLoopUnit->GetDanger() > pLoopUnit->GetCurrHitPoints())
+					plotsLikelyToBeKilledNextPass.push_back(pLoopUnit->plot()->GetPlotIndex());
+			}
+
+			std::sort(plotsLikelyToBeKilledNextPass.begin(), plotsLikelyToBeKilledNextPass.end());
+			plotsLikelyToBeKilledNextPass.erase(std::unique(plotsLikelyToBeKilledNextPass.begin(), plotsLikelyToBeKilledNextPass.end()), plotsLikelyToBeKilledNextPass.end());
+			std::sort(plotsWithOwnedUnitsLikelyToBeKilled.begin(), plotsWithOwnedUnitsLikelyToBeKilled.end());
+			plotsWithOwnedUnitsLikelyToBeKilled.erase(std::unique(plotsWithOwnedUnitsLikelyToBeKilled.begin(), plotsWithOwnedUnitsLikelyToBeKilled.end()), plotsWithOwnedUnitsLikelyToBeKilled.end());
+
+			if (plotsLikelyToBeKilledNextPass == plotsWithOwnedUnitsLikelyToBeKilled)
+				break;
+
+			plotsWithOwnedUnitsLikelyToBeKilled.swap(plotsLikelyToBeKilledNextPass);
+
+			if (plotsWithOwnedUnitsLikelyToBeKilled.empty())
+				break;
+		}
 	}
 	else
 	{
@@ -294,6 +312,53 @@ void CvDangerPlots::UpdateDangerInternal(const PlotIndexContainer& plotsToIgnore
 						m_vanishedUnits.insert(*it);
 				}
 			}
+		}
+	}
+
+	// Extended Memory: add fog danger for ghost units tracked by the sighting manager.
+	// These are units that moved into fog-of-war in previous turns and may still be nearby.
+	if (bTurnChange && thisPlayer.isMajorCiv())
+	{
+		const CvUnitSightingManager& sightMgr = thisPlayer.GetUnitSightingManager();
+		const std::vector<UnitSighting>& sightings = sightMgr.GetSightings();
+		int currentTurn = GC.getGame().getGameTurn();
+
+		for (int i = 0; i < (int)sightings.size(); i++)
+		{
+			const UnitSighting& s = sightings[i];
+
+				// Only process fog ghosts (not currently visible, not expired)
+				if (s.IsConfirmed(currentTurn) || s.IsExpired(currentTurn))
+					continue;
+
+				// Must be from a player we're tracking for danger
+				if (ShouldIgnorePlayer((PlayerTypes)s.owner))
+					continue;
+
+				// Project ghost position along last heading (cap to usefulness window)
+				int turnsMissing = currentTurn - (int)s.lastSeenTurn;
+				if (turnsMissing <= 0)
+					continue;
+				if (turnsMissing > AI_FOG_GHOST_USEFUL_TURNS)
+					turnsMissing = AI_FOG_GHOST_USEFUL_TURNS;
+				int projectedX = (int)s.x + (int)s.lastDeltaX * turnsMissing;
+				int projectedY = (int)s.y + (int)s.lastDeltaY * turnsMissing;
+
+				CvPlot* pGhostPlot = GC.getMap().plot(projectedX, projectedY);
+				if (!pGhostPlot)
+					continue;
+
+				// Don't add fog danger for plots we can currently see
+				if (pGhostPlot->isVisible(thisTeam))
+					continue;
+
+				// Add fog danger around the projected ghost position (range 2)
+				for (int j = 0; j < RING_PLOTS[2]; j++)
+				{
+					CvPlot* pTargetPlot = iterateRingPlots(pGhostPlot, j);
+					if (pTargetPlot && !pTargetPlot->isImpassable(GET_PLAYER((PlayerTypes)s.owner).getTeam()))
+						m_DangerPlots[pTargetPlot->GetPlotIndex()].m_iFogCount++;
+				}
 		}
 	}
 
