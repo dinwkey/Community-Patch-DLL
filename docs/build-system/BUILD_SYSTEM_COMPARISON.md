@@ -1,5 +1,7 @@
 # Build System & Project File Comparison
 
+> Historical note: This comparison was written for earlier `feature/copilot` and backup-branch states. The maintained branch is now `custom/ai-gameplay-enhancements`; branch names and build counts below are retained as historical evidence.
+
 Comparison of backup branch changes to build_vp_clang.ps1, update_commit_id.bat, and VoxPopuli_vs2013.sln against current feature/copilot branch.
 
 ---

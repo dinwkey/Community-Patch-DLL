@@ -1,5 +1,7 @@
 # Policy System Enhancements Analysis
 
+> Historical note: This backup-branch comparison was written for earlier `feature/copilot` states. The maintained branch is now `custom/ai-gameplay-enhancements`; comparison labels below are dated context.
+
 **Generated:** 2026-01-13  
 **Purpose:** Analyze policy system improvements in backup branch beyond Phase 2D  
 **Comparison:** feature/copilot vs feature/copilot-backup  

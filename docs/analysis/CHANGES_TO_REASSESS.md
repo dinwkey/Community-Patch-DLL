@@ -1,5 +1,7 @@
 # Code Changes Analysis: What Needs to be Reassessed
 
+> Historical note: This report was produced during the earlier `feature/copilot` cleanup. The maintained branch is now `custom/ai-gameplay-enhancements`; old branch names, commit hashes, and build status here should be read as dated analysis, not current branch status.
+
 ## Status
 - **Backup Branch:** feature/copilot-backup (safe copy of all changes)
 - **Current Branch:** feature/copilot (upstream/master + enhancements)
