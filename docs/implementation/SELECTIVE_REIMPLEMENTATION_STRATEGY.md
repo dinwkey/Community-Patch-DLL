@@ -1,5 +1,7 @@
 # Community-Patch-DLL: Complete Selective Re-Implementation Strategy
 
+> Historical note: This strategy document describes the earlier `feature/copilot` implementation sequence. The maintained branch is now `custom/ai-gameplay-enhancements`; status, commit counts, and branch labels below are dated context.
+
 **Final Status:** ✅ **COMPLETE**  
 **Branch:** feature/copilot  
 **Upstream Base:** upstream/master (100+ commits preserved)  

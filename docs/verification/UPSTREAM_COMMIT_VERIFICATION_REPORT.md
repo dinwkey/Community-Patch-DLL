@@ -1,5 +1,7 @@
 # Upstream Commit Verification Report
 
+> Historical note: This report verified an earlier `feature/copilot` snapshot on January 13, 2026. It is not live proof that the current `custom/ai-gameplay-enhancements` branch is synchronized with upstream/master. Re-run the relevant git checks and builds for current validation.
+
 **Assessment Date:** January 13, 2026  
 **Branch:** feature/copilot  
 **Comparison Point:** Commit 801c4cfd1 (fix: missing SAFE_DELETE)

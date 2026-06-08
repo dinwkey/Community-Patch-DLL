@@ -1,5 +1,7 @@
 # Pathfinding System Phase Analysis
 
+> Historical note: This phase analysis references the earlier pre-squash implementation commit. The maintained branch is now `custom/ai-gameplay-enhancements`; use current branch commits for live topology and validation.
+
 **Status:** ✅ COMPLETE - Selective Re-implementation  
 **Commit:** 5b6a839ca  
 **Date:** 2026-01-12  

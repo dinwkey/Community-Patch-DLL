@@ -1,8 +1,14 @@
 # Skill: Save Serialization Compatibility
 
+## Current branch policy
+
+The maintained `custom/ai-gameplay-enhancements` branch is fresh-game-only after branch-local serialization changes unless old-save compatibility is explicitly required. The current `CvGlobals::SaveVersionTags` state is `SAVE_VERSION_LATEST = 0`; temporary custom save gates were removed after they served their migration purpose.
+
+Use this skill when the user wants compatibility with older saves or when preparing a change that should be safe for existing saves. Otherwise, prefer the simpler fresh-game path and validate new game save/load behavior.
+
 ## When to use
 
-Use this skill when changing any serialized C++ state that can affect save/load compatibility:
+Use this skill when changing any serialized C++ state that must preserve save/load compatibility:
 - Adding fields to `Serialize()`, `operator>>`, or `operator<<`
 - Removing previously serialized fields
 - Reordering serialized fields

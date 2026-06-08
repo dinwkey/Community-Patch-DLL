@@ -765,11 +765,12 @@ bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer)
 
 ## 9. Serialization (Save Compatibility)
 
-### Current Implementation (Not Save Compatible)
+### Current Implementation (Fresh-Game Only)
 
-The Phase 1 implementation does **not** attempt save compatibility. The memory
-buffer is serialized unconditionally after the existing `CvDiplomacyAI` data,
-so loading an older save (without the new memory data) will crash.
+The current custom branch does **not** attempt old-save compatibility for this
+memory state. The memory buffer is serialized unconditionally after the existing
+`CvDiplomacyAI` data, so loading an older save without the new memory data can
+crash.
 
 **Action:** start a fresh game after enabling this change.
 
@@ -938,7 +939,7 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 
 1. Adjust detection thresholds based on gameplay testing
 2. Add logging for debugging
-3. Verify save compatibility with old saves
+3. Verify fresh-game save/load behavior
 4. Memory usage profiling
 5. Documentation update
 
@@ -1161,7 +1162,7 @@ If the consumer list grows further:
 ## Appendix B: Testing Checklist
 
 - [ ] New game: memory populates over first 10 turns
-- [ ] Load old save: expected crash (not save compatible)
+- [ ] Fresh-game save/load: history preserved
 - [ ] Load new save: history preserved
 - [ ] Buildup detection triggers when AI masses units
 - [ ] Siege warning triggers when catapults appear

@@ -1,5 +1,7 @@
 # ✅ Selective Re-Implementation Complete
 
+> Historical note: This completion summary describes an earlier `feature/copilot` implementation sequence. The maintained branch is now `custom/ai-gameplay-enhancements`; commit counts and build totals below are not current status.
+
 ## Branch Status: feature/copilot
 
 **Latest Code Commit:** c93a96ebb (Phase 4: Destructor cleanup)  

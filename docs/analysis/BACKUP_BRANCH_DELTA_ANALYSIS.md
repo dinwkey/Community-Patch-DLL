@@ -1,5 +1,7 @@
 # Backup Branch Delta Analysis
 
+> Historical note: This report compares earlier `feature/copilot` branch states. The maintained branch is now `custom/ai-gameplay-enhancements`; old branch names and "current branch" wording below are preserved as historical context.
+
 **Generated:** 2026-01-12  
 **Purpose:** Identify what enhancements exist in `feature/copilot-backup` that are NOT in `feature/copilot` (current working branch)
 

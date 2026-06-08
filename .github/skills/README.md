@@ -1,6 +1,6 @@
-# Copilot Skills (VS Code)
+# Assistant Skills
 
-These skill playbooks are task-focused runbooks intended for GitHub Copilot in VS Code.
+These skill playbooks are task-focused runbooks intended for code-generating assistants working in this repository.
 Use them when a request matches the scenario; keep `.github/copilot-instructions.md` as global guardrails.
 
 ## Available skills
