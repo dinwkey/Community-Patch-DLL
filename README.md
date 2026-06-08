@@ -1,4 +1,4 @@
-[![Build](https://github.com/dinwkey/Community-Patch-DLL/actions/workflows/build_vp.yml/badge.svg?branch=feature%2Fcopilot)](https://github.com/dinwkey/Community-Patch-DLL/actions/workflows/build_vp.yml)
+[![Build](https://github.com/dinwkey/Community-Patch-DLL/actions/workflows/build_vp.yml/badge.svg?branch=custom%2Fai-gameplay-enhancements)](https://github.com/dinwkey/Community-Patch-DLL/actions/workflows/build_vp.yml)
 # Community-Patch-DLL
 
 This is the repository for the Civ V SDK + Vox Populi Mod. 
@@ -29,9 +29,11 @@ Check out the [forum](https://forums.civfanatics.com/forums/community-patch-proj
 
 ---
 
-## Fork Enhancements (feature/copilot branch)
+## Fork Enhancements (custom/ai-gameplay-enhancements branch)
 
-This fork contains **178 commits** on top of upstream/master with extensive AI improvements, bug fixes, and performance optimizations. Below is a summary of the major changes:
+This fork keeps a focused stack of custom gameplay and AI improvements on top of upstream/master. The previous long-lived `feature/copilot` history has been squashed and reorganized so the maintained branch is easier to rebase while preserving the changes that still improve AI play and game feel.
+
+This branch currently expects fresh games after custom serialization changes. Temporary save-version gates that existed only to bridge older experimental saves were removed; see `docs/README.md` and `.github/skills/save-serialization-compat.md` before reintroducing old-save compatibility work.
 
 ### Tactical AI Improvements
 

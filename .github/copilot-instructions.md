@@ -1,4 +1,4 @@
-# Copilot / AI assistant instructions for Community-Patch-DLL
+# AI assistant instructions for Community-Patch-DLL
 
 Purpose: give targeted, actionable guidance to code-generating assistants so they can be immediately productive in this repository.
 
@@ -8,7 +8,7 @@ File creation safety
 - When updating files programmatically, use the repository's `apply_patch` mechanism or other workspace-aware APIs so changes land inside the workspace. After writing, verify the file appears in the workspace listing.
 - If a path looks unexpectedly absolute or contains doubled roots like `C:\c\Users`, stop and ask for confirmation before writing.
 
-## Skills for VS Code use
+## Assistant skills
 
 Use `.github/copilot-instructions.md` for always-on repository constraints (toolchain, safety, ABI, path rules).
 Use task-focused Skills for procedural workflows:
@@ -135,21 +135,20 @@ If anything here is unclear or you want more detail about a particular area (bui
 
 ## Save Game Compatibility
 
-When adding, removing, or changing serialized fields, you **must** maintain backward compatibility with older save files. Breaking serialization will crash the game on save load.
+The current custom branch policy is fresh-game-only after branch-local serialization changes unless the user explicitly asks for old-save compatibility. Do not add temporary branch-local save gates just to preserve experimental saves.
+
+When a change must preserve compatibility with older saves, use `.github/skills/save-serialization-compat.md` and keep the stream layout exact. Breaking serialization will crash the game on save load.
 
 ### Architecture overview
 
-- **Global save version**: `CvGlobals::SaveVersionTags` enum in `CvGlobals.h` (~line 164). Current tags:
+- **Global save version**: `CvGlobals::SaveVersionTags` enum in `CvGlobals.h` (~line 164). Current custom-branch state:
   ```cpp
   enum SaveVersionTags
   {
-      SAVE_VERSION_PLOT_FREE_MOVE_ACROSS = 1,
-      SAVE_VERSION_ATTACK_TARGET_FIELDS = 2,
-      SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL = 3,
-      SAVE_VERSION_LATEST = SAVE_VERSION_ESPIONAGE_SPY_NAME_REMOVAL,
+      SAVE_VERSION_LATEST = 0,
   };
   ```
-  `SAVE_VERSION_LATEST` is always aliased to the highest tag.
+  Earlier branch-local tags were temporary migration aids and have been removed. If old-save compatibility is explicitly required again, add a new tag and alias `SAVE_VERSION_LATEST` to the highest active tag.
 
 - **Legacy per-class version**: Many classes also have an internal `uiDllSaveVersion` (written via `MOD_SERIALIZE_INIT_WRITE`, currently `MOD_DLL_VERSION_NUMBER = 148` in `CustomMods.h`). This is the older Whoward-era system. Both systems coexist; use the global `SaveVersionTags` for new changes.
 
@@ -157,7 +156,7 @@ When adding, removing, or changing serialized fields, you **must** maintain back
 
 - **Stream is forward-only**: `FDataStream::GetPosition()` and `SetPosition()` are **no-ops** in the Civ5 engine (the implementation is in a pre-compiled Firaxis binary `FireWorksWin32.lib`). You **cannot** seek, rewind, or backpatch. All version gating must be done at the point of reading/writing.
 
-### How to add a new serialized field
+### How to add a new serialized field when old-save compatibility is required
 
 1. **Add a new tag** to `SaveVersionTags` in `CvGlobals.h`:
    ```cpp
@@ -190,7 +189,7 @@ When adding, removing, or changing serialized fields, you **must** maintain back
 
 3. **Always provide explicit defaults** in the `else if (bLoading)` / `else` branch — never leave the field uninitialized.
 
-### How to remove/skip a serialized field
+### How to remove/skip a serialized field when old-save compatibility is required
 
 When a field is removed from the code but old saves still contain it, you must **consume the bytes** on load to keep the stream in sync:
 
@@ -220,7 +219,7 @@ if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_FIELD_REMOVAL)
 - **`MOD_SERIALIZE_READ` macro** (legacy system): `MOD_SERIALIZE_READ(version, stream, member, default)` expands to version-gated read with a default. Use this when working with classes that already use the `MOD_SERIALIZE_*` pattern.
 - **Sentinel validation**: `MOD_SERIALIZE_INIT_WRITE` writes `0xDEADBEEF` after the class version; `MOD_SERIALIZE_INIT_READ` validates it. A mismatch means the stream is desynchronized — check your field ordering.
 - **When bumping internal class versions** (e.g., `uiVersion` in `CvEspionageSpy`), bump the number in the write path and gate new fields with `if (uiVersion >= N)` in the read path.
-- **Test with an old save**: always test loading a save created before your change to verify compatibility.
+- **Test with an old save when compatibility is required**: load a save created before your change to verify compatibility. For fresh-game-only changes, test a new game save/load path instead.
 
 ### Serialization patterns reference
 

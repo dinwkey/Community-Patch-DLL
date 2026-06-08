@@ -1,5 +1,7 @@
 # Session 6 Completion Report - Upstream Verification & Minor Refinements
 
+> Historical note: This report describes an earlier `feature/copilot` validation session. The maintained branch is now `custom/ai-gameplay-enhancements`; old build counts and branch status below should not be treated as current validation.
+
 **Date:** January 13, 2026  
 **Status:** ✅ **COMPLETE & VERIFIED**
 

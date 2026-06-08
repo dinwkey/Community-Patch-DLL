@@ -1,5 +1,7 @@
 # Minidump Implementation Comparison
 
+> Historical note: This comparison describes an earlier `feature/copilot` snapshot. The maintained branch is now `custom/ai-gameplay-enhancements`; branch names and "currently active" wording below are dated context.
+
 ## Status
 **The upstream commit (2d4eff77fb691bb51dfbc8e9113c8c9a21cca722) is ALREADY in feature/copilot branch.**
 

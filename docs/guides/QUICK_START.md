@@ -175,7 +175,7 @@ Separate implementations allow independent tuning and testing.
 
 ### For Testing
 1. ✅ Verify no compilation errors (already done)
-2. ⏳ Run integration tests (load old save, play turn)
+2. ⏳ Run integration tests (new game, save/load, play turn)
 3. ⏳ Performance profile (measure frame times)
 4. ⏳ AI behavior validation (watch culture victory progress)
 

@@ -1,5 +1,7 @@
 # Commit 48e59915a Comparison Report
 
+> Historical note: This report checks an older `feature/copilot` snapshot. The maintained branch is now `custom/ai-gameplay-enhancements`; old branch names and retained-change percentages are dated evidence, not current status.
+
 ## Overview
 This report checks which changes from commit `48e59915a` (dated January 10, 2026 - "Refactor AI systems with memory optimization and documentation reorganization") are still present in the current branch `feature/copilot`.
 

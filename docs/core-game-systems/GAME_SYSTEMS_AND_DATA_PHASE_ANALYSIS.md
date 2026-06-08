@@ -1,5 +1,7 @@
 # Game Systems & Data: Selective Re-implementation Analysis
 
+> Historical note: This analysis describes an earlier `feature/copilot` implementation plan. The maintained branch is now `custom/ai-gameplay-enhancements`; branch names and completion claims below are dated context.
+
 **Analysis Date:** 2026-01-12  
 **Strategy:** Selective re-implementation (not wholesale restoration)  
 **Total Impact:** ~1,645 insertions, 665 deletions across 18 files  
