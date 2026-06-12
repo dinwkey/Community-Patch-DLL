@@ -1,7 +1,7 @@
 # Tourism & Great Works Mechanics Review
 ## Community Patch DLL & Vox Populi Analysis
 
-**Date:** January 9, 2026  
+**Date:** January 9, 2026
 **Focus:** Tourism, Great Works, Theming, Influence, and Culture Victory Mechanics
 
 ---
@@ -104,7 +104,7 @@ Culture Victory Progress Updated
 - **Game Speed:** Scales with game speed setting
 - **Vassalage:** Vassal penalties on incoming tourism
 
-**Function:** `ChangeInfluenceOnTimes100(PlayerTypes eOtherPlayer, int iBaseInfluence, bool bApplyModifiers, bool bModifyForGameSpeed, bool bNoDecimalValues = false)`  
+**Function:** `ChangeInfluenceOnTimes100(PlayerTypes eOtherPlayer, int iBaseInfluence, bool bApplyModifiers, bool bModifyForGameSpeed, bool bNoDecimalValues = false)`
 **Location:** [CvCultureClasses.h:252](CvGameCoreDLL_Expansion2/CvCultureClasses.h#L252)
 
 ### 2.3 Known Tourism Implementation Issues
@@ -676,6 +676,6 @@ The Tourism & Great Works system is **architecturally sound** but shows signs of
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** January 9, 2026  
+**Document Version:** 1.0
+**Last Updated:** January 9, 2026
 **Prepared for:** Community Patch DLL Development Team

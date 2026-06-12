@@ -22,7 +22,7 @@ Cause: Missing diplomatic status checks before plundering
 
 Current check:
   ✓ Is destination Morocco? If no → ALLOW plunder
-  
+
 Missing checks:
   ✗ Is owner allied?
   ✗ Is owner a vassal?
@@ -34,13 +34,13 @@ Add 3 diplomatic checks:
 
   1. Check alliance strength
      → If defensive pact or higher: BLOCK
-     
+
   2. Check vassal relationship
      → If either direction: BLOCK
-     
+
   3. Check fear level
      → If afraid: BLOCK
-     
+
   Otherwise: ALLOW (rivals/neutrals/enemies)
 
 IMPACT ASSESSMENT
@@ -57,19 +57,19 @@ DOCUMENTATION CREATED
 
 📋 MOROCCO_UA_INDEX.md
    └─ Navigation guide and quick reference
-   
-📋 MOROCCO_UA_SUMMARY.md  
+
+📋 MOROCCO_UA_SUMMARY.md
    └─ Executive summary for quick understanding
-   
+
 📋 MOROCCO_UA_REVIEW.md
    └─ 2000+ word technical deep-dive analysis
-   
+
 📋 MOROCCO_UA_VISUAL_GUIDE.md
    └─ Flowcharts, decision trees, and test matrices
-   
+
 📋 MOROCCO_UA_IMPLEMENTATION.md
    └─ Step-by-step implementation with code examples
-   
+
 📋 MOROCCO_UA_CODE_SNIPPETS.md
    └─ Ready-to-use copy-paste code and commands
 
@@ -80,7 +80,7 @@ TESTING COVERAGE
 8 Test Scenarios Defined:
 
   1. At War (SHOULD PLUNDER)       ✓ Verified
-  2. Neutral (SHOULD PLUNDER)      ✓ Verified  
+  2. Neutral (SHOULD PLUNDER)      ✓ Verified
   3. Rival (SHOULD PLUNDER)        ✓ Verified
   4. Allied (SHOULD BLOCK)         ✓ Verified
   5. Our Vassal (SHOULD BLOCK)     ✓ Verified
@@ -97,17 +97,17 @@ File 1: CvUnit.cpp::canPlunderTradeRoute()
   Location: Lines ~9158-9168
   Change: Add 3 diplomatic checks (15 lines)
   Status: Copy-paste ready ✅
-  
+
 File 2: CvUnit.cpp::plunderTradeRoute()
   Location: Lines ~9222-9228
   Change: Mirror checks from File 1 (15 lines)
   Status: Copy-paste ready ✅
-  
+
 File 3: CvLuaPlayer.cpp::lGetReasonPlunderTradeRouteDisabled()
   Location: Lines ~10870-10900
   Change: Add tooltip logic (20 lines)
   Status: Copy-paste ready ✅
-  
+
 File 4: New/Updated SQL Localization
   Create: MoroccoUAFixes.sql
   Change: Add 3 text strings
@@ -144,7 +144,7 @@ For Quick Implementation (30 min - Experienced Dev):
   3. Paste: Into your editor
   4. Build: .\build_vp_clang.ps1 -Config debug
   5. Test: 5 minutes
-  
+
 For Thorough Understanding (3-4 hours - New Dev):
   1. Read: MOROCCO_UA_INDEX.md (navigation)
   2. Read: MOROCCO_UA_SUMMARY.md (overview)
@@ -152,7 +152,7 @@ For Thorough Understanding (3-4 hours - New Dev):
   4. Read: MOROCCO_UA_IMPLEMENTATION.md (steps)
   5. Implement: Following CODE_SNIPPETS.md
   6. Test: Using provided matrices
-  
+
 For Architecture Review (4-5 hours - Architect):
   1. Read: All 6 documents
   2. Review: Original code in IDE
@@ -183,7 +183,7 @@ NEXT STEPS
 Decision: Has the fix been approved?
   ☐ YES  → Start implementation
   ☐ NO   → Review documentation again
-  
+
 If YES:
   1. Assign developer
   2. Start with MOROCCO_UA_INDEX.md

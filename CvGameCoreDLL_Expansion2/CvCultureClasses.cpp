@@ -1,4 +1,4 @@
-﻿/*	-------------------------------------------------------------------------------------------------------
+/*	-------------------------------------------------------------------------------------------------------
 	© 1991-2012 Take-Two Interactive Software and its subsidiaries.  Developed by Firaxis Games.  
 	Sid Meier's Civilization V, Civ, Civilization, 2K Games, Firaxis Games, Take-Two Interactive Software 
 	and their respective logos are all trademarks of Take-Two interactive Software, Inc.  
@@ -3288,7 +3288,7 @@ void CvPlayerCulture::ApplyBatchedThemingUpdates()
 	{
 		int iCityID = it->first;
 		int iBuildingClassID = it->second;
-		
+
 		CvCity* pCity = m_pPlayer->getCity(iCityID);
 		if (pCity != NULL && iBuildingClassID >= 0 && iBuildingClassID < GC.getNumBuildingClassInfos())
 		{

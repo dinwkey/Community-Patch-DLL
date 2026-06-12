@@ -1,4 +1,4 @@
-﻿/*	-------------------------------------------------------------------------------------------------------
+/*	-------------------------------------------------------------------------------------------------------
 	© 1991-2012 Take-Two Interactive Software and its subsidiaries.  Developed by Firaxis Games.  
 	Sid Meier's Civilization V, Civ, Civilization, 2K Games, Firaxis Games, Take-Two Interactive Software 
 	and their respective logos are all trademarks of Take-Two interactive Software, Inc.  
@@ -2885,14 +2885,14 @@ void CvHomelandAI::ExecuteFirstTurnSettlerMoves()
 					{
 						CvPlot* pBestCoastal = NULL;
 						int iBestDistance = MAX_INT;
-						
+
 						// Search nearby plots for coastal location on same island
 						for (int iDX = -3; iDX <= 3; iDX++)
 						{
 							for (int iDY = -3; iDY <= 3; iDY++)
 							{
 								CvPlot* pLoopPlot = plotXYWithRangeCheck(pFoundPlot->getX(), pFoundPlot->getY(), iDX, iDY, 3);
-								if (pLoopPlot && !pLoopPlot->isWater() && pLoopPlot->isCoastalLand() && 
+								if (pLoopPlot && !pLoopPlot->isWater() && pLoopPlot->isCoastalLand() &&
 									pLoopPlot->getArea() == iAreaID && pUnit->canFoundCity(pLoopPlot))
 								{
 									int iDistance = plotDistance(pFoundPlot->getX(), pFoundPlot->getY(), pLoopPlot->getX(), pLoopPlot->getY());
@@ -2904,14 +2904,14 @@ void CvHomelandAI::ExecuteFirstTurnSettlerMoves()
 								}
 							}
 						}
-						
+
 						if (pBestCoastal != NULL)
 						{
 							pFoundPlot = pBestCoastal;
 							if (GC.getLogging() && GC.getAILogging())
 							{
 								CvString strLogString;
-								strLogString.Format("Moved island city-state to coastal plot, X: %d, Y: %d (was %d,%d)", 
+								strLogString.Format("Moved island city-state to coastal plot, X: %d, Y: %d (was %d,%d)",
 									pBestCoastal->getX(), pBestCoastal->getY(), pUnit->getX(), pUnit->getY());
 								LogHomelandMessage(strLogString);
 							}
@@ -2919,7 +2919,7 @@ void CvHomelandAI::ExecuteFirstTurnSettlerMoves()
 						}
 					}
 				}
-				
+
 				pUnit->PushMission(CvTypes::getMISSION_FOUND());
 				UnitProcessed(pUnit->GetID());
 				if (GC.getLogging() && GC.getAILogging())
@@ -3780,7 +3780,7 @@ void CvHomelandAI::ExecuteWorkerMoves()
 		// We may have planned an improvement that we can't build yet, but should still update other plots as if we've built it
 		// E.g. if we're planning to build an improvement with a no-two-adjacent requirement, we still want to build other improvements next to it.
 		bool bCanBuild = eDirective.m_bCanBuild && pBuilder->canBuild(pDirectivePlot, eDirective.m_eBuild);
-		
+
 		// Validate builder has enough charges (CIV6_WORKER mode) or won't be killed
 		if (bCanBuild && MOD_CIV6_WORKER)
 		{
@@ -3792,7 +3792,7 @@ void CvHomelandAI::ExecuteWorkerMoves()
 					bCanBuild = false;
 			}
 		}
-		
+
 		if (bCanBuild)
 		{
 			bool bIsAutomated = !m_pPlayer->isHuman(ISHUMAN_AI_UNITS) || pBuilder->IsAutomated();
@@ -6043,7 +6043,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		}
 	}
 	bool bPrioritizeOffensiveToCarriers = bHasActiveCarrierGroup || (nAirUnitsOffensive < nAirUnitsDefensive);
-	
+
 	if(GC.getLogging() && GC.getAILogging())
 	{
 		CvString strLogString;
@@ -6109,7 +6109,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 				//healing units prefer cities, but can use healthy carriers if score is good
 				if (!pUnit->canRebase())
 					continue;
-		
+
 				// If targeting a carrier, ensure it's not dying (score -1) and has reasonable health
 				if (!it->pPlot->isCity())
 				{
@@ -6190,20 +6190,20 @@ void CvHomelandAI::ExecuteAircraftMoves()
 		CvPlot* pNewBase = NULL;
 		int iCurrentScore = HomelandAIHelpers::ScoreAirBase(pUnit->plot(), m_pPlayer->GetID(), false, pUnit->GetRange(), pUnit);
 		int iBestCandidateScore = iCurrentScore;
-		
+
 		// For offensive air units: if we're prioritizing offensive to carriers (defensive units outnumber offensive),
 		// then bias this unit toward carrier-based locations
-		bool bIsOffensiveAir = (pUnit->getDomainType() == DOMAIN_AIR && 
+		bool bIsOffensiveAir = (pUnit->getDomainType() == DOMAIN_AIR &&
 			(pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_ATTACK_AIR ||
 			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_ICBM ||
 			 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR));
-		
+
 		// MISSILE-SPECIFIC REBASING: Missiles should go to bases near targets for immediate use
 		// PRIORITY: Missile-only platforms first (subs, cruisers), then carriers only if needed
 		bool bIsMissile = (pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_MISSILE_AIR);
 		int iBestMissileScore = -1;
 		CvPlot* pBestMissileBase = NULL;
-		
+
 		if (bIsMissile)
 		{
 			// For missiles, we want to be at a base within range of high-value targets
@@ -6211,18 +6211,18 @@ void CvHomelandAI::ExecuteAircraftMoves()
 			// CRITICAL: Prefer missile-only platforms to save carrier slots for bombers/fighters
 			int iMissileRange = pUnit->GetRange();
 			const vector<CvTacticalTarget>& allTargets = m_pPlayer->GetTacticalAI()->GetTacticalTargets();
-			
+
 			// Cache the special unit type for missile platforms
 			static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
-			
+
 			// First pass: find best missile-only platform
 			int iBestMissilePlatformScore = -1;
 			CvPlot* pBestMissilePlatform = NULL;
-			
+
 			// Second pass: find best carrier (as fallback)
 			int iBestCarrierScore = -1;
 			CvPlot* pBestCarrier = NULL;
-			
+
 			for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
 			{
 				if (it->score < 0)
@@ -6231,14 +6231,14 @@ void CvHomelandAI::ExecuteAircraftMoves()
 					continue;
 				if (!HomelandAIHelpers::IsGoodUnitMix(it->pPlot, pUnit))
 					continue;
-				
+
 				int iMissileBaseScore = it->score;
-				
+
 				// Determine platform type
 				bool bIsMissileOnlyPlatform = false;
 				bool bIsCarrier = false;
 				bool bIsCity = it->pPlot->isCity();
-				
+
 				if (!bIsCity)
 				{
 					CvUnit* pPlatform = it->pPlot->getBestDefender(m_pPlayer->GetID());
@@ -6249,19 +6249,19 @@ void CvHomelandAI::ExecuteAircraftMoves()
 						bIsCarrier = !bIsMissileOnlyPlatform;
 					}
 				}
-				
+
 				// Count high-value targets within missile range from this base
 				int iTargetsInRange = 0;
 				int iHighValueTargets = 0;
 				for (unsigned int iTarget = 0; iTarget < allTargets.size(); iTarget++)
 				{
-					int iDistToTarget = plotDistance(allTargets[iTarget].GetTargetX(), allTargets[iTarget].GetTargetY(), 
+					int iDistToTarget = plotDistance(allTargets[iTarget].GetTargetX(), allTargets[iTarget].GetTargetY(),
 						it->pPlot->getX(), it->pPlot->getY());
-					
+
 					if (iDistToTarget <= iMissileRange)
 					{
 						iTargetsInRange++;
-						
+
 						// Bonus for cities (can hit garrisoned units)
 						if (allTargets[iTarget].GetTargetType() == AI_TACTICAL_TARGET_ENEMY_CITY)
 							iHighValueTargets += 2;
@@ -6269,11 +6269,11 @@ void CvHomelandAI::ExecuteAircraftMoves()
 							iHighValueTargets++;
 					}
 				}
-				
+
 				// Missiles want bases with targets in range
 				iMissileBaseScore += iTargetsInRange * 5;
 				iMissileBaseScore += iHighValueTargets * 10;
-				
+
 				// For naval platforms (not cities): check platform type and resupply
 				if (!it->pPlot->isCity())
 				{
@@ -6284,22 +6284,22 @@ void CvHomelandAI::ExecuteAircraftMoves()
 						SpecialUnitTypes eSpecialCargo = pPlatform->specialCargo();
 						static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
 						bool bMissileOnlyPlatform = (eSpecialCargo == eMissileSpecial);
-						
+
 						CvCity* pNearestCity = m_pPlayer->GetClosestCityByPlots(it->pPlot);
 						int iDistToCity = pNearestCity ? plotDistance(*it->pPlot, *pNearestCity->plot()) : 999;
-						
+
 						if (bMissileOnlyPlatform)
 						{
 							// MISSILE-ONLY PLATFORMS (Submarines, Cruisers)
 							// These are designed for missiles - give them HIGH priority
 							iMissileBaseScore += 50; // Large bonus - save carrier slots for bombers!
-							
+
 							// Submarines get extra bonus - stealthy strike capability
 							if (pPlatform->getInvisibleType() != NO_INVISIBLE)
 							{
 								iMissileBaseScore += 15; // Submarine stealth bonus
 							}
-							
+
 							// Even missile platforms need resupply consideration
 							if (iDistToCity > 15 && iTargetsInRange < 2)
 							{
@@ -6311,7 +6311,7 @@ void CvHomelandAI::ExecuteAircraftMoves()
 							// Full carriers - PENALIZE to encourage missile-only platforms
 							// Only use carriers when no missile platform available or carrier is much better positioned
 							iMissileBaseScore -= 30; // Penalty for using precious carrier slots
-							
+
 							if (iDistToCity > 10)
 							{
 								// Carrier can't easily get more missiles - extra penalty if few targets
@@ -6321,11 +6321,11 @@ void CvHomelandAI::ExecuteAircraftMoves()
 						}
 					}
 				}
-				
+
 				// No targets in range? Bad choice for a missile
 				if (iTargetsInRange == 0)
 					iMissileBaseScore -= 50;
-				
+
 				// Track best by platform type
 				if (bIsMissileOnlyPlatform)
 				{
@@ -6353,14 +6353,14 @@ void CvHomelandAI::ExecuteAircraftMoves()
 					}
 				}
 			}
-			
+
 			// PRIORITY SELECTION: Missile-only platform > City > Carrier (unless carrier is much better)
 			// Only use carrier if:
 			// 1. No missile platform available, OR
 			// 2. Carrier score is significantly higher (40+ points better) due to positioning
-			
+
 			const int iCarrierAdvantageThreshold = 40; // Carrier must be this much better to override
-			
+
 			if (pBestMissilePlatform && iBestMissilePlatformScore > iCurrentScore)
 			{
 				// Prefer missile-only platform
@@ -6387,40 +6387,40 @@ void CvHomelandAI::ExecuteAircraftMoves()
 					iBestMissileScore = iBestMissilePlatformScore;
 				}
 			}
-			
+
 			// Use missile-specific best base if found and better than current
 			if (pBestMissileBase && iBestMissileScore > iCurrentScore)
 			{
 				pNewBase = pBestMissileBase;
-				
+
 				// Determine what type of base we chose for logging
 				bool bChoseMissilePlatform = (pBestMissileBase == pBestMissilePlatform);
 				bool bChoseCarrier = (pBestMissileBase == pBestCarrier);
-				
+
 				if(GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
 					if (bChoseMissilePlatform)
-						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to MISSILE PLATFORM at %d,%d (score %d) - preferred dedicated platform", 
+						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to MISSILE PLATFORM at %d,%d (score %d) - preferred dedicated platform",
 							pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
 							pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
 					else if (bChoseCarrier)
-						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to CARRIER at %d,%d (score %d) - no better missile platform available", 
+						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to CARRIER at %d,%d (score %d) - no better missile platform available",
 							pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
 							pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
 					else
-						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to CITY at %d,%d (score %d)", 
+						strLogString.Format("Rebasing MISSILE %s (%d) from %d,%d to CITY at %d,%d (score %d)",
 							pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
 							pNewBase->getX(), pNewBase->getY(), iBestMissileScore);
 					LogHomelandMessage(strLogString);
 				}
-				
+
 				pUnit->PushMission(CvTypes::getMISSION_REBASE(), pNewBase->getX(), pNewBase->getY());
 				UnitProcessed(pUnit->GetID());
 				continue; // Skip normal rebasing logic
 			}
 		}
-		
+
 		for (std::vector<SPlotWithScore>::iterator it=vPotentialBases.begin(); it!=vPotentialBases.end(); ++it)
 		{
 			int iCandidateScore = HomelandAIHelpers::ScoreAirBase(it->pPlot, m_pPlayer->GetID(), false, pUnit->GetRange(), pUnit);
@@ -6485,17 +6485,17 @@ void CvHomelandAI::ExecuteAircraftMoves()
 						break;
 					}
 				}
-				
+
 				if (bToCarrier && bIsOffensiveAir && bPrioritizeOffensiveToCarriers)
-					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d) [STRATEGY: prioritizing offensive to carriers]", 
+					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d) [STRATEGY: prioritizing offensive to carriers]",
 						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
 						pNewBase->getX(), pNewBase->getY(), iNewBaseScore);
 				else if (bToCarrier)
-					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d)", 
+					strLogString.Format("Rebasing %s (%d) from %d,%d to carrier at %d,%d for combat (score %d)",
 						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
 						pNewBase->getX(), pNewBase->getY(), iNewBaseScore);
 				else
-					strLogString.Format("Rebasing %s (%d) from %d,%d to %d,%d for combat (score %d)", 
+					strLogString.Format("Rebasing %s (%d) from %d,%d to %d,%d for combat (score %d)",
 						pUnit->getName().c_str(), pUnit->GetID(), pUnit->getX(), pUnit->getY(),
 						pNewBase->getX(), pNewBase->getY(), iNewBaseScore);
 				LogHomelandMessage(strLogString);
@@ -7797,7 +7797,7 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 
 	// Check if this is a naval platform (not a city)
 	bool bIsNavalPlatform = !pBasePlot->isCity();
-	
+
 	if (bIsNavalPlatform)
 	{
 		CvUnit* pPlatform = pBasePlot->getBestDefender(pUnit->getOwner());
@@ -7805,28 +7805,28 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 		{
 			int iPlatformSlots = pPlatform->cargoSpace();
 			int iCurrentCargo = iOffensive + iDefensive;
-			
+
 			// Check what type of cargo this platform can carry
 			// SPECIALUNIT_MISSILE = missile-only platforms (subs, cruisers)
 			// SPECIALUNIT_FIGHTER or NO_SPECIALUNIT = full carriers (can carry all air units)
 			SpecialUnitTypes eSpecialCargo = pPlatform->specialCargo();
 			static SpecialUnitTypes eMissileSpecial = (SpecialUnitTypes)GC.getInfoTypeForString("SPECIALUNIT_MISSILE");
-			
+
 			bool bMissileOnlyPlatform = (eSpecialCargo == eMissileSpecial);
-			
+
 			UnitAITypes eUnitAI = pUnit->getUnitInfo().GetDefaultUnitAIType();
-			
+
 			if (bMissileOnlyPlatform)
 			{
 				// MISSILE-ONLY PLATFORMS (Submarines, Missile Cruisers)
 				// These can ONLY carry missiles - always accept missiles
-				
+
 				if (eUnitAI == UNITAI_MISSILE_AIR || eUnitAI == UNITAI_ICBM)
 				{
 					// Check distance to city for resupply considerations
 					CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
 					int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
-					
+
 					// Missile platforms far from cities should keep some capacity for resupply
 					// But they primarily exist to carry missiles, so be more lenient
 					if (iDistToCity > 15 && iMissiles >= iPlatformSlots - 1)
@@ -7834,7 +7834,7 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 						// Very far from resupply - keep at least 1 slot free
 						return false;
 					}
-					
+
 					// Otherwise, fill up the missile platform
 					return iMissiles < iPlatformSlots;
 				}
@@ -7852,7 +7852,7 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 				int iEnemyBombers = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, false, true);
 				int iEnemyFighters = GET_PLAYER(pUnit->getOwner()).GetMilitaryAI()->GetNumEnemyAirUnitsInRange(pBasePlot, 8, true, false);
 				int iDesiredFighters = GetDesiredCarrierFighterReserve(iPlatformSlots, iEnemyBombers, iEnemyFighters);
-				
+
 				// Check distance to nearest friendly city for resupply
 				CvCity* pNearestCity = GET_PLAYER(pUnit->getOwner()).GetClosestCityByPlots(pBasePlot);
 				int iDistToCity = pNearestCity ? plotDistance(*pBasePlot, *pNearestCity->plot()) : 999;
@@ -7872,14 +7872,14 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 					// Keep some flexible deck space on air-contested carriers so future CAP swings can be refilled.
 					return false;
 				}
-				
+
 				if (eUnitAI == UNITAI_MISSILE_AIR)
 				{
 					// MISSILE LOADING ON CARRIERS:
 					// 1. Carriers far from cities can't easily reload missiles after use
 					// 2. Missiles are one-time use - carrier should have enough bombers for sustained ops
 					// 3. Limit missiles on carriers that can't resupply
-					
+
 					if (!bCanResupplyMissiles)
 					{
 						// Carrier is far from cities - limit missiles
@@ -7895,7 +7895,7 @@ bool HomelandAIHelpers::IsGoodUnitMix(CvPlot* pBasePlot, CvUnit* pUnit)
 						if (iMissiles >= iMaxMissileRatio)
 							return false;
 					}
-					
+
 					// Always ensure at least some bombers for sustained operations
 					if (iCurrentCargo > 0 && iBombers == 0)
 					{
@@ -7982,15 +7982,15 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 		int iCarrierHealth = pDefender->GetCurrHitPoints();
 		int iCarrierMaxHealth = pDefender->GetMaxHitPoints();
 		int iHealthPercent = (iCarrierHealth * 100) / iCarrierMaxHealth;
-		
+
 		// Critical health carrier (<30%): unsuitable unless desperate
 		if (iHealthPercent < 30 && !bDesperate)
 			return -1;
-		
+
 		// Damaged carrier (30-60%): reduce score by 50%
 		if (iHealthPercent < 60)
 			iBaseScore = (iBaseScore + 1) / 2;
-		
+
 		// Lightly damaged carrier (60-80%): reduce score by 25%
 		if (iHealthPercent < 80)
 			iBaseScore = (iBaseScore * 3) / 4;
@@ -8072,7 +8072,7 @@ int HomelandAIHelpers::ScoreAirBase(CvPlot* pBasePlot, PlayerTypes ePlayer, bool
 	// This helps detect incoming enemies and gather intelligence
 	int iVisibilityBonus = 0;
 	int iVisionRange = 2; // Typical fighter vision range - could pass as parameter if needed
-	
+
 	// Count strategically valuable plots within vision range that are currently not visible to the player
 	for (int iX = -iVisionRange; iX <= iVisionRange; iX++)
 	{

@@ -142,7 +142,7 @@ Database/
 if (AllianceStrength >= DEFENSIVE_PACT)
     return false;  // Can't plunder allies
 
-// VASSAL CHECK  
+// VASSAL CHECK
 if (IsVassal(owner) OR owner.IsVassal(self))
     return false;  // Can't plunder vassals/overlords
 
@@ -408,4 +408,3 @@ Used in diplomacy AI:
 7. → Commit to main
 8. → Update patch notes
 ```
-

@@ -1,6 +1,6 @@
 # Resources System Review
 
-**Date:** January 11, 2026  
+**Date:** January 11, 2026
 **Scope:** Strategic/luxury/bonus resources, yields, consumption, trade mechanics, resource reveal rules
 
 ---
@@ -155,11 +155,11 @@ bool CvPlayer::CanTradeResource(ResourceTypes eResource) const
 {
     if (!IsResourceRevealed(eResource))
         return false;  // Can't trade what you can't see
-    
+
     // Then check trade tech requirement
     if (getTechCityTrade() != NO_TECH)
         return GET_TEAM(GetTeam()).HasTech(pkResourceInfo->getTechCityTrade());
-    
+
     return true;  // No trade tech gate = can trade
 }
 ```
@@ -191,7 +191,7 @@ Requires: Bronze Working
 
 #### Improvement 1.2a: **Better Policy Reveal Integration**
 
-**Proposal:** 
+**Proposal:**
 1. Document which policies reveal which resources (wiki, UI tooltip)
 2. When policy adopted, show notification: "[Policy Name] reveals [Resource]"
 3. Update resource tooltips to list revealing policies
@@ -329,7 +329,7 @@ Horse (3 total)
   └─ Export: 1 (trade agreement)
 ```
 
-**Implementation:** 
+**Implementation:**
 - Similar to [Happiness Overview](../happiness/HAPPINESS_REVIEW.md) system
 - Add Lua panel that calls `CvPlayer::GetNumResource*()` methods
 - Show trend/history (−1 per turn if deficient)
@@ -344,7 +344,7 @@ Horse (3 total)
 [Heavy Cavalry] (2 turns)
 Resources: −2 Iron
   After Build: Iron 8 → 6
-  
+
   ⚠ If iron drops below 0: −5% strength penalty
 ```
 
@@ -382,7 +382,7 @@ bool CvDeal::CheckResourceOvercommit()
     {
         int iTotalExport = GetAllDealsExporting(ePlayer, eResource);
         int iAvailable = GET_PLAYER(ePlayer).GetNumResourceAvailable(eResource, false);
-        
+
         if (iTotalExport > iAvailable)
             return false;  // Prevent deal
     }
@@ -431,14 +431,14 @@ int CvPlayer::GetHappinessFromLuxury(ResourceTypes eResource, bool bIncludeImpor
 {
     if (GC.getGame().GetGameLeagues()->IsLuxuryHappinessBanned(eResource))
         return 0;
-    
+
     if (getNumResourceAvailable(eResource, bIncludeImport) > 0)
         return pkResourceInfo->getHappiness();  // +4 typically
-    
+
     // Netherlands UA: 50% retention if exported
     if (GetLuxuryHappinessRetention() > 0 && getResourceExport(eResource) > 0)
         return (pkResourceInfo->getHappiness() * GetLuxuryHappinessRetention()) / 100;
-    
+
     return 0;
 }
 ```
@@ -543,7 +543,7 @@ getMonopolyMovementBonus() // Military unit movement bonus
 
 #### Improvement 3.1a: **Duplicate Luxury Detection & Auto-Trade Suggestion**
 
-**Proposal:** 
+**Proposal:**
 1. Scan for duplicate luxuries and calculate "excess"
 2. Show notification: "You own 3 Fur but gain happiness from only 1. Excess: 2"
 3. Suggest trading excess to willing partners
@@ -648,7 +648,7 @@ Are you sure?
 
 #### Improvement 3.4a: **World Congress Luxury Ban Safeguard**
 
-**Proposal:** 
+**Proposal:**
 1. In deal negotiation, warn: "This resource may be banned by World Congress"
 2. Reduce deal value if resource is "at risk" of banning
 3. After ban, allow automatic deal renegotiation at fair value
@@ -807,7 +807,7 @@ GRANARY
 Resources Enhance: Fish, Wheat
 ```
 
-**Implementation:** 
+**Implementation:**
 - [CvBuildingInfo.xml](../../../(2) Vox Populi/Core Files/Text/) — add localization keys for resource bonuses
 - Building tooltip builder loops through resource yield modifiers
 
@@ -827,7 +827,7 @@ These buildings boost Fish yields:
 Build one of these to maximize this tile's output.
 ```
 
-**Implementation:** 
+**Implementation:**
 - Resource tooltip links to buildings
 - City production UI highlights resource-boosting buildings
 
@@ -835,7 +835,7 @@ Build one of these to maximize this tile's output.
 
 #### Improvement 4.3a: **Tech Yield Enhancement Notifications**
 
-**Proposal:** 
+**Proposal:**
 1. When tech is discovered that enhances resources, show notification: "Sailing discovered! Whale resources now +1 Production."
 2. In tech tree view, preview resource enhancements: "Sailing enhances: Whale (+1 Prod), Pearl (+1 Gold)"
 3. In advisor, suggest founding cities on enhanced resources
@@ -857,7 +857,7 @@ Future Value (with Astronomy): +1 Food, +2 Gold
 Future Value (with Refrigeration): +2 Food, +1 Production
 ```
 
-**Implementation:** 
+**Implementation:**
 - Player can toggle "Show Future Tech Effects"
 - Display calculated yields assuming techs are discovered in natural order
 
@@ -916,24 +916,24 @@ int CvDealAI::GetLuxuryResourceValue(ResourceTypes eResource, ...)
 int CvDealAI::GetResourceValue(ResourceTypes eRes, PlayerTypes eOther, bool bFromMe)
 {
     int iValue = GetBaseResourceValue(eRes);
-    
+
     // Adjustment 1: WLTKD Status
     if (pCivilization->IsCurrentlyInWLTKD())
         iValue *= 0.5;  // Less valuable if already active
-    
+
     // Adjustment 2: Monopoly Loss
     if (pCivilization->HasMonopoly(eRes))
         iValue += GetMonopolyBonus(eRes);
-    
+
     // Adjustment 3: Future Tech Enhancements
     int iFutureValue = GetResourceValueWithFutureTechs(eRes);
     if (iFutureValue > iValue)
         iValue += (iFutureValue - iValue) * 0.3;  // 30% of future gain
-    
+
     // Adjustment 4: Strategic Scarcity
     if (IsStrategicResource(eRes))
         iValue *= GetStrategicScarcityMultiplier();
-    
+
     return iValue;
 }
 ```
@@ -1010,4 +1010,3 @@ int CvDealAI::GetResourceValue(ResourceTypes eRes, PlayerTypes eOther, bool bFro
 - [Diplomacy Review](../diplomacy-review.md) — Trade negotiation & strategic values
 - [CvResourceInfo](CvGameCoreDLL_Expansion2/CvInfos.h) — Resource data structure
 - [CvDealAI](CvGameCoreDLL_Expansion2/CvDealAI.cpp) — Deal valuation logic
-

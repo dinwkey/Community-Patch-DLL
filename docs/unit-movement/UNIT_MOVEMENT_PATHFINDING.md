@@ -156,12 +156,12 @@ Embarked units move on water; disembarked units move on land. The transition bet
 
 1. **Full Cost (Turn-Ending)** — embark/disembark without special promotions or traits
    - Cost: `INT_MAX` (ends the turn)
-   
+
 2. **Cheap Cost (1 MP)** — flat-cost embarkation via:
    - Trait: `IsEmbarkedToLandFlatCost()`
    - Promotion: `isEmbarkFlatCost()`, `isDisembarkFlatCost()`
    - City bonus: `isCityLessEmbarkCost()` (50% cost reduction)
-   
+
 3. **Free Cost (Cover Charge)** — no movement cost but with a nominal cover charge
    - City bonus: `isCityNoEmbarkCost()`
    - Cost: `MOVE_DENOMINATOR / 10` (1/10 of a normal move)
@@ -177,7 +177,7 @@ if ((bToIsWater != bFromIsWater) && pUnit->CanEverEmbark())
     // Check for free/cheap transitions (traits, promotions, cities)
     if (pTraits->IsEmbarkedToLandFlatCost() || pUnit->isDisembarkFlatCost())
         bCheapEmbarkStateChange = true;
-    
+
     // Apply city bonuses
     if (pToPlot->isCoastalCityOrPassableImprovement(...))
     {
@@ -470,7 +470,7 @@ Key mod flags affecting movement:
 **Description:** Pathfinding can become a bottleneck on huge Earth maps (200+ cities).
 **Cause:** Each unit pathfind touches thousands of nodes; multiple pathfinds per turn.
 **Status:** Partially mitigated by node caching and turn-slice limits.
-**Recommendation:** 
+**Recommendation:**
 - Profile `PathCost()` to identify hotspots.
 - Consider hierarchical pathfinding (macro paths between cities, micro paths around obstacles).
 - Limit pathfinding frequency for non-critical movement (trade routes, civilian explore).
@@ -611,6 +611,6 @@ Key mod flags affecting movement:
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** January 2025  
+**Document Version:** 1.0
+**Last Updated:** January 2025
 **Maintenance:** Community Patch DLL developers

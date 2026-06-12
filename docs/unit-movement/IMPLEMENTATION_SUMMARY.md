@@ -15,7 +15,7 @@ Successfully implemented three pathfinder improvements (UMP-004, UMP-005, UMP-00
 
 ### Code Changes
 
-**File:** [CvAStar.cpp](../../CvGameCoreDLL_Expansion2/CvAStar.cpp#L338)  
+**File:** [CvAStar.cpp](../../CvGameCoreDLL_Expansion2/CvAStar.cpp#L338)
 **Function:** `CvAStar::FindPathWithCurrentConfiguration()`
 
 **Changes Made:**
@@ -41,9 +41,9 @@ bool CvAStar::FindPathWithCurrentConfiguration(int iXstart, int iYstart, int iXd
 		return false;  // Fail fast to prevent stack overflow
 	}
 	s_iPathfinderDepth++;
-	
+
 	// ... pathfinding logic ...
-	
+
 	// Decrement on ALL exit paths (IsInitialized failure, dest validation failure, normal exit)
 	s_iPathfinderDepth--;
 	return bSuccess;
@@ -73,7 +73,7 @@ bool CvAStar::FindPathWithCurrentConfiguration(int iXstart, int iYstart, int iXd
 
 ### Code Changes
 
-**File:** [CvAStar.cpp](../../CvGameCoreDLL_Expansion2/CvAStar.cpp#L1196)  
+**File:** [CvAStar.cpp](../../CvGameCoreDLL_Expansion2/CvAStar.cpp#L1196)
 **Function:** `PathHeuristic()`
 
 #### Phase 1: Infrastructure ✅
@@ -84,9 +84,9 @@ int PathHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, 
 	// UMP-005: Unit-specific heuristic based on actual unit speed
 	// This significantly improves pathfinding performance for slow units
 	// (workers, embarked, ships) while maintaining admissibility
-	
+
 	int iEstimatedMovesPerTurn = 4;  // Default: assume fast unit
-	
+
 	return plotDistance(iNextX, iNextY, iDestX, iDestY) * PATH_BASE_COST * iEstimatedMovesPerTurn;
 }
 ```
@@ -109,12 +109,12 @@ int PathHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, 
 	//a regular step by a unit costs PATH_BASE_COST*MOVE_DENOMINATOR/MOVES_PER_TURN
 	//we use a conservative estimate: assume unit can move 4 plots per turn (fast unit on roads)
 	//this ensures admissibility even for very fast units while being tighter than the old hardcoded value
-	
+
 	// UMP-005 PHASE 2: Use unit-specific base moves if available for tighter heuristic
 	// This significantly improves pathfinding performance for slow units (workers, embarked, ships)
 	// while maintaining admissibility (heuristic never overestimates)
 	int iEstimatedMovesPerTurn = 4;  // Default: assume fast unit (horse, modern unit)
-	
+
 	// Get unit-specific base moves for tighter heuristic
 	if (finder != NULL)
 	{
@@ -127,7 +127,7 @@ int PathHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, 
 			iEstimatedMovesPerTurn = std::max(iBaseMoves / 2, 1);
 		}
 	}
-	
+
 	return plotDistance(iNextX, iNextY, iDestX, iDestY)*PATH_BASE_COST*iEstimatedMovesPerTurn;
 }
 ```
@@ -161,7 +161,7 @@ int PathHeuristic(int /*iCurrentX*/, int /*iCurrentY*/, int iNextX, int iNextY, 
 
 ### Code Changes
 
-**File:** [CvAStar.cpp](../../CvGameCoreDLL_Expansion2/CvAStar.cpp#L1043)  
+**File:** [CvAStar.cpp](../../CvGameCoreDLL_Expansion2/CvAStar.cpp#L1043)
 **Function:** `CvPathFinder::DestinationReached()`
 
 **Changes Made:**
@@ -213,12 +213,12 @@ Siege unit pathfinding:
 ```
 Siege unit pathfinding:
 - Distance 1: Still fails (mountains block)
-- Distance 2: 
+- Distance 2:
   1. Try common neighbor path (fails)
   2. Fallback: Use passable terrain at distance 2
   3. Result: Found! Unit can stop at ring2 position
-  
-Log entry: "Ring2 fallback: Using passable terrain at (50,50) 
+
+Log entry: "Ring2 fallback: Using passable terrain at (50,50)
             when no common neighbor to target (51,51)"
 ```
 
@@ -371,6 +371,6 @@ Ring2 siege on island: 20ms (first try success)
 
 ---
 
-**Implementation Date:** January 2025  
-**Developer:** Community Patch DLL Team  
+**Implementation Date:** January 2025
+**Developer:** Community Patch DLL Team
 **Reviewed Against:** ISSUES_AND_FIXES.md (UMP-004, UMP-005, UMP-006 specifications)

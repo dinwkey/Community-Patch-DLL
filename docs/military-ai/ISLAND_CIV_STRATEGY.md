@@ -1,9 +1,9 @@
 # Island Civilization Strategy — Research & Implementation Plan
 
-> **Status:** Research complete, implementation not started  
-> **Author:** AI-assisted analysis session, Feb 2026  
-> **Scope:** Major AI improvement — specialized strategic model for island and archipelago civilizations  
-> **Prerequisite:** Strategic Geography Map (land phases 1-6 + naval phases 1-4) — see `STRATEGIC_GEOGRAPHY_MAP_PLAN.md`  
+> **Status:** Research complete, implementation not started
+> **Author:** AI-assisted analysis session, Feb 2026
+> **Scope:** Major AI improvement — specialized strategic model for island and archipelago civilizations
+> **Prerequisite:** Strategic Geography Map (land phases 1-6 + naval phases 1-4) — see `STRATEGIC_GEOGRAPHY_MAP_PLAN.md`
 > **Related:** Appendix C of `STRATEGIC_GEOGRAPHY_MAP_PLAN.md` (Naval Strategic Geography)
 
 ---
@@ -178,23 +178,23 @@ ComputeGeographicPosture():
      - citiesOnLargest = number of cities on the largest landmass
      - totalCities = numCities
      - coastalCityRatio = numCoastalCities / totalCities
-  
+
   4. Classify:
      If largestLandmass > 100 AND citiesOnLargest / totalCities >= 0.8:
        If coastalCityRatio > 0.6 AND all border cities are coastal:
          → GEO_POSTURE_COASTAL
        Else:
          → GEO_POSTURE_CONTINENTAL
-     
+
      If largestLandmass > 50 AND landConnectionWidth <= 3:
        → GEO_POSTURE_PENINSULAR    (detected via chokepoint on land)
-     
+
      If numLandmasses >= 3 AND largestLandmass < 50:
        → GEO_POSTURE_ARCHIPELAGO
-     
+
      If largestLandmass < 50:
        → GEO_POSTURE_ISLAND
-     
+
      Default: GEO_POSTURE_CONTINENTAL
 ```
 
@@ -211,18 +211,18 @@ struct IslandCivData
 {
     // Classification
     GeographicPosture ePosture;
-    
+
     // Island metrics
     int iNumLandmasses;                // Distinct landmasses with cities
     int iLargestLandmassSize;          // Tiles of the biggest island
     float fCoastalCityRatio;           // Fraction of cities that are coastal
     float fNavalForceRatio;            // Target naval / total military ratio
-    
+
     // Defensive perimeter
     int iDefensivePerimeterRadius;     // How far out to patrol (tiles from coast)
     std::vector<CvPlot*> vPatrolStations; // Key water tiles for fleet positioning
     std::vector<CvPlot*> vStraitDefensePositions; // Naval chokepoint guard positions
-    
+
     // Inter-island logistics
     struct IslandGroup
     {
@@ -235,7 +235,7 @@ struct IslandCivData
         int iNearestOtherIslandDist;   // Water tiles to nearest friendly island
     };
     std::vector<IslandGroup> vIslandGroups;
-    
+
     // Convoy tracking (transient, per-turn)
     struct PendingTransit
     {
@@ -247,7 +247,7 @@ struct IslandCivData
         int iAssignedEscortID;        // -1 if no escort yet
     };
     std::vector<PendingTransit> vPendingTransits;
-    
+
     // Economy
     int iSeaTradeRouteCount;
     int iSeaTradeRouteValue;          // Total gold from sea trade
@@ -284,7 +284,7 @@ Plus additional data: deep water count in RING2, landing zone count (flat land a
      SHELTERED: +30% site value  (defensible harbor)
      MODERATE:  +0%              (neutral)
      EXPOSED:   -20% site value  (hard to defend)
-   
+
    Exception: if the EXPOSED site controls a naval chokepoint, +15% instead
    ```
 
@@ -314,12 +314,12 @@ Plus additional data: deep water count in RING2, landing zone count (flat land a
 ```
 For an island civ:
   - DefensivePerimeterRadius = max(3, min(NavalUnitRange, 5))
-  
+
   Where NavalUnitRange = movement / GD_INT_GET(MOVE_DENOMINATOR) + rangedRange
-  
+
   This is the distance from the coastline that friendly naval units can
   effectively patrol and intercept threats within one turn.
-  
+
   Peacetime: patrol at 2-3 tile radius (detection + interception)
   Wartime:   extend to 4-5 tile radius (early warning + engagement)
 ```
@@ -335,7 +335,7 @@ ComputePatrolStations():
     3. If city is adjacent to a naval chokepoint, place station ON the
        chokepoint tile instead (strait defense > perimeter patrol)
     4. Merge nearby patrol stations (within 2 tiles) to avoid redundancy
-  
+
   Result: 1-2 patrol stations per FRONT_LINE coastal city, positioned
   to cover the primary threat axis with overlapping fields of fire
 ```
@@ -470,23 +470,23 @@ For each blockaded coastal city:
 
 If GEO_POSTURE_ISLAND/ARCHIPELAGO AND any city blockaded:
   bBlockadeCrisis = (worst blockade severity >= BLOCKADE_SEVERE)
-  
+
   BLOCKADE_CATASTROPHIC effects:
     - Force DEFENSE_STATE_CRITICAL for naval
     - Emergency naval purchase enabled regardless of gold reserves
     - All available naval units redirected to break blockade
     - If blockade persists ≥3 turns: increase peace willingness by 40
     - Diplomatic: request ally naval assistance (if ally has fleet)
-  
+
   BLOCKADE_SEVERE effects:
     - Force DEFENSE_STATE_CRITICAL for naval
     - Emergency naval purchase if affordable
     - If blockade persists ≥5 turns: increase peace willingness by 25
-  
+
   BLOCKADE_PAINFUL effects:
     - Escalate naval defense to NEEDED if not already
     - If blockade persists ≥8 turns: increase peace willingness by 15
-  
+
   BLOCKADE_ANNOYING effects (continental behavior):
     - Standard blockade response (existing code)
 ```
@@ -570,10 +570,10 @@ For each friendly landmass with ≥1 city:
     - bHasNavalProductionCity (city with harbor + naval unit production)
     - iDistanceToCapitalIsland (water tiles)
     - bConnectedByCanal (canal city linking this island to another)
-  
+
   Priority for defense:
     Capital island > largest population island > naval production island > other
-  
+
   Reinforcement logic:
     If an island has < 1 garrison per city AND enemies nearby:
       Request reinforcement from nearest island with surplus
@@ -682,10 +682,10 @@ Island civs should still build SOME land units (garrison, city defense), but sho
 For each island:
   Desired land garrison = numCities on island × 1 (ranged garrison per city)
                         + 1 reserve unit per 3 cities
-  
+
   If current land units on island >= desiredGarrison:
     Stop land unit production on this island (shift to naval)
-  
+
   Exception: if ISLAND_INVADED, build land combat units urgently
 ```
 
@@ -720,29 +720,29 @@ The naval force ratio floor for PENINSULAR and COASTAL civs should NOT be static
 ```
 EvaluateNearbyNavalThreat():
   iAdjustment = 0
-  
+
   For each known civ within trade route range:
     iWaterDistance = shortest water path to their nearest city
     iLandDistance = shortest land path to their nearest city
-    
+
     // Civs across narrow water (Korea↔Japan, Britain↔France)
     If iWaterDistance < 10 AND iWaterDistance < iLandDistance:
       iAdjustment += 10  (high naval priority — enemy is closer by sea)
-    
+
     // Civs on same continent with long coastline (America, Brazil, Inca)
     If iLandDistance < iWaterDistance AND we share a large landmass:
       iAdjustment -= 5   (primary threat is by land)
-    
+
     // Enemy force composition matters:
     If enemy has strong navy (>1.5× our naval strength):
       iAdjustment += 5
     If enemy has strong army but weak navy:
       iAdjustment -= 3   (they threaten by land, not sea)
-  
+
   // Era adjustment: late-game naval units are more powerful and mobile
   If currentEra >= ERA_INDUSTRIAL:
     iAdjustment += 3     (naval threats become more dangerous)
-  
+
   // Clamp to reasonable range
   return clamp(iAdjustment, -15, +15)
 ```
@@ -773,18 +773,18 @@ For each identified naval chokepoint:
      - Width 2: HIGH (two ships block)
      - Width 3: MODERATE (defensible with fleet)
      - Width 4+: LOW (bypassable, patrol rather than block)
-  
+
   2. Assign fleet:
      - Width 1: Station 1 ranged ship ON the tile + 1 melee adjacent
      - Width 2: Station 2 ranged + 1 melee
      - Width 3: Station 2 ranged + 2 melee (overlapping fire)
      - Rotate ships when damaged (maintain presence)
-  
+
   3. Alert logic:
      - Enemy ship enters within 3 tiles of strait → ALERT
      - ≥3 enemy ships within 5 tiles → MOBILIZE (call reinforcements)
      - Enemy breaks through strait → ESCALATE (emergency naval ops)
-  
+
   4. Combined defense:
      - If city adjacent to strait, use city ranged attack + fleet fire
      - This creates overlapping kill zone: city + 2 ranged ships = 3 attacks
@@ -847,11 +847,11 @@ Island civ war evaluation:
     If our navy > 1.5× their navy: willing (can project power)
     If navies roughly equal: cautious (war of attrition at sea is costly)
     If their navy > our navy: unwilling (we'd lose control of our waters)
-  
+
   Against enemy on different water body:
     If water connectivity exists (through straits/canals): evaluate normally
     If no water path: cannot attack → do not declare war
-  
+
   Against enemy sharing our island:
     Standard land war evaluation applies
     But: other island civ enemies may exploit our distraction → consider
@@ -1051,7 +1051,7 @@ Most heavy lifting (coastal exposure, naval chokepoints, water connectivity, amp
 
 Add `IslandCivLog.csv` per turn:
 ```
-Turn, Player, Posture, NumIslands, LargestIsland, NavalForceRatio, PatrolStations, 
+Turn, Player, Posture, NumIslands, LargestIsland, NavalForceRatio, PatrolStations,
 ActiveConvoys, StraitControlled, BlockadeCrisis, AmphibiousImminentFrom
 ```
 
@@ -1266,7 +1266,7 @@ Melee attack vs embarked:
   - Zero retaliation damage (attacker takes no self-damage)
   - Full attack strength (no penalty for attacking embarked)
   - Embarked unit uses base strength only (massive gap)
-  
+
 Ranged attack vs embarked:
   - Standard ranged damage calculation
   - But defense is so low that most ranged units one-shot or two-shot

@@ -1,9 +1,9 @@
 # Issue 7.2 Resolution: Flavor-Based Unit Grouping System
 
-**Status**: ✅ **RESOLVED**  
-**Date**: 2025-01-24  
-**Components Modified**: CvFlavorManager, CvMilitaryAI  
-**Compilation**: ✅ All modified files compile without errors  
+**Status**: ✅ **RESOLVED**
+**Date**: 2025-01-24
+**Components Modified**: CvFlavorManager, CvMilitaryAI
+**Compilation**: ✅ All modified files compile without errors
 
 ---
 
@@ -172,7 +172,7 @@ if (ePlayer == PLAYER_MY_CUSTOM_CIV) {
 
 ```cpp
 // Get all ranged units suitable for group formation
-std::vector<UnitTypes> rangedUnits = 
+std::vector<UnitTypes> rangedUnits =
     FlavorManager.GetUnitsForGrouping(
         ePlayer,
         FLAVOR_CAT_RANGED,
@@ -294,9 +294,9 @@ Potential improvements for future iterations:
 
 ## Sign-Off
 
-**Implementation completed**: January 24, 2025  
-**Tested by**: Automated compilation + static analysis  
-**Status**: Ready for integration and in-game testing  
+**Implementation completed**: January 24, 2025
+**Tested by**: Automated compilation + static analysis
+**Status**: Ready for integration and in-game testing
 **Next steps**: Deploy to test build, gather player feedback, iterate based on balance reports
 
 ---
@@ -347,4 +347,3 @@ public:
       FlavorCategory ePrimaryFlavor
   ) const;
 ```
-

@@ -343,4 +343,3 @@ if (GC.getSaveVersion() < CvGlobals::SAVE_VERSION_FIELD_REMOVAL)
 
 - Defined in `CvDangerPlots.h` as `typedef std::set<std::pair<PlayerTypes,int>> UnitSet`
 - Duplicated in `CvPlayer.h` (with `#include <set>`) for self-containment
-

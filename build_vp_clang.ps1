@@ -261,29 +261,29 @@ $CPP = @(
 # Build compiler argument list
 function Build-ClangArgs {
     $args = @('-m32', '-msse3', '/c', '/MD', '/GS', '/EHsc', '/fp:precise', '/Zc:wchar_t', '/Zi', '/FS')
-    
+
     if ($Config -eq 'release') {
         $args += '/Ox', '/Ob2', '/Zo', '-flto'
     } else {
         $args += '/Od', '/Oy-', '/Zo'
     }
-    
+
     foreach ($predef in $PREDEFS) {
         $args += "/D$predef"
     }
-    
+
     foreach ($include_dir in $INCLUDE_DIRS) {
         $args += "/I`"$(Join-Path $PROJECT_DIR $include_dir)`""
     }
-    
+
     foreach ($suppress in $CL_SUPPRESS) {
         $args += "-Wno-$suppress"
     }
-    
+
     foreach ($enable in $CL_ENABLE) {
         $args += "-W$enable"
     }
-    
+
     return ($args -join ' ')
 }
 
@@ -294,13 +294,13 @@ function Build-LinkArgs {
         '/NXCOMPAT', '/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED',
         '/FORCE:MULTIPLE', "/DEF:`"$(Join-Path $PROJECT_DIR $DEF_FILE)`""
     )
-    
+
     if ($Config -eq 'release') {
         $args += '/LTCG', '/OPT:REF', '/OPT:ICF'
     } else {
         $args += '/OPT:NOREF', '/OPT:NOICF'
     }
-    
+
     return $args
 }
 
@@ -308,7 +308,7 @@ function Build-LinkArgs {
 function Prepare-Dirs {
     New-Item -ItemType Directory -Force -Path $BUILD_DIR | Out-Null
     New-Item -ItemType Directory -Force -Path $OUT_DIR | Out-Null
-    
+
     foreach ($cpp in $CPP) {
         $cpp_dir = Join-Path $BUILD_DIR (Split-Path $cpp -Parent)
         New-Item -ItemType Directory -Force -Path $cpp_dir | Out-Null
@@ -321,14 +321,14 @@ function Test-NeedsRebuild {
         [string]$Target,
         [string]$Source
     )
-    
+
     if (-not (Test-Path $Target)) {
         return $true  # Target doesn't exist, needs rebuild
     }
-    
+
     $targetTime = (Get-Item $Target).LastWriteTime
     $sourceTime = (Get-Item $Source).LastWriteTime
-    
+
     return $sourceTime -gt $targetTime  # Source newer than target, needs rebuild
 }
 
@@ -338,9 +338,9 @@ function Invoke-VsCommand {
         [string]$Command,
         [string]$LogFile
     )
-    
+
     $fullCommand = "`"`"$VS_2008_VARS_BAT`">NUL && $Command`""
-    
+
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = 'cmd.exe'
     $psi.Arguments = "/c $fullCommand"
@@ -348,20 +348,20 @@ function Invoke-VsCommand {
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-    
+
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $psi
     $process.Start() | Out-Null
-    
+
     $stdout = $process.StandardOutput.ReadToEnd()
     $stderr = $process.StandardError.ReadToEnd()
     $process.WaitForExit()
-    
+
     if ($LogFile) {
         Add-Content -Path $LogFile -Value $stdout -Encoding UTF8
         Add-Content -Path $LogFile -Value $stderr -Encoding UTF8
     }
-    
+
     return @{
         ExitCode = $process.ExitCode
         Output = $stdout + $stderr
@@ -371,10 +371,10 @@ function Invoke-VsCommand {
 # Update commit ID
 function Update-CommitId {
     param([string]$LogFile)
-    
+
     Write-Host "Updating commit id..."
     $startTime = Get-Date
-    
+
     Add-Content -Path $LogFile -Value "==== update_commit_id.bat ====" -Encoding UTF8
 
     $updateBat = Join-Path $PROJECT_DIR 'update_commit_id.bat'
@@ -384,12 +384,12 @@ function Update-CommitId {
     }
     $quoted = "`"$updateBat`""
     $result = Invoke-VsCommand -Command $quoted -LogFile $LogFile
-    
+
     if ($result.ExitCode -ne 0) {
         Write-Host "Failed to update commit id - see build log"
         exit 1
     }
-    
+
     $elapsed = (Get-Date) - $startTime
     Write-Host "Commit id update finished after $($elapsed.TotalSeconds) seconds"
 }
@@ -401,23 +401,23 @@ function Build-ClangCpp {
         [string]$ClArgs,
         [string]$LogFile
     )
-    
+
     Write-Host "Building clang.cpp..."
     $startTime = Get-Date
-    
+
     $src = Join-Path $PROJECT_DIR 'clang.cpp'
     $out = Join-Path $BUILD_DIR 'clang.obj'
     $command = "$ClangCl `"$src`" /Fo`"$out`" $ClArgs"
-    
+
     Add-Content -Path $LogFile -Value "==== $src ====" -Encoding UTF8
-    
+
     $result = Invoke-VsCommand -Command $command -LogFile $LogFile
-    
+
     if ($result.ExitCode -ne 0) {
         Write-Host "Failed to build clang.cpp - see build log"
         exit 1
     }
-    
+
     $elapsed = (Get-Date) - $startTime
     Write-Host "clang.cpp build finished after $($elapsed.TotalSeconds) seconds"
 }
@@ -430,31 +430,31 @@ function Build-Pch {
         [string]$PchPath,
         [string]$LogFile
     )
-    
+
     $pch_src = Join-Path $PROJECT_DIR $PCH_CPP
     $pch_header = Join-Path $PROJECT_DIR $PCH_H
-    
+
     # Check if PCH needs rebuilding
     if (-not (Test-NeedsRebuild -Target $PchPath -Source $pch_src) -and (Test-Path $pch_header) -and -not (Test-NeedsRebuild -Target $PchPath -Source $pch_header)) {
         Write-Host "Precompiled header is up-to-date, skipping rebuild"
         return
     }
-    
+
     Write-Host "Building precompiled header..."
     $startTime = Get-Date
-    
+
     $out = Join-Path $BUILD_DIR ($PCH_CPP -replace '\.cpp$', '.obj')
     $command = "$ClangCl `"$pch_src`" /Fo`"$out`" /Yc`"$PCH_H`" /Fp`"$PchPath`" $ClArgs"
-    
+
     Add-Content -Path $LogFile -Value "==== $pch_src ====" -Encoding UTF8
-    
+
     $result = Invoke-VsCommand -Command $command -LogFile $LogFile
-    
+
     if ($result.ExitCode -ne 0) {
         Write-Host "Failed to build precompiled header - see build log"
         exit 1
     }
-    
+
     $elapsed = (Get-Date) - $startTime
     Write-Host "Precompiled header build finished after $($elapsed.TotalSeconds) seconds"
 }
@@ -467,24 +467,24 @@ function Build-Cpps {
         [string]$PchPath,
         [string]$LogFile
     )
-    
+
     Write-Host "Building cpps..."
     $startTime = Get-Date
-    
+
     # Count total files and files to rebuild
     $totalFiles = $CPP.Count
     $filesToBuild = 0
     $skippedFiles = 0
-    
+
     $jobs = @()
     $tempLogs = @{}
     $filesToRebuild = @()
-    
+
     # First pass: check which files need rebuilding
     foreach ($cpp in $CPP) {
         $cpp_src = Join-Path $PROJECT_DIR $cpp
         $out = Join-Path $BUILD_DIR ($cpp -replace '\.cpp$', '.obj')
-        
+
         if (Test-NeedsRebuild -Target $out -Source $cpp_src) {
             $filesToRebuild += @{cpp = $cpp; src = $cpp_src; out = $out}
             $filesToBuild++
@@ -492,27 +492,27 @@ function Build-Cpps {
             $skippedFiles++
         }
     }
-    
+
     if ($skippedFiles -gt 0) {
         Write-Host "Skipping $skippedFiles up-to-date files ($filesToBuild files to rebuild)"
     }
-    
+
     # Second pass: build files that need it in parallel
     $maxParallelJobs = [Math]::Max(1, [System.Environment]::ProcessorCount - 1)
-    
+
     foreach ($fileInfo in $filesToRebuild) {
         $cpp_src = $fileInfo.src
         $out = $fileInfo.out
         $tempLog = [System.IO.Path]::GetTempFileName()
         $tempLogs[$cpp_src] = $tempLog
-        
+
         $command = "`"`"$VS_2008_VARS_BAT`">NUL && $ClangCl `"$cpp_src`" /Fo`"$out`" /Yu`"$PCH_H`" /Fp`"$PchPath`" $ClArgs`""
-        
+
         # Throttle job submissions to avoid resource exhaustion
         while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -ge $maxParallelJobs) {
             Start-Sleep -Milliseconds 50
         }
-        
+
         $job = Start-Job -ScriptBlock {
             param($cmd, $log, $timeout)
             $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -541,14 +541,14 @@ function Build-Cpps {
 
             return $process.ExitCode
         } -ArgumentList $command, $tempLog, 300000  # 5-minute timeout per file
-        
+
         $jobs += $job
     }
-    
+
     # Wait for all remaining jobs with timeout monitoring
     $jobTimeout = 600000  # 10-minute total timeout for all jobs
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    
+
     while ($jobs | Where-Object { $_.State -eq 'Running' }) {
         if ($stopwatch.ElapsedMilliseconds -gt $jobTimeout) {
             Write-Host "ERROR: Build job timeout (10 minutes). Killing remaining jobs..."
@@ -557,9 +557,9 @@ function Build-Cpps {
         }
         Start-Sleep -Milliseconds 100
     }
-    
+
     $stopwatch.Stop()
-    
+
     # Collect results
     $failed = 0
     $results = @()
@@ -571,7 +571,7 @@ function Build-Cpps {
             $results += 0
         }
     }
-    
+
     # Write logs to main log file
     foreach ($kvp in $tempLogs.GetEnumerator()) {
         Add-Content -Path $LogFile -Value "==== $($kvp.Key) ====" -Encoding UTF8
@@ -581,21 +581,21 @@ function Build-Cpps {
             Remove-Item -Path $kvp.Value -Force
         }
     }
-    
+
     foreach ($result in $results) {
         if ($result -ne 0) {
             $failed++
         }
     }
-    
+
     # Clean up jobs
     $jobs | Remove-Job | Out-Null
-    
+
     if ($failed -ne 0) {
         Write-Host "$failed cpp(s) failed to build - see build log"
         exit 1
     }
-    
+
     $elapsed = (Get-Date) - $startTime
     if ($skippedFiles -gt 0) {
         Write-Host "cpps build finished after $($elapsed.TotalSeconds) seconds ($skippedFiles files were up-to-date)"
@@ -611,59 +611,59 @@ function Link-Dll {
         [array]$LinkArgs,
         [string]$LogFile
     )
-    
+
     Write-Host "Linking dll..."
     $startTime = Get-Date
-    
+
     $link_response_file = Join-Path $BUILD_DIR 'link'
     $out_dll = Join-Path $OUT_DIR "$CORE_DLL.dll"
     $out_pdb = Join-Path $OUT_DIR "$CORE_DLL.pdb"
-    
+
     $responseContent = @()
     $responseContent += "/OUT:`"$out_dll`""
     $responseContent += "/PDB:`"$out_pdb`""
     $responseContent += $LinkArgs
-    
+
     foreach ($lib in $LIBS) {
         $lib_path = Join-Path $PROJECT_DIR $lib
         $responseContent += "`"$lib_path`""
     }
-    
+
     foreach ($default_lib in $DEFAULT_LIBS) {
         $responseContent += "`"$default_lib`""
     }
-    
+
     $clang_obj = Join-Path $BUILD_DIR 'clang.obj'
     $pch_obj = Join-Path $BUILD_DIR ($PCH_CPP -replace '\.cpp$', '.obj')
     $responseContent += "`"$clang_obj`""
     $responseContent += "`"$pch_obj`""
-    
+
     foreach ($cpp in $CPP) {
         $cpp_obj = Join-Path $BUILD_DIR ($cpp -replace '\.cpp$', '.obj')
         $responseContent += "`"$cpp_obj`""
     }
-    
+
     Set-Content -Path $link_response_file -Value ($responseContent -join "`n") -Encoding UTF8
-    
+
     $command = "$Linker @`"$link_response_file`""
-    
+
     Add-Content -Path $LogFile -Value "==== $CORE_DLL.dll ====" -Encoding UTF8
-    
+
     # Use direct cmd.exe invocation for linker to avoid output buffering issues
     $fullCommand = "`"`"$VS_2008_VARS_BAT`">NUL && $command`""
     $tempLog = [System.IO.Path]::GetTempFileName()
-    
+
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = 'cmd.exe'
     $psi.Arguments = "/c $fullCommand 2>&1"
     $psi.RedirectStandardOutput = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-    
+
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $psi
     $process.Start() | Out-Null
-    
+
     # Stream output to avoid buffering
     $output = New-Object System.Text.StringBuilder
     while (-not $process.StandardOutput.EndOfStream) {
@@ -671,16 +671,16 @@ function Link-Dll {
         [void]$output.AppendLine($line)
     }
     $process.WaitForExit()
-    
+
     $outputStr = $output.ToString()
     Add-Content -Path $LogFile -Value $outputStr -Encoding UTF8
-    
+
     if ($process.ExitCode -ne 0) {
         Write-Host "Linking dll failed - see build log"
         Write-Host $outputStr
         exit 1
     }
-    
+
     $elapsed = (Get-Date) - $startTime
     Write-Host "Linking dll finished after $($elapsed.TotalSeconds) seconds"
 }
@@ -706,7 +706,7 @@ try {
     Build-Pch -ClangCl $cl -ClArgs $cl_args -PchPath $pch_path -LogFile $log_file
     Build-Cpps -ClangCl $cl -ClArgs $cl_args -PchPath $pch_path -LogFile $log_file
     Link-Dll -Linker $link -LinkArgs $link_args -LogFile $log_file
-    
+
     Write-Host "Build completed successfully!"
     Write-Host "Output: $OUT_DIR\$CORE_DLL.dll"
 } catch {

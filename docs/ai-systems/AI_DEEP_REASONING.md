@@ -2,7 +2,7 @@
 
 **Purpose:** Educational guide explaining advanced AI reasoning approaches, multi-turn memory systems, and potential LLM integration for strategic decision-making in Civ5 VP/CP.
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **Status:** Architecture Exploration & Planning
 
 **Related:**
@@ -23,7 +23,7 @@ The current VP/CP AI makes decisions based on **immediate game state** without p
 | Copilot Bridge (free LLM) | Medium | Free tier | 1-3 sec | ❌ No | Medium |
 | Self-Hosted LLM | High | 6-8 GB VRAM | 5-10 sec | ❌ No | Medium |
 
-**Recommended path:** 
+**Recommended path:**
 - **Phase 1-2:** Memory → ML (in-process improvements)
 - **LLM integration:** Use **[Vox Deorum](https://github.com/CIVITAS-John/vox-deorum)** — production-ready, built for VP/CP
 
@@ -140,10 +140,10 @@ struct CivMemory
 {
     TurnSnapshot history[5];    // 5 turns × 64 bytes = 320 bytes
     uint8        currentIndex;  // Which slot is "newest"
-    
+
     // Helper: Get snapshot from N turns ago (0 = current, 4 = oldest)
     TurnSnapshot* GetTurnsAgo(int n);
-    
+
     // Helper: Detect military buildup pattern
     bool IsPlayerBuildingUp(PlayerTypes target);
 };
@@ -152,10 +152,10 @@ struct CivMemory
 struct AIMemorySystem
 {
     CivMemory playerMemory[MAX_MAJOR_CIVS];  // 36 × 320 = 11.5 KB
-    
+
     // Event log (recent notable events)
     RecentEvent eventLog[100];               // ~5 KB for war declarations, betrayals, etc
-    
+
     // Total: ~20 KB base + overhead ≈ 50 KB with safety margin
 };
 ```
@@ -171,7 +171,7 @@ bool CivMemory::IsPlayerBuildingUp(PlayerTypes eObserver, PlayerTypes eTarget)
     {
         TurnSnapshot* older = GetTurnsAgo(i + 1);
         TurnSnapshot* newer = GetTurnsAgo(i);
-        
+
         if (IsValid(older) && IsValid(newer))
         {
             if (newer->numUnitsNearMe > older->numUnitsNearMe)
@@ -655,7 +655,7 @@ struct StrategicDecisionLog
     PlayerTypes decisionMaker;
     PlayerTypes targetPlayer;
     string      decisionType;       // "DECLARE_WAR", "MAKE_PEACE", etc
-    
+
     // Context snapshot
     int         myMilitaryStrength;
     int         targetMilitaryStrength;
@@ -663,7 +663,7 @@ struct StrategicDecisionLog
     int         targetNumCities;
     vector<int> myCurrentWars;
     vector<int> targetCurrentWars;
-    
+
     // Outcome (filled in later)
     int         turnsUntilResolution;
     string      outcome;            // "WON", "LOST", "STALEMATE", "ONGOING"
@@ -723,18 +723,18 @@ struct WarDecisionFeatures
     float targetMilitaryStrength;
     float strengthRatio;              // my / target
     float strengthDifference;         // my - target
-    
+
     // === Situational Awareness ===
     float targetCurrentWarCount;      // How many wars is target in?
     float targetWarStateAvg;          // Avg war state (-2=losing, +2=winning)
     float myCurrentWarCount;
     float myWarStateAvg;
-    
+
     // === Geographic ===
     float proximity;                  // 1=neighbor, 2=close, 3=far, 4=distant
     float sharedBorderTiles;
     float distanceToNearestCity;
-    
+
     // === Historical (from Memory System) ===
     float turnsKnown;
     float turnsAtWar;
@@ -742,7 +742,7 @@ struct WarDecisionFeatures
     float recentBetrayals;            // Broken promises in last 30 turns
     float militaryTrend;              // +1=building up, -1=declining
     float attacksOnMeRecently;
-    
+
     // === Economic ===
     float myGoldPerTurn;
     float targetGoldPerTurn;
@@ -750,13 +750,13 @@ struct WarDecisionFeatures
     float myTechEra;
     float targetTechEra;
     float techDifference;
-    
+
     // === Diplomatic Context ===
     float myApproachToTarget;         // -2=hostile to +2=friendly
     float targetApproachToMe;
     float numMutualFriends;
     float numMutualEnemies;
-    
+
     // ~30-40 features total
 };
 ```
@@ -823,10 +823,10 @@ float PredictWarSuccess(const WarDecisionFeatures& f)
             score0 = 0.10f;   // We're stronger but far
         }
     }
-    
+
     // Tree 1, Tree 2, ... (50-100 trees typical)
     // ...
-    
+
     // Sum all tree scores, apply sigmoid
     float totalScore = score0 + score1 + /* ... */;
     return 1.0f / (1.0f + exp(-totalScore));  // Probability 0-1
@@ -850,11 +850,11 @@ class SimpleMLPClassifier
     float weights3[32][3];    // ~0.4 KB
     float bias3[3];
     // Total: ~16 KB
-    
+
     void Forward(const float* input, float* output)
     {
         float hidden1[64], hidden2[32];
-        
+
         // Layer 1: input → hidden1 (ReLU)
         for (int j = 0; j < 64; j++) {
             hidden1[j] = bias1[j];
@@ -862,7 +862,7 @@ class SimpleMLPClassifier
                 hidden1[j] += input[i] * weights1[i][j];
             hidden1[j] = fmax(0.0f, hidden1[j]);  // ReLU
         }
-        
+
         // Layer 2: hidden1 → hidden2 (ReLU)
         for (int j = 0; j < 32; j++) {
             hidden2[j] = bias2[j];
@@ -870,7 +870,7 @@ class SimpleMLPClassifier
                 hidden2[j] += hidden1[i] * weights2[i][j];
             hidden2[j] = fmax(0.0f, hidden2[j]);
         }
-        
+
         // Layer 3: hidden2 → output (softmax)
         for (int j = 0; j < 3; j++) {
             output[j] = bias3[j];
@@ -914,8 +914,8 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 
 ### Phase 1: Lean In-Process Memory (Recommended Start)
 
-**Effort:** 2-3 weeks  
-**Risk:** Low  
+**Effort:** 2-3 weeks
+**Risk:** Low
 **Value:** High
 
 | Task | Description |
@@ -928,8 +928,8 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 
 ### Phase 1.5: Data Collection for ML
 
-**Effort:** 1-2 weeks  
-**Risk:** Low  
+**Effort:** 1-2 weeks
+**Risk:** Low
 **Value:** Enables Phase 2
 
 | Task | Description |
@@ -941,8 +941,8 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 
 ### Phase 2: ML Model Training & Integration
 
-**Effort:** 3-4 weeks  
-**Risk:** Medium  
+**Effort:** 3-4 weeks
+**Risk:** Medium
 **Value:** High
 
 | Task | Description |
@@ -955,8 +955,8 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 
 ### Phase 3: IPC Bridge Infrastructure (Optional)
 
-**Effort:** 3-4 weeks  
-**Risk:** Medium  
+**Effort:** 3-4 weeks
+**Risk:** Medium
 **Value:** Medium (enables Phase 4)
 
 | Task | Description |
@@ -969,8 +969,8 @@ Weights loaded from file at game start (~16 KB), inference in microseconds.
 
 ### Phase 4: LLM Integration (Experimental)
 
-**Effort:** 2-3 months  
-**Risk:** High  
+**Effort:** 2-3 months
+**Risk:** High
 **Value:** Experimental
 
 | Task | Description |
@@ -1161,7 +1161,7 @@ void DoUpdateWarTargets()
         float intuition = GetQuickIntuition(state, DECLARE_WAR, target);
         if (intuition < 0.2f)
             continue;  // Skip unlikely candidates early
-        
+
         // Full scoring for remaining candidates
         int score = ScoreWarTarget(target);  // Expensive
     }
@@ -1193,7 +1193,7 @@ void DoUpdateWarTargets()
    ```cpp
    // Before: hardcoded
    if (strengthRatio > 1.5f) { /* attack */ }
-   
+
    // After: learned from data
    if (strengthRatio > g_learnedAttackThreshold) { /* attack */ }
    ```
@@ -1202,7 +1202,7 @@ void DoUpdateWarTargets()
    ```cpp
    // Before: binary
    bool isStrong = (strength > 1000);
-   
+
    // After: fuzzy
    float strongness = FuzzyMembership(strength, /*low*/500, /*high*/1500);
    // Returns 0.0 at 500, 1.0 at 1500, 0.5 at 1000
@@ -1328,5 +1328,5 @@ Based on revised assessment, the implementation roadmap could include:
 
 ---
 
-*Document created: February 2026*  
+*Document created: February 2026*
 *Purpose: Architecture exploration for enhanced AI reasoning in Vox Populi*

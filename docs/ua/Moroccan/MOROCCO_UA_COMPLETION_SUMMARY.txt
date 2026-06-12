@@ -10,7 +10,7 @@ I have completed a comprehensive review of Morocco's Unique Ability (Gateway to 
 
 **Problem:** Morocco's UA allows plundering of trade routes **without being at war**, and currently has **no checks for diplomatic relationships**. This means Morocco can plunder even:
 - Allied civilizations
-- Vassal civilizations  
+- Vassal civilizations
 - Civilizations it fears
 - Any other civ regardless of relationship
 
@@ -62,10 +62,10 @@ I've created **6 comprehensive documents** (7,500+ words total) in the Community
 6. **MOROCCO_UA_CODE_SNIPPETS.md** - Copy-paste ready code
 
 All documents are:
-✅ Cross-referenced  
-✅ Technically accurate  
-✅ Ready for implementation  
-✅ Include testing procedures  
+✅ Cross-referenced
+✅ Technically accurate
+✅ Ready for implementation
+✅ Include testing procedures
 
 ---
 
@@ -104,7 +104,7 @@ All documents are:
 
 ### ✅ CAN Plunder (UA preserved)
 - Rival civilizations
-- Neutral civilizations  
+- Neutral civilizations
 - Enemy civilizations
 - At-war civilizations
 
@@ -166,19 +166,19 @@ c:\Users\Thomson\source\repos\Community-Patch-DLL\
 
 ## Questions Answered
 
-**Q: Should Morocco even have this ability?**  
+**Q: Should Morocco even have this ability?**
 A: Yes—it's a unique, flavorful ability. It just needs to respect existing relationships.
 
-**Q: Will this nerf Morocco too much?**  
+**Q: Will this nerf Morocco too much?**
 A: No. Morocco can still plunder most civs (all non-allies). The restriction only applies to diplomatic partners.
 
-**Q: Is there a simpler fix?**  
+**Q: Is there a simpler fix?**
 A: Not really. The current code is missing fundamental checks; they must be added.
 
-**Q: How long will this take?**  
+**Q: How long will this take?**
 A: 1-4 hours depending on experience level.
 
-**Q: What if something breaks?**  
+**Q: What if something breaks?**
 A: Full rollback guide is provided. Very low risk.
 
 ---
@@ -223,7 +223,6 @@ All prerequisites are complete:
 
 ---
 
-*Review completed: January 2026*  
-*Status: Ready for development phase*  
+*Review completed: January 2026*
+*Status: Ready for development phase*
 *Recommended action: Implement in next patch*
-

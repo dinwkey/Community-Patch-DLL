@@ -64,7 +64,7 @@ Quests are marked as handled when:
 
 ### Performance Impact
 
-**Before cleanup**: 
+**Before cleanup**:
 - 2000-turn game: ~2000 handled quest objects in vectors
 - Memory: ~400 KB (0.004% of 10 MB save file)
 - Each turn: iterate 100-200 handled + active quests

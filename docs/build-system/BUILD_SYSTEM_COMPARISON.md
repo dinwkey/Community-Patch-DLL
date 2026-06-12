@@ -15,14 +15,14 @@ Comparison of backup branch changes to build_vp_clang.ps1, update_commit_id.bat,
 ```powershell
 function Test-NeedsRebuild {
     param($Target, $Source)
-    
+
     if (-not (Test-Path $Target)) {
         return $true  # Target doesn't exist
     }
-    
+
     $targetTime = (Get-Item $Target).LastWriteTime
     $sourceTime = (Get-Item $Source).LastWriteTime
-    
+
     return $sourceTime -gt $targetTime
 }
 ```
@@ -42,8 +42,8 @@ function Test-NeedsRebuild {
 **Current (feature/copilot):**
 ```powershell
 # Check if PCH needs rebuilding
-if (-not (Test-NeedsRebuild -Target $PchPath -Source $pch_src) -and 
-    (Test-Path $pch_header) -and 
+if (-not (Test-NeedsRebuild -Target $PchPath -Source $pch_src) -and
+    (Test-Path $pch_header) -and
     -not (Test-NeedsRebuild -Target $PchPath -Source $pch_header)) {
     Write-Host "Precompiled header is up-to-date, skipping rebuild"
     return

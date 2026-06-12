@@ -62,7 +62,7 @@
 
 ### **Phase 1: Critical** (1-2 weeks)
 
-1. **Fix Net Gold Scoring** 
+1. **Fix Net Gold Scoring**
    - Modify `ScorePlotBuild()` to subtract maintenance before scoring
    - Impact: Prevents treasury drain; significant gameplay improvement
    - Time: 3-4 hours implementation + 1 hour testing
@@ -247,7 +247,7 @@
 
 ## Conclusion
 
-The Improvements & Workers system is **mature and functional**, but suffers from **undocumented decision logic** and **several scoring edge cases** that could be improved. 
+The Improvements & Workers system is **mature and functional**, but suffers from **undocumented decision logic** and **several scoring edge cases** that could be improved.
 
 **Recommended approach:**
 1. Fix net gold scoring (HIGH impact, low risk) — Priority 1
@@ -259,7 +259,6 @@ All recommendations are **low-risk, high-clarity improvements** that will make t
 
 ---
 
-**Review Date:** January 11, 2026  
-**Status:** Complete  
+**Review Date:** January 11, 2026
+**Status:** Complete
 **Files Created:** 4 comprehensive documents in `/docs/improvements-workers/`
-

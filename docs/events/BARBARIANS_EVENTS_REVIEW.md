@@ -1,11 +1,11 @@
 # Barbarian Spawning & Random Events System Review
 ## Vox Populi (Community Patch DLL)
 
-**Review Date:** 2024  
-**Scope:** Barbarian camp/city spawning, unit generation, random game events, and goody huts  
+**Review Date:** 2024
+**Scope:** Barbarian camp/city spawning, unit generation, random game events, and goody huts
 **Key Files:**
 - `CvBarbarians.cpp` / `CvBarbarians.h` - Barbarian spawning and management
-- `CvPlayer.cpp` - Player-level and city-level events, goody huts  
+- `CvPlayer.cpp` - Player-level and city-level events, goody huts
 - `CvCity.cpp` - City events system
 - `CustomMods.h` - Game event hooks
 
@@ -32,7 +32,7 @@ In VP:
   Initial camps = (max_camps * BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD / 100)
   Initial camps += (current_era * BARBARIAN_CAMP_FIRST_TURN_PERCENT_PER_ERA / 100)
   Defaults: 10% of max camps, +5% per era
-  
+
 In CP:
   Initial camps = 33% of max camps
   No era scaling
@@ -208,7 +208,7 @@ Both use probabilistic triggers with cooldown management and prerequisite checks
 
 ### 2.2 Player-Level Events
 
-**Source:** `CvPlayer.cpp` lines 5551-5650  
+**Source:** `CvPlayer.cpp` lines 5551-5650
 **Trigger:** Called during player turn processing (`CvPlayer::doTurn()`)
 
 **Event Selection Flow:**
@@ -249,7 +249,7 @@ Per-event cooldown: pkEventInfo->getCooldown()
 
 ### 2.3 City-Level Events
 
-**Source:** `CvCity.cpp` lines 3289-3450  
+**Source:** `CvCity.cpp` lines 3289-3450
 **Trigger:** Called each turn for each city (`CvCity::DoTurn()`)
 
 **Event Selection Flow:**
@@ -395,7 +395,7 @@ receiveGoody(pPlot, eGoody, pUnit)
 
 **Unique Goody Type (BNW+):**
 - More valuable than standard goodies
-- Reward: `doInstantYield(INSTANT_YIELD_TYPE_ANCIENT_RUIN)` 
+- Reward: `doInstantYield(INSTANT_YIELD_TYPE_ANCIENT_RUIN)`
 - Creates `ARTIFACT_ANCIENT_RUIN` archaeological record
 - Special UI for Ancient Ruin discovery
 
@@ -504,7 +504,7 @@ receiveGoody(pPlot, eGoody, pUnit)
    - If camps > 80% of cap: spawn rate = 4 (slower)
    - Provides natural equilibrium
 
-2. **Difficulty-Based Spawn Scaling:** 
+2. **Difficulty-Based Spawn Scaling:**
    - Prince/King: current rate
    - Emperor: +1 camp per spawn event
    - Deity: +2 camps per spawn event
@@ -525,7 +525,7 @@ receiveGoody(pPlot, eGoody, pUnit)
 ### 5.2 Event System Improvements
 
 **High Priority:**
-1. **Separate Global Cooldowns:** 
+1. **Separate Global Cooldowns:**
    - Player event cooldown: 25 turns
    - City event cooldown: 10 turns (independent)
    - Allows city events even if player event recently fired
@@ -573,7 +573,7 @@ Every BARBARIAN_CAMP_SPAWN_RATE turns (VP mode):
     iRandom = rand(1, 100)
     if (iRandom <= BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING (50))
       Attempt to add (1 + raging_bonus) camp
-      
+
 Success depends on:
   - Available plot count > 0
   - New camp satisfies distance checks (4 tiles from capital, other camps, etc.)
@@ -711,4 +711,3 @@ CITY_EVENT_MIN_DURATION_BETWEEN = 25
 - Archaeology can be exploited (infinite Great Works)
 - No difficulty scaling for rewards
 - No visual distinction between drained/active ruins
-

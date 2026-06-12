@@ -1,7 +1,7 @@
 # Option B Deep Dive: Strategic Route Planning Architecture Analysis
 
-**Date:** January 11, 2026  
-**Context:** Planning for enhanced strategic route planning (Stage 1) after Option A completion  
+**Date:** January 11, 2026
+**Context:** Planning for enhanced strategic route planning (Stage 1) after Option A completion
 **Research Status:** Codebase investigated for military-builder coordination
 
 ---
@@ -13,7 +13,7 @@ After investigating the codebase, **there is NO built-in coordination between mi
 ### Evidence:
 
 1. **Builder Update Flow** (`Update()` function, lines 141-188):
-   - Calls `UpdateRoutePlots()` 
+   - Calls `UpdateRoutePlots()`
    - Calls `UpdateCanalPlots()`
    - Calls `UpdateImprovementPlots()`
    - **No checks for:** active wars, city captures, unit losses, military operations
@@ -46,7 +46,7 @@ After investigating the codebase, **there is NO built-in coordination between mi
 ### Positive Findings:
 ✅ **Route purposes are tracked:** `m_plannedRoutePurposes` distinguishes:
   - PURPOSE_CONNECT_CAPITAL
-  - PURPOSE_SHORTCUT  
+  - PURPOSE_SHORTCUT
   - PURPOSE_CONNECT_MAJOR_RESOURCE
   - PURPOSE_CONNECT_STRATEGIC (exists but maybe underutilized)
 
@@ -169,7 +169,7 @@ int GetRegionalMilitaryThreat(CvCity* pCity);
 
 ✅ **Existing game queries available:**
 - `pCity->getPopulation()` - City size
-- `pCity->IsRazing()` - Under siege  
+- `pCity->IsRazing()` - Under siege
 - `plotDistance()` - Distance calculations
 - `GET_PLAYER(eEnemy).getUnitCount()` - Army size
 - `m_pPlayer->GetDiplomacyAI()->GetMilitaryAggressivePosture()` - Threat level (from Option A)
@@ -290,7 +290,6 @@ int GetRegionalMilitaryThreat(CvCity* pCity);
 - **Route planning:** `UpdateRoutePlots()` (line 1444)
 - **Route value:** `GetCapitalConnectionValue()` (line 708)
 - **City connections:** `CvCityConnections` class
-- **Threat assessment:** `GetDiplomacyAI()->GetMilitaryAggressivePosture()` 
+- **Threat assessment:** `GetDiplomacyAI()->GetMilitaryAggressivePosture()`
 - **Movement speed calculation:** `GetMoveCostWithRoute()` (line 200)
 - **Strategic routes:** PURPOSE_CONNECT_STRATEGIC (enum, location TBD)
-

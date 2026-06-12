@@ -1,8 +1,8 @@
 # Technology / Science System Review
 ## Issues & Improvements for Tech Costs, Research Progress, Beakers, Prerequisites & Effects
 
-**Date:** January 9, 2026  
-**Scope:** Community Patch DLL & Vox Populi  
+**Date:** January 9, 2026
+**Scope:** Community Patch DLL & Vox Populi
 **Version:** CvGameCoreDLL_Expansion2 | VP v17
 
 ---
@@ -160,7 +160,7 @@ Overflow = (CurrentProgress - (CostWithModifiers × 100)) / OverflowDivisor
 1. **City Science Yields**
    - Primary: `GetYieldRateTimes100(YIELD_SCIENCE)` per city
    - Modified by: buildings, specialists, tile improvements, trade routes, espionage
-   
+
 2. **Great Scientist Conversion**
    - Field: `BaseBeakersTurnsToCount` (3 turns for scientists in VP)
    - Beakers granted: `GetDiscoverScience(eUnit)`
@@ -312,7 +312,7 @@ Overflow = (CurrentProgress - (CostWithModifiers × 100)) / OverflowDivisor
 #### Mechanics:
 - Each tech has `EurekaPerMillion` value (0-1000000)
 - Counter incremented by game events: city build, unit kill, tech trade, etc.
-- Formula (line 2511): 
+- Formula (line 2511):
   ```cpp
   EurekaDiscount = (1000000 - (EurekaPerMillion × Counter) / NumTeamMembers) / 10000
   ```
@@ -390,7 +390,7 @@ Overflow = (CurrentProgress - (CostWithModifiers × 100)) / OverflowDivisor
    - Both players commit gold per turn
    - Both receive same flat beaker bonus when completed
    - Bonus = `GetMedianTechResearch()` / number of eligible techs
-   
+
 2. **Direct Tech Trade**
    - Immediate exchange of one tech for another
    - Requires `IsTechTrading()` enabled (tech-dependent)
@@ -531,4 +531,3 @@ Overflow = (CurrentProgress - (CostWithModifiers × 100)) / OverflowDivisor
 - `(1) Community Patch/Database Changes/NewCustomModOptions.xml` - Feature flags (CIV6_EUREKAS, etc.)
 - `(2) Vox Populi/Database Changes/Policies/Rationalism.sql` - GreatScientistBeakerModifier
 - `CvGameCoreDLL_Expansion2/Lua/TechPopup.lua` - Tech info UI
-

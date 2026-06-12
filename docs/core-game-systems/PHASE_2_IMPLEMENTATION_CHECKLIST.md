@@ -1,7 +1,7 @@
 # Phase 2 Implementation Checklist
 
-**Status:** Ready to begin  
-**Estimated Time:** 90-120 minutes  
+**Status:** Ready to begin
+**Estimated Time:** 90-120 minutes
 **Risk Level:** LOW-MEDIUM
 
 ---
@@ -20,13 +20,13 @@ Search for function:
 
 **[ ] 2. Change 2A.1: Building Class Happiness Loop (ScoreBeliefAtCity)**
 
-Location: ~line 8710-8725  
-Type: Loop optimization + early exit + variable caching  
+Location: ~line 8710-8725
+Type: Loop optimization + early exit + variable caching
 Lines: +7 (net effect flattens code, minimal line increase)
 
 Replace:
 ```cpp
-// OLD: 
+// OLD:
 for(int jJ = 0; jJ < GC.getNumBuildingClassInfos(); jJ++)
 {
     iTempValue = pEntry->GetBuildingClassHappiness(jJ) * iHappinessMultiplier;
@@ -43,7 +43,7 @@ for(int jJ = 0; jJ < GC.getNumBuildingClassInfos(); jJ++)
 
 With:
 ```cpp
-// NEW: 
+// NEW:
 int iCityPopulation = pCity->getPopulation();
 int iNumBuildingClasses = GC.getNumBuildingClassInfos();
 for(int jJ = 0; jJ < iNumBuildingClasses; jJ++)
@@ -63,8 +63,8 @@ for(int jJ = 0; jJ < iNumBuildingClasses; jJ++)
 
 **[ ] 3. Change 2A.2: Resource Loop (ScoreBeliefAtCity)**
 
-Location: ~line 8750-8760  
-Type: Loop count caching  
+Location: ~line 8750-8760
+Type: Loop count caching
 Lines: +1
 
 Replace:
@@ -80,8 +80,8 @@ for (int iResourceLoop = 0; iResourceLoop < iNumResourceInfos; iResourceLoop++)
 
 **[ ] 4. Change 2A.3: Building Class Yield Change Loop (ScoreBeliefAtCity)**
 
-Location: ~line 9020-9035  
-Type: Loop caching + early exit + variable reuse  
+Location: ~line 9020-9035
+Type: Loop caching + early exit + variable reuse
 Lines: +10
 
 Replace:
@@ -113,8 +113,8 @@ for (int iJ = 0; iJ < iNumBuildingClassesInner; iJ++)
 
 **[ ] 5. Additional Religion Changes (ScorePantheonBeliefAtCity)**
 
-Location: ~line 8650-8700  
-Type: Building availability modifier refactoring  
+Location: ~line 8650-8700
+Type: Building availability modifier refactoring
 Lines: Additional changes (logic restructuring, reordering)
 
 **Key Pattern:** Flatten nested if/else structures, cache return values, early exit for zero values
@@ -131,8 +131,8 @@ File: `CvGameCoreDLL_Expansion2/CvDiplomacyAI.cpp`
 
 **[ ] 7. Change 2B.1: Score Victory Detection (GetScoreVictoryProgress)**
 
-Location: Need to find `GetScoreVictoryProgress()` function  
-Type: Victory validity check  
+Location: Need to find `GetScoreVictoryProgress()` function
+Type: Victory validity check
 Lines: +3-5
 
 Add after initial validity checks:
@@ -147,15 +147,15 @@ int CvDiplomacyAI::GetScoreVictoryProgress() const
     VictoryTypes eVictoryType = (VictoryTypes)GC.getInfoTypeForString("VICTORY_SCORE");
     if (eVictoryType == NO_VICTORY || !GC.getGame().isVictoryValid(eVictoryType))
         return 0;
-    
+
     // ... rest of function ...
 }
 ```
 
 **[ ] 8. Change 2B.2: Deal Renewal Fix (DoSendStatementToPlayer)**
 
-Location: ~line 30850 (deal renewal section)  
-Type: Deal preparation  
+Location: ~line 30850 (deal renewal section)
+Type: Deal preparation
 Lines: +1
 
 Add to deal renewal code:
@@ -164,7 +164,7 @@ else
 {
     CvDeal kDeal = *pDeal;
     CvGameDeals::PrepareRenewDeal(&kDeal);  // NEW: Prepare renewal deal
-    
+
     if (GC.getGame().isReallyNetworkMultiPlayer() && MOD_ACTIVE_DIPLOMACY)
     {
         // ... existing code ...
@@ -174,8 +174,8 @@ else
 
 **[ ] 9. Change 2B.3: Deal Renewal Refactoring (DoRenewExpiredDeal)**
 
-Location: ~line 34510-34540  
-Type: Move PrepareRenewDeal call + simplify logic  
+Location: ~line 34510-34540
+Type: Move PrepareRenewDeal call + simplify logic
 Lines: -10 (removes code)
 
 Find this section:
@@ -211,8 +211,8 @@ if (iValue != INT_MAX)
 
 **[ ] 10. Change 2B.4: Cancel Renewal Deal Simplification (CancelRenewDeal)**
 
-Location: ~line 49960-49975  
-Type: Remove duplicate deal iteration logic  
+Location: ~line 49960-49975
+Type: Remove duplicate deal iteration logic
 Lines: -13 (removes code)
 
 Remove this code block:
@@ -247,7 +247,7 @@ File: `CvGameCoreDLL_Expansion2/CvTechClasses.cpp`
 
 **[ ] 12. Change 2C.1: Add Median Tech Cache to Reset() (~line 726)**
 
-Type: Cache initialization  
+Type: Cache initialization
 Lines: +5
 
 Add after `m_bWillHaveUUTechSoon = false;`:
@@ -261,7 +261,7 @@ m_iMedianTechCacheVersion = -1;
 
 **[ ] 13. Change 2C.2: Refactor GetMedianTechResearch() (~line 1781)**
 
-Type: Cache-based optimization  
+Type: Cache-based optimization
 Lines: +30-40
 
 Replace entire function body:
@@ -356,8 +356,8 @@ int CvPlayerTechs::GetMedianTechResearch() const
 
 **[ ] 14. Change 2C.3: Add Cache Member Variables to CvTeamTechs**
 
-Location: Constructor (~line 2125)  
-Type: Member initialization  
+Location: Constructor (~line 2125)
+Type: Member initialization
 Lines: +1
 
 In initialization list, add:
@@ -367,8 +367,8 @@ m_iTechSetVersion(0)
 
 **[ ] 15. Change 2C.4: Initialize Version in Reset()**
 
-Location: ~line 2188  
-Type: Reset initialization  
+Location: ~line 2188
+Type: Reset initialization
 Lines: +1
 
 Add after `m_iNumTechs = 0;`:
@@ -378,8 +378,8 @@ m_iTechSetVersion = 0;
 
 **[ ] 16. Change 2C.5: Bump Version on Tech Acquisition (SetHasTech)**
 
-Location: ~line 2290-2300  
-Type: Cache invalidation  
+Location: ~line 2290-2300
+Type: Cache invalidation
 Lines: +3
 
 Add after `SetLastTechAcquired(eIndex);`:
@@ -390,8 +390,8 @@ m_iTechSetVersion++;
 
 **[ ] 17. Change 2C.6: Add Overflow Cap (~line 2440)**
 
-Location: ~line 2440-2460  
-Type: Safety check  
+Location: ~line 2440-2460
+Type: Safety check
 Lines: +10
 
 Find overflow calculation:
@@ -420,7 +420,7 @@ m_iTechSetVersion++;
 
 **[ ] 18. Change 2C.7: Add GetTechSetVersion() Method (~line 2573)**
 
-Type: New accessor method  
+Type: New accessor method
 Lines: +5
 
 Add after `GetTechs()` method:
@@ -443,8 +443,8 @@ File: `CvGameCoreDLL_Expansion2/CvPolicyAI.cpp`
 
 **[ ] 20. Change 2D.1: Cache Unhappiness Computation (DoConsiderIdeologySwitch)**
 
-Location: ~line 791-820  
-Type: Performance optimization (compute once, reuse)  
+Location: ~line 791-820
+Type: Performance optimization (compute once, reuse)
 Lines: +3
 
 Find:
@@ -570,6 +570,6 @@ git checkout HEAD~1 CvGameCoreDLL_Expansion2/CvReligionClasses.cpp
 
 ---
 
-**Status:** Ready to begin  
-**Created:** 2026-01-12  
+**Status:** Ready to begin
+**Created:** 2026-01-12
 **Next Action:** Start with Phase 2A (Religion)

@@ -768,7 +768,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				// Base evaluation: are we at war or likely to be?
 				bool bAtWarNow = kPlayer.GetMilitaryAI()->GetNumberCivsAtWarWith(false) > 0;
 				bool bPreparingWar = kPlayer.HasAnyOffensiveOperationsAgainstPlayer(NO_PLAYER);
-				
+
 				if (!bAtWarNow && !bPreparingWar)
 				{
 					// No war and not planning one - missiles are wasteful
@@ -780,12 +780,12 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					int iMissileProductionCost = m_pCity->getProductionNeeded(eUnit);
 					int iMissileDamage = pkUnitEntry->GetRangedCombat(); // Base damage output (120 for Rocket, 180 for Guided)
 					int iMissileRange = pkUnitEntry->GetRange(); // Strike range (8 for Rocket, 12 for Guided)
-					
+
 					// Calculate expected targets: units in cities, high-value units, etc.
 					// Missiles excel at hitting units in cities where bombers can't
 					int iHighValueTargets = 0;
 					int iPotentialDamageValue = 0;
-					
+
 					// Check for enemy cities with units in them (missile specialty)
 					for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 					{
@@ -794,7 +794,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 							continue;
 						if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 							continue;
-						
+
 						int iLoop = 0;
 						for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iLoop))
 						{
@@ -807,7 +807,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 								// Higher damage missiles are more effective at eliminating threats
 								iPotentialDamageValue += (pGarrison->GetBaseCombatStrength() * iMissileDamage) / 100;
 							}
-							
+
 							// Check for siege units near enemy cities - high value to eliminate
 							for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
 							{
@@ -815,7 +815,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 								if (pLoopPlot)
 								{
 									CvUnit* pUnit = pLoopPlot->getBestDefender(eEnemy);
-									if (pUnit && (pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD || 
+									if (pUnit && (pUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD ||
 										pUnit->AI_getUnitAIType() == UNITAI_RANGED))
 									{
 										iHighValueTargets++;
@@ -825,13 +825,13 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 							}
 						}
 					}
-					
+
 					// Calculate cost efficiency factoring in missile damage output
 					// Higher damage missiles (Guided: 180) are more cost-effective per shot than lower (Rocket: 120)
 					// Formula: (potential damage value * damage multiplier) / production cost
 					int iDamageMultiplier = (iMissileDamage * 10) / 120; // Normalize: Rocket=10, Guided=15
 					int iCostEfficiency = (iPotentialDamageValue * iDamageMultiplier) / max(1, iMissileProductionCost);
-					
+
 					if (iHighValueTargets >= 3 && iCostEfficiency >= 5)
 					{
 						// Lots of good targets and cost-effective - build missiles!
@@ -852,7 +852,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						// Few worthwhile targets - prefer reusable bombers
 						iBonus -= 30;
 					}
-					
+
 					// Range bonus: longer range missiles (Guided: 12) can strike from safer positions
 					// This is valuable for keeping carriers/cruisers out of danger
 					if (iMissileRange >= 12)
@@ -864,7 +864,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						iBonus += 10; // Decent range
 					}
 					// Short range missiles (8) get no bonus - riskier to use
-					
+
 					// Stockpile limit: don't build too many missiles
 					int iCurrentMissiles = kPlayer.GetMilitaryAI()->GetNumMissileUnits();
 					int iMissileLimit = max(3, iHighValueTargets); // At least 3, or one per high-value target
@@ -876,7 +876,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					{
 						iBonus -= 40; // Have enough
 					}
-					
+
 					// Carrier/Cruiser capacity check: do we have platforms for missiles?
 					int iMissileSlots = 0;
 					int iLoop = 0;
@@ -888,7 +888,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 							iMissileSlots += pUnit->cargoSpaceAvailable();
 						}
 					}
-					
+
 					if (iMissileSlots > iCurrentMissiles)
 					{
 						// Have unused missile capacity - good reason to build
@@ -1204,7 +1204,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 			int ourFighters = kPlayer.GetNumUnitsWithUnitAI(UNITAI_DEFENSE_AIR, true);
 			int ourMissiles = kPlayer.GetMilitaryAI()->GetNumMissileUnits();
 			int emptySlots = m_pCity->GetMaxAirUnits() - m_pCity->plot()->countNumAirUnits(kPlayer.getTeam(), true);
-			
+
 			// Calculate total air capacity across all cities and carriers
 			int iTotalAirCapacity = 0;
 			int iLoop = 0;
@@ -1219,7 +1219,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					iTotalAirCapacity += pLoopUnit->cargoSpace();
 				}
 			}
-			
+
 			int iTotalAirUnits = ourBombers + ourFighters + ourMissiles;
 			int iExcessSlots = iTotalAirCapacity - iTotalAirUnits;
 
@@ -1246,36 +1246,36 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 				// MISSILES: Compete for limited air slots with reusable units
 				// Missiles are one-time use, so they need to justify taking a slot
 				// But they have unique value: guaranteed damage, can hit garrisoned units
-				
+
 				// Base bonus - start competitive with bombers/fighters
 				// Bombers get 2000 + emptySlots*100, so missiles need similar base
 				int iMissileBonus = 1500;
-				
+
 				// =====================================================
 				// EMERGENCY OVERRIDES: Missiles have unique tactical value
 				// They can't be intercepted and deal guaranteed damage
 				// =====================================================
-				
+
 				bool bEmergency = false;
-				
+
 				// Emergency 1: City under siege - need burst damage NOW
 				if (m_pCity->isUnderSiege())
 				{
 					bEmergency = true;
 					iMissileBonus += 400; // Urgent need for firepower
-					
+
 					if (m_pCity->isInDangerOfFalling())
 					{
 						iMissileBonus += 300; // Critical - city may fall
 					}
 				}
-				
+
 				// Emergency 2: Enemy has strong AA - missiles bypass interception
 				// Check for enemy AA units that threaten our bombers
 				{
 					int iEnemyAANearby = 0;
 					int iRange = 6; // Check within reasonable distance
-					
+
 					for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 					{
 						PlayerTypes eEnemy = (PlayerTypes)iPlayerLoop;
@@ -1283,7 +1283,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 							continue;
 						if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 							continue;
-						
+
 						int iUnitLoop = 0;
 						for (CvUnit* pEnemyUnit = GET_PLAYER(eEnemy).firstUnit(&iUnitLoop); pEnemyUnit != NULL; pEnemyUnit = GET_PLAYER(eEnemy).nextUnit(&iUnitLoop))
 						{
@@ -1295,7 +1295,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 								if (iDistToThisCity <= iRange)
 								{
 									iEnemyAANearby++;
-									
+
 									// Strong AA is a bigger threat
 									if (pEnemyUnit->interceptionProbability() >= 50)
 									{
@@ -1305,7 +1305,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 							}
 						}
 					}
-					
+
 					if (iEnemyAANearby >= 3)
 					{
 						// Heavy AA presence - missiles are valuable for guaranteed damage
@@ -1318,7 +1318,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						iMissileBonus += 100;
 					}
 				}
-				
+
 				// Emergency 3: We're attacking a well-defended city
 				// Check if we have an active operation targeting a nearby enemy city
 				if (bAtWar)
@@ -1334,7 +1334,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 								continue;
 							if (!GET_TEAM(kPlayer.getTeam()).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 								continue;
-							
+
 							int iCityLoop = 0;
 							for (CvCity* pEnemyCity = GET_PLAYER(eEnemy).firstCity(&iCityLoop); pEnemyCity != NULL; pEnemyCity = GET_PLAYER(eEnemy).nextCity(&iCityLoop))
 							{
@@ -1354,7 +1354,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						}
 					}
 				}
-				
+
 				// If emergency, skip the normal slot competition penalties
 				if (!bEmergency)
 				{
@@ -1375,7 +1375,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						// Plenty of slots - missiles are more viable
 						iMissileBonus += 100;
 					}
-					
+
 					// Ratio check: missiles shouldn't dominate our air force
 					// Ideal: missiles are ~20% of air force for burst damage
 					int iIdealMissileRatio = max(1, iTotalAirCapacity / 5);
@@ -1394,7 +1394,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						// We have bombers but few missiles - a few could be useful
 						iMissileBonus += 50;
 					}
-					
+
 					// Reusable air force health check
 					// Don't build missiles if we lack a solid reusable air force
 					int iMinReusableForMissiles = max(4, iTotalAirCapacity / 3);
@@ -1404,7 +1404,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 						iMissileBonus -= 200;
 					}
 				}
-				
+
 				// Empty local slots bonus (from the city we're building in)
 				if (emptySlots > 0)
 				{
@@ -1415,7 +1415,7 @@ int CvUnitProductionAI::CheckUnitBuildSanity(UnitTypes eUnit, bool bForOperation
 					// This city is full - missile would need to deploy elsewhere
 					iMissileBonus -= 50;
 				}
-				
+
 				// Don't cap at zero - allow proper competition with bombers
 				// Negative values will be handled by the overall production system
 				iBonus += iMissileBonus;

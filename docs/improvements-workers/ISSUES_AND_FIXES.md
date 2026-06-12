@@ -18,8 +18,8 @@
 
 ### Issue 1: Net Gold Not Included in Improvement Scoring
 
-**Severity:** HIGH  
-**Category:** Scoring Logic  
+**Severity:** HIGH
+**Category:** Scoring Logic
 **File:** [CvBuilderTaskingAI.cpp](../../CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp#L2068)
 
 #### **Problem**
@@ -76,8 +76,8 @@ if (iGoldScore < 0)
 
 ### Issue 2: Tech Distance Heuristic is Ad-Hoc
 
-**Severity:** MEDIUM  
-**Category:** Route Planning  
+**Severity:** MEDIUM
+**Category:** Route Planning
 **File:** [CvBuilderTaskingAI.cpp](../../CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp#L2167)
 
 #### **Problem**
@@ -133,8 +133,8 @@ else if (iRouteBuildDelay > 100)
 
 ### Issue 3: Adjacency & Feature Interactions Not Considered
 
-**Severity:** MEDIUM  
-**Category:** Scoring Logic  
+**Severity:** MEDIUM
+**Category:** Scoring Logic
 **File:** [CvBuilderTaskingAI.cpp](../../CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp#L3468)
 
 #### **Problem**
@@ -169,13 +169,13 @@ Pre-compute adjacency impact before scoring:
 int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes eImprovement, ...)
 {
     int iScore = 0;
-    
+
     // Base yield score
     iScore += GetPlotYieldValue(pPlot, eImprovement);
-    
+
     // Adjacency bonus for THIS plot
     iScore += GetAdjacencyBonus(pPlot, eImprovement);
-    
+
     // Adjacency penalty to NEIGHBOR plots if feature is removed
     if (pPlot->getFeatureType() != NO_FEATURE)
     {
@@ -189,7 +189,7 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes eImprovem
             }
         }
     }
-    
+
     return iScore;
 }
 ```
@@ -205,8 +205,8 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementTypes eImprovem
 
 ### Issue 4: Route Planning Heuristics Undocumented
 
-**Severity:** MEDIUM  
-**Category:** Documentation  
+**Severity:** MEDIUM
+**Category:** Documentation
 **File:** [CvBuilderTaskingAI.cpp](../../CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp#L200-L350)
 
 #### **Problem**
@@ -269,8 +269,8 @@ Route planning logic is in-code heuristics, not data-driven. Thresholds are magi
 
 ### Issue 5: City Strategy Thresholds Not Clear
 
-**Severity:** LOW  
-**Category:** Documentation  
+**Severity:** LOW
+**Category:** Documentation
 **File:** [CvCityStrategyAI.cpp](../../CvGameCoreDLL_Expansion2/CvCityStrategyAI.cpp#L2358-L2510)
 
 #### **Problem**
@@ -324,8 +324,8 @@ Thresholds are in C++ code, not in game database. StrategyEntry weight threshold
 
 ### Issue 6: Pathfinding Cost Underestimate for Slow Units
 
-**Severity:** LOW  
-**Category:** Pathfinding  
+**Severity:** LOW
+**Category:** Pathfinding
 **File:** [CvHomelandAI.cpp](../../CvGameCoreDLL_Expansion2/CvHomelandAI.cpp) (various lines)
 
 #### **Problem**
@@ -346,8 +346,8 @@ None needed — pathfinding is functional but could be ~5-10% faster with better
 
 ### Issue 7: Worker Repair Exploit (Addressed)
 
-**Severity:** LOW  
-**Category:** Exploit Prevention  
+**Severity:** LOW
+**Category:** Exploit Prevention
 **File:** [CustomMods.h](../../CvGameCoreDLL_Expansion2/CustomMods.h#L93)
 
 #### **Problem**
@@ -400,7 +400,7 @@ This is controlled by `MOD_UNITS_CAN_REPAIR_IMPROVEMENTS_ONLY_OWN_LANDS`.
 ### **Phase 2: Medium-Term Improvements** (2-4 weeks)
 
 3. Replace tech distance heuristic with EconomicAI timeline (Issue 2)
-   - Modify `GetRouteBuildTime()` 
+   - Modify `GetRouteBuildTime()`
    - Cross-reference with CvEconomicAI estimates
    - Test on various tech strategies
 
@@ -429,4 +429,3 @@ This is controlled by `MOD_UNITS_CAN_REPAIR_IMPROVEMENTS_ONLY_OWN_LANDS`.
 - [Pathfinding Details](../unit-movement/IMPLEMENTATION_SUMMARY.md#worker-pathfinding)
 - [City Management](../city-management-review.md)
 - [Economy Reviews](../economy/)
-

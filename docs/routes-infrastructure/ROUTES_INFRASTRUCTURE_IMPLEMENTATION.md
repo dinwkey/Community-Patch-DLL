@@ -148,7 +148,7 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ...)
    if (eRoute == ROUTE_RAILROAD)
    {
        iMovementBonus = 500;  // Base strategic value
-       
+
        // Reduce if empire is wealthy
        if (m_pPlayer->GetTreasury()->GetGoldPerTurn() > 50)
            iMovementBonus = 200;
@@ -158,7 +158,7 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ...)
 5. [ ] Check if empire can afford negative-gold routes:
    ```cpp
    bool bCanAffordNegative = (m_pPlayer->GetTreasury()->GetGoldPerTurn() > 25);
-   
+
    if (iYieldChange < 0 && !bCanAffordNegative && iMovementBonus == 0)
    {
        return -1;  // Don't build
@@ -407,17 +407,17 @@ int CvAStar::GetMovementCost(CvPlot* pFromPlot, CvPlot* pToPlot, const CvUnit* p
     RouteTypes eRoute = pToPlot->getRouteType();
     if (eRoute == NO_ROUTE || pUnit == NULL)
         return GetBaseTileCost();  // No route, use normal terrain cost
-    
+
     int iBaseCost = GC.getRouteInfo(eRoute).getMovement();
-    
+
     // NEW: Apply domain-specific modifier
     int iModifier = GetRouteMovementModifier(eRoute, pUnit->getDomainType());
-    
+
     if (iModifier == -1)
         return IMPOSSIBLE_MOVE;  // Unit cannot use this route
-    
+
     iBaseCost = iBaseCost * iModifier / 100;
-    
+
     return iBaseCost;
 }
 
@@ -490,4 +490,3 @@ To begin implementation:
 ---
 
 **Last Updated:** January 11, 2026
-

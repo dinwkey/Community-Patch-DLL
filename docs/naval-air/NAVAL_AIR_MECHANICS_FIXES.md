@@ -1,6 +1,6 @@
 # Naval & Air Mechanics Fixes - Implementation Summary
 
-**Date:** January 8, 2026  
+**Date:** January 8, 2026
 **Priority Levels:** High, Medium, Low
 
 ---
@@ -8,7 +8,7 @@
 ## HIGH PRIORITY FIXES ✓
 
 ### 1. Fixed `canLoad()` Embarkation Check Bug
-**File:** [CvUnit.cpp](CvGameCoreDLL_Expansion2/CvUnit.cpp#L6475-L6520)  
+**File:** [CvUnit.cpp](CvGameCoreDLL_Expansion2/CvUnit.cpp#L6475-L6520)
 **Status:** ✅ FIXED
 
 **Issue:** The `canLoad()` method incorrectly returned `false` if the unit was currently embarked. This prevented units from checking if they could load onto a transport/carrier while in an embarked state, even if the capability existed.
@@ -27,12 +27,12 @@
 ---
 
 ### 2. Used Unused Air Unit Statistics
-**File:** [CvHomelandAI.cpp](CvGameCoreDLL_Expansion2/CvHomelandAI.cpp#L5577-L5710)  
+**File:** [CvHomelandAI.cpp](CvGameCoreDLL_Expansion2/CvHomelandAI.cpp#L5577-L5710)
 **Status:** ✅ FIXED
 
 **Issue:** Statistics tracking air units in carriers, in cities, and offensive/defensive distribution were calculated but never used, wasting computation.
 
-**Solution:** 
+**Solution:**
 - Changed TODO comment to clarify purpose
 - Implemented strategic decision based on these statistics
 - Added logic to prioritize offensive aircraft to carriers/frontline when outnumbered by defensive aircraft
@@ -50,12 +50,12 @@ bool bPrioritizeOffensiveToCarriers = (nAirUnitsOffensive < nAirUnitsDefensive);
 ## MEDIUM PRIORITY IMPROVEMENTS ✓
 
 ### 3. Added Interceptor Consideration to Danger Plots
-**File:** [CvDangerPlots.cpp](CvGameCoreDLL_Expansion2/CvDangerPlots.cpp#L860-L885)  
+**File:** [CvDangerPlots.cpp](CvGameCoreDLL_Expansion2/CvDangerPlots.cpp#L860-L885)
 **Status:** ✅ IMPLEMENTED
 
 **Issue:** Danger plot calculations for air units did not account for friendly interceptors, causing the AI to overestimate threat level from air attacks.
 
-**Solution:** 
+**Solution:**
 - Calculate interceptor count for air attacks
 - Apply damage reduction (10% per interceptor, max 40%)
 - Reduces overestimation of air threat
@@ -79,7 +79,7 @@ if (pAttacker->getDomainType() == DOMAIN_AIR && m_pPlot)
 ---
 
 ### 4. Added Specialized Air Attack Safety Check
-**File:** [CvTacticalAI.cpp](CvGameCoreDLL_Expansion2/CvTacticalAI.cpp#L6456-L6496)  
+**File:** [CvTacticalAI.cpp](CvGameCoreDLL_Expansion2/CvTacticalAI.cpp#L6456-L6496)
 **Status:** ✅ IMPLEMENTED
 
 **Issue:** Air units lacked specialized suicide prevention logic; the function only checked melee attacks and excluded air units entirely.
@@ -119,7 +119,7 @@ if (pAttacker->getDomainType() == DOMAIN_AIR)
 ---
 
 ### 5. Optimized Emergency Rebase Performance
-**File:** [CvUnit.cpp](CvGameCoreDLL_Expansion2/CvUnit.cpp#L5508-5600)  
+**File:** [CvUnit.cpp](CvGameCoreDLL_Expansion2/CvUnit.cpp#L5508-5600)
 **Status:** ✅ OPTIMIZED
 
 **Issue:** `EmergencyRebase()` iterates through all cities twice and all units once, looking for valid targets. This is inefficient and could cause frame rate issues in late-game.
@@ -142,7 +142,7 @@ if (!vRebaseTargets.empty())
 {
     std::sort(vRebaseTargets.begin(), vRebaseTargets.end(),
         [](const std::pair<CvPlot*, int>& a, const std::pair<CvPlot*, int>& b) { return a.second > b.second; });
-    
+
     rebase(vRebaseTargets[0].first->getX(), vRebaseTargets[0].first->getY(), true);
     return true;
 }
@@ -153,7 +153,7 @@ if (!vRebaseTargets.empty())
 ---
 
 ### 6. Expanded Airlift Targeting Beyond Capital
-**File:** [CvHomelandAI.cpp](CvGameCoreDLL_Expansion2/CvHomelandAI.cpp#L5490-5550)  
+**File:** [CvHomelandAI.cpp](CvGameCoreDLL_Expansion2/CvHomelandAI.cpp#L5490-5550)
 **Status:** ✅ EXPANDED
 
 **Issue:** Airlift logic only targeted the capital city, missing opportunities to reinforce threatened locations.
@@ -188,7 +188,7 @@ for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pL
 ## LOW PRIORITY IMPROVEMENTS ✓
 
 ### 7. Documented Carrier-to-Carrier Rebasing Design Decision
-**File:** [CvHomelandAI.cpp](CvGameCoreDLL_Expansion2/CvHomelandAI.cpp#L5655-5665)  
+**File:** [CvHomelandAI.cpp](CvGameCoreDLL_Expansion2/CvHomelandAI.cpp#L5655-5665)
 **Status:** ✅ DOCUMENTED
 
 **Issue:** Comment simply stated "for simplicity we don't do carrier to carrier rebasing" without full explanation.

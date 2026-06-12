@@ -1,6 +1,6 @@
 # Health / Food Penalties Review
 
-**Date:** January 9, 2026  
+**Date:** January 9, 2026
 **Scope:** Food penalties, growth modifiers, starvation mechanics, unit supply penalties
 
 ---
@@ -50,7 +50,7 @@ void CvCity::doGrowth()
             // Calculate food kept
             int iFoodKept = (iFoodReqForGrowth * getMaxFoodKeptPercent()) / 100;
             int iFoodStoreChange = max(0, iFoodReqForGrowth - iFoodKept);
-            
+
             changeFood(-iFoodStoreChange);
             changePopulation(1);
             // Send NOTIFICATION_CITY_GROWTH if pop <= 5
@@ -162,7 +162,7 @@ int CvCity::getFoodConsumptionTimes100(bool bIgnoreProcess, bool bAssumeNoReduct
     int iNonSpecialists = max(0, (getPopulation() - iSpecialists));
 
     int iConsumptionNonSpecialists = getFoodConsumptionNonSpecialistTimes100() * iNonSpecialists;
-    
+
     // NoStarvationNonSpecialist trait caps consumption
     if (IsNoStarvationNonSpecialist() && !bAssumeNoReductionForNonSpecialists)
     {
@@ -170,10 +170,10 @@ int CvCity::getFoodConsumptionTimes100(bool bIgnoreProcess, bool bAssumeNoReduct
     }
 
     int iTotalConsumption = max(100, iConsumptionNonSpecialists + getFoodConsumptionSpecialistTimes100() * iSpecialists);
-    
+
     // Cannot starve if at size 1 and nothing stored
     // (implementation continues...)
-    
+
     return iTotalConsumption;
 }
 ```
@@ -254,7 +254,7 @@ int CvPlayer::calculateUnitGrowthMaintenanceMod() const
 - `MAX_UNIT_SUPPLY_GROWTH_MOD` = 70 (max penalty -70%)
 - Formula: `-min(70, UnitsOverSupply * 5)`
 
-**Example:** 
+**Example:**
 - 4 units over supply → -20% growth
 - 10 units over supply → -50% growth
 - 15+ units over supply → -70% growth (capped)
@@ -289,15 +289,15 @@ if (eMajority != NO_RELIGION)
     {
         bool bAtPeace = GET_TEAM(getTeam()).getAtWarCount(false) == 0;
         iReligionGrowthMod = pReligion->m_Beliefs.GetCityGrowthModifier(bAtPeace, getOwner(), ...);
-        
+
         // Trait: population boost from religion
-        if (GET_PLAYER(getOwner()).GetPlayerTraits()->IsPopulationBoostReligion() && 
+        if (GET_PLAYER(getOwner()).GetPlayerTraits()->IsPopulationBoostReligion() &&
             eMajority == GET_PLAYER(getOwner()).GetReligions()->GetStateReligion(true))
         {
             int iFollowers = GetCityReligions()->GetNumFollowers(eMajority);
             iReligionGrowthMod += (iFollowers * /*0*/ GD_INT_GET(BALANCE_FOLLOWER_GROWTH_BONUS));
         }
-        
+
         // Secondary pantheon
         BeliefTypes eSecondaryPantheon = GetCityReligions()->GetSecondaryReligionPantheonBelief();
         if (eSecondaryPantheon != NO_BELIEF)
@@ -436,7 +436,7 @@ int CvCity::GetUnhappinessFromFamine() const
 
     // Calculate net food (before growth mods)
     int iDiff = (getFoodPerTurnBeforeConsumptionTimes100() - getFoodConsumptionTimes100()) / 100;
-    
+
     // Only applies if negative and not building a settler
     if (iDiff < 0 && !isFoodProduction())
     {
@@ -454,7 +454,7 @@ int CvCity::GetUnhappinessFromFamine() const
 }
 ```
 
-**Formula:** 
+**Formula:**
 - Unhappiness = `abs(NetFood) * UNHAPPINESS_PER_STARVING_POP`
 - Default: 1 unhappiness per food deficit
 - Capped at city population (unless uncapped mode)
@@ -596,7 +596,7 @@ int CvPlayer::calculateUnitProductionMaintenanceMod() const
    - See [CvCity.cpp](CvCity.cpp#L21590-L21638)
    - Formula: `Population * UNHAPPINESS_PER_ISOLATED_POP` (default 0.34)
    - Exemptions: capital, trade route to capital, policy/trait bonuses
-   
+
 2. **No direct gold or production penalties from distance**
 
 **Why No Corruption?**
@@ -794,7 +794,7 @@ int CalculateSupplyPenalty(int iUnitsOver)
 int CvCity::getFoodConsumptionNonSpecialistTimes100() const
 {
     int iConsumption = /*2*/ GD_INT_GET(FOOD_CONSUMPTION_PER_POPULATION) * 100;
-    
+
     // Happy cities are more efficient
     int iHappinessDelta = getHappinessDelta();
     if (iHappinessDelta > 0)
@@ -804,7 +804,7 @@ int CvCity::getFoodConsumptionNonSpecialistTimes100() const
         iConsumption *= (100 - iReduction);
         iConsumption /= 100;
     }
-    
+
     return max(100, iConsumption);
 }
 ```
@@ -822,7 +822,7 @@ int CvCity::getFoodConsumptionNonSpecialistTimes100() const
 - Unit supply penalty only applies during peacetime
   - Wartime: reduced or no growth penalty (but production penalty remains)
   - Rationale: Mobilization is acceptable during war
-  
+
 - Empire unhappiness penalty exempt from capital
   - Capital always at base growth rate
   - Rationale: Capital should be stable, remote cities suffer more
@@ -849,7 +849,7 @@ int CvCity::GetUnhappinessFromFamine() const
     if (iDiff < 0 && !isFoodProduction())
     {
         iDiff *= -1;
-        
+
         float fUnhappiness = 0.00f;
         if (iDiff <= 3)
             fUnhappiness = iDiff * 0.5f; // Mild: 0.5 per food
@@ -857,7 +857,7 @@ int CvCity::GetUnhappinessFromFamine() const
             fUnhappiness = 1.5f + (iDiff - 3) * 0.75f; // Moderate: 0.75 per food
         else
             fUnhappiness = 4.5f + (iDiff - 7) * 1.0f; // Severe: 1.0 per food
-        
+
         int iLimit = MOD_BALANCE_UNCAPPED_UNHAPPINESS ? INT_MAX : getPopulation();
         return range((int)fUnhappiness, 0, iLimit);
     }
@@ -894,7 +894,7 @@ struct GrowthModifierSource
     bool bOnlyIfPositiveFood;
 };
 
-static const GrowthModifierSource g_GrowthModifiers[] = 
+static const GrowthModifierSource g_GrowthModifiers[] =
 {
     { "TXT_KEY_GROWTH_MOD_CAPITAL", &CvCity::GetCapitalGrowthModifier, false },
     { "TXT_KEY_GROWTH_MOD_PLAYER", &CvCity::GetPlayerGrowthModifier, false },
@@ -927,7 +927,7 @@ struct FoodCalculation
     int iFoodNetBeforeMods;      // Production - Consumption
     int iGrowthModifier;         // Percentage modifier
     int iFoodNetAfterMods;       // Final result
-    
+
     bool bIsGrowing;             // iFoodNetAfterMods > 0
     bool bIsStarving;            // iFoodNetAfterMods < 0
     bool bIsFoodProduction;      // Building settler/worker
@@ -940,7 +940,7 @@ FoodCalculation CvCity::CalculateFoodDetails() const
     result.iFoodConsumption = getFoodConsumptionTimes100();
     result.iFoodNetBeforeMods = result.iFoodProduction - result.iFoodConsumption;
     result.iGrowthModifier = getGrowthMods();
-    
+
     if (result.iFoodNetBeforeMods > 0)
     {
         result.iFoodNetAfterMods = result.iFoodNetBeforeMods * (100 + result.iGrowthModifier) / 100;
@@ -951,7 +951,7 @@ FoodCalculation CvCity::CalculateFoodDetails() const
         result.iFoodNetAfterMods = result.iFoodNetBeforeMods; // No mods when starving
         result.bIsStarving = true;
     }
-    
+
     result.bIsFoodProduction = isFoodProduction();
     return result;
 }
@@ -967,7 +967,7 @@ public:
     static int CalculateProductionPenalty(int iUnitsOver);
     static int CalculateGrowthPenalty(int iUnitsOver);
     static CvString GetPenaltyTooltip(int iUnitsOver);
-    
+
 private:
     static int ApplyPenaltyCurve(int iUnitsOver, int iPenaltyPerUnit, int iMaxPenalty);
 };
@@ -975,10 +975,10 @@ private:
 int UnitSupplyPenaltyCalculator::CalculateProductionPenalty(int iUnitsOver)
 {
     if (iUnitsOver <= 0) return 0;
-    
+
     int iPenaltyPerUnit = max(GD_INT_GET(PRODUCTION_PENALTY_PER_UNIT_OVER_SUPPLY), 0);
     int iMaxPenalty = max(GD_INT_GET(MAX_UNIT_SUPPLY_PRODMOD), 0);
-    
+
     return ApplyPenaltyCurve(iUnitsOver, iPenaltyPerUnit, iMaxPenalty) * -1;
 }
 ```

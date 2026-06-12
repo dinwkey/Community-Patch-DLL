@@ -53,7 +53,7 @@ if (GET_PLAYER(m_eOwner).GetPlayerTraits()->IsCanPlunderWithoutWar())
 
 **Missing Checks:**
 - Alliance status
-- Vassal relationships  
+- Vassal relationships
 - Fear/intimidation level
 - Relationship attitude
 
@@ -70,16 +70,16 @@ if (GET_PLAYER(m_eOwner).GetPlayerTraits()->IsCanPlunderWithoutWar())
 if (IsCanPlunderWithoutWar && destination != self)
 {
     owner = GetTradeRouteOwner()
-    
+
     if (IsAlly(owner))
         return false;  // ❌ Can't plunder allies
-    
+
     if (IsVassal(owner) or IsOverlord(owner))
         return false;  // ❌ Can't plunder vassals
-    
+
     if (IsAfraidOf(owner))
         return false;  // ❌ Can't plunder civs we fear
-    
+
     return true;  // ✅ Can plunder rivals/neutrals/enemies
 }
 ```
@@ -211,4 +211,3 @@ Before implementing, decide:
 - **Trait definition**: Morocco.sql
 - **Diplomatic APIs**: CvDiplomacyAI, CvTeam
 - **Related systems**: Alliance strength, vassal mechanics, fear levels
-

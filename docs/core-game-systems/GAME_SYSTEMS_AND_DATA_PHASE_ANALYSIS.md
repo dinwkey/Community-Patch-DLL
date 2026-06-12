@@ -2,9 +2,9 @@
 
 > Historical note: This analysis describes an earlier `feature/copilot` implementation plan. The maintained branch is now `custom/ai-gameplay-enhancements`; branch names and completion claims below are dated context.
 
-**Analysis Date:** 2026-01-12  
-**Strategy:** Selective re-implementation (not wholesale restoration)  
-**Total Impact:** ~1,645 insertions, 665 deletions across 18 files  
+**Analysis Date:** 2026-01-12
+**Strategy:** Selective re-implementation (not wholesale restoration)
+**Total Impact:** ~1,645 insertions, 665 deletions across 18 files
 **Risk Level:** MEDIUM (performance optimizations + balance changes)
 
 ---
@@ -25,13 +25,13 @@ The backup branch contains significant improvements to game systems and data str
 
 ### Phase 1: Culture System Performance Optimizations ✅ PRIORITY 1
 
-**Files:** `CvCultureClasses.cpp`, `CvCultureClasses.h`  
-**Lines:** +152 total  
-**Risk:** LOW (performance only, no mechanic changes)  
+**Files:** `CvCultureClasses.cpp`, `CvCultureClasses.h`
+**Lines:** +152 total
+**Risk:** LOW (performance only, no mechanic changes)
 **Rationale:** Critical for late-game performance (great works, theming, cultural influence)
 
 #### Change 1.1: Batch Theming Updates (CvCultureClasses.h)
-**Location:** Lines 257-340 (header additions)  
+**Location:** Lines 257-340 (header additions)
 **Type:** Data structure addition
 
 ```cpp
@@ -59,7 +59,7 @@ bool m_bBatchThemingDirty;
 - ~40-60% reduction in culture calculations per turn in endgame
 
 #### Change 1.2: Swap/Move Great Works Batching (CvCultureClasses.cpp)
-**Location:** SwapGreatWorks() and MoveGreatWorks() functions  
+**Location:** SwapGreatWorks() and MoveGreatWorks() functions
 **Type:** Operation batching
 
 ```cpp
@@ -86,7 +86,7 @@ pCity1->UpdateAllNonPlotYields(true);
 - Critical for late-game spreadsheet turns
 
 #### Change 1.3: Cache Lookup Functions (CvCultureClasses.cpp)
-**Location:** DoTurn() function and new cache methods  
+**Location:** DoTurn() function and new cache methods
 **Type:** Cached lookups + invalidation
 
 ```cpp
@@ -104,16 +104,16 @@ void CvPlayerCulture::DoTurn()
 {
     // PERFORMANCE OPTIMIZATION: Apply batched theming updates before updating influence
     ApplyBatchedThemingUpdates();
-    
+
     // PERFORMANCE OPTIMIZATION: Rebuild theming bonus cache at turn start
     for (int iLoopPlayer = 0; iLoopPlayer < MAX_MAJOR_CIVS; iLoopPlayer++)
     {
         UpdateThemingBonusCacheForPlayer((PlayerTypes)iLoopPlayer);
     }
-    
+
     // PERFORMANCE OPTIMIZATION: Invalidate influence trend cache at turn start
     InvalidateInfluenceTrendCache();
-    
+
     // ... existing cultural influence calculations ...
 }
 ```
@@ -129,14 +129,14 @@ void CvPlayerCulture::DoTurn()
 - Major speedup for 8+ civilization games
 
 #### Change 1.4: Initialization & Invalidation (CvCultureClasses.cpp)
-**Location:** Init() function  
+**Location:** Init() function
 **Type:** State initialization
 
 ```cpp
 void CvPlayerCulture::Init(CvPlayer* pPlayer)
 {
     // ... existing initialization ...
-    
+
     // PERFORMANCE OPTIMIZATION: Initialize batching structures
     m_bBatchThemingDirty = false;
     m_BatchThemingUpdates.clear();
@@ -162,9 +162,9 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 
 ### Phase 2: Religion System Balance & Mechanics (247 lines)
 
-**Files:** `CvReligionClasses.cpp`  
-**Risk:** MEDIUM (mechanics changes, requires testing)  
-**Status:** ✅ COMPLETED - Commit dd6402f4a  
+**Files:** `CvReligionClasses.cpp`
+**Risk:** MEDIUM (mechanics changes, requires testing)
+**Status:** ✅ COMPLETED - Commit dd6402f4a
 **Diff Size:** 284 lines (in backup - later refinements)
 
 **Key Changes Implemented:**
@@ -182,9 +182,9 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 
 ### Phase 3: Trade & Economy Enhancements (110 lines)
 
-**Files:** `CvTradeClasses.cpp`, `CvDealClasses.cpp`, `CvDiplomacyAI.cpp`  
-**Risk:** MEDIUM-HIGH (affects AI/economic balance)  
-**Status:** ✅ COMPLETED - Commits 87c9c2a1e (Phase 3A) and a02a21483 (Phase 3B)  
+**Files:** `CvTradeClasses.cpp`, `CvDealClasses.cpp`, `CvDiplomacyAI.cpp`
+**Risk:** MEDIUM-HIGH (affects AI/economic balance)
+**Status:** ✅ COMPLETED - Commits 87c9c2a1e (Phase 3A) and a02a21483 (Phase 3B)
 **Diff Size:** 110 lines (in backup - later refinements)
 
 **Key Changes Implemented:**
@@ -202,9 +202,9 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 
 ### Phase 4: Tech & Policy Systems (184 lines)
 
-**Files:** `CvTechClasses.cpp`, `CvPolicyClasses.cpp`, `CvPolicyAI.cpp`  
-**Risk:** LOW-MEDIUM (balance adjustments)  
-**Status:** ✅ COMPLETED - Commits 0e21e1aca (Phase 2C) and e5f0209cd (Phase 2D)  
+**Files:** `CvTechClasses.cpp`, `CvPolicyClasses.cpp`, `CvPolicyAI.cpp`
+**Risk:** LOW-MEDIUM (balance adjustments)
+**Status:** ✅ COMPLETED - Commits 0e21e1aca (Phase 2C) and e5f0209cd (Phase 2D)
 **Diff Size:** 184 lines (in backup - later refinements)
 
 **Implementation Status:**
@@ -216,8 +216,8 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 
 ### Phase 5: Additional Systems (0 lines)
 
-**Files:** `CvBeliefClasses.cpp`, `CvTraitClasses.cpp`, and others  
-**Risk:** MEDIUM-HIGH (interconnected systems)  
+**Files:** `CvBeliefClasses.cpp`, `CvTraitClasses.cpp`, and others
+**Risk:** MEDIUM-HIGH (interconnected systems)
 **Status:** ✅ NO CHANGES NEEDED - Already in sync
 
 **Implementation Status:**
@@ -242,17 +242,17 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
   - Status: ✅ IMPLEMENTED IN COMMIT dd6402f4a
   - Files: CvReligionClasses.cpp
   - Risk: MEDIUM
-  
+
 - **Phase 2B: Diplomacy AI Improvements** (67 lines)
   - Status: ✅ IMPLEMENTED IN COMMIT 086a6d327
   - Files: CvDiplomacyAI.cpp
   - Risk: MEDIUM
-  
+
 - **Phase 2C: Tech System Optimizations** (149 lines)
   - Status: ✅ IMPLEMENTED IN COMMIT 0e21e1aca
   - Files: CvTechClasses.cpp
   - Risk: LOW-MEDIUM
-  
+
 - **Phase 2D: Policy AI Optimization** (6 lines)
   - Status: ✅ IMPLEMENTED IN COMMIT e5f0209cd
   - Files: CvPolicyClasses.cpp
@@ -263,7 +263,7 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
   - Status: ✅ IMPLEMENTED IN COMMIT 87c9c2a1e
   - Files: CvDealClasses.cpp
   - Risk: LOW
-  
+
 - **Phase 3B: Deal Renewal Refactoring** (123 lines)
   - Status: ✅ IMPLEMENTED IN COMMIT a02a21483
   - Files: CvDealClasses.cpp, CvDiplomacyAI.cpp
@@ -353,7 +353,7 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 - ✅ Build verified
 - ✅ Risk: LOW
 
-✅ **Phase 2: Religion, Diplomacy, Tech, Policy** — IMPLEMENTED  
+✅ **Phase 2: Religion, Diplomacy, Tech, Policy** — IMPLEMENTED
 - ✅ Phase 2A: Religion (247 lines) - Commit: dd6402f4a
 - ✅ Phase 2B: Diplomacy (67 lines) - Commit: 086a6d327
 - ✅ Phase 2C: Tech (149 lines) - Commit: 0e21e1aca
@@ -379,9 +379,9 @@ void CvPlayerCulture::Init(CvPlayer* pPlayer)
 
 ### 🎉 ALL PHASES COMPLETE
 
-**Total Phases:** 5  
-**Completed:** 5 (Phases 1-5) ✅  
-**Remaining:** 0  
+**Total Phases:** 5
+**Completed:** 5 (Phases 1-5) ✅
+**Remaining:** 0
 **Total Lines Implemented:** 757 lines + 605 lines (Phase 2-3) = **1,362 lines**
 
 ### Completed Phases

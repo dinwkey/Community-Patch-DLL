@@ -2,9 +2,9 @@
 
 > Historical note: This backup-branch comparison was written for earlier `feature/copilot` states. The maintained branch is now `custom/ai-gameplay-enhancements`; comparison labels below are dated context.
 
-**Generated:** 2026-01-13  
-**Purpose:** Analyze additional diplomacy improvements in backup branch beyond Phase 2B  
-**Comparison:** feature/copilot vs feature/copilot-backup  
+**Generated:** 2026-01-13
+**Purpose:** Analyze additional diplomacy improvements in backup branch beyond Phase 2B
+**Comparison:** feature/copilot vs feature/copilot-backup
 **Net Lines:** +47/-14 (net +33 lines)
 
 ---
@@ -28,10 +28,10 @@ The backup branch contains **3 specific diplomacy enhancements** that complement
 
 ## Enhancement #1: Defensive Pact War Risk Assessment
 
-**File:** `CvDiplomacyAI.cpp`  
-**Location:** `DoMakeWarOnPlayer()` function (~line 27856)  
-**Lines Added:** 39  
-**Lines Removed:** 1 (comment replacement)  
+**File:** `CvDiplomacyAI.cpp`
+**Location:** `DoMakeWarOnPlayer()` function (~line 27856)
+**Lines Added:** 39
+**Lines Removed:** 1 (comment replacement)
 **Net:** +38 lines
 
 ### What It Does
@@ -42,14 +42,14 @@ Before declaring war on a target, the AI now checks if that target has defensive
 
 **Before (Current Branch):**
 ```cpp
-// FIXME: Okay, so we're ready to declare war...but, can we exploit 
+// FIXME: Okay, so we're ready to declare war...but, can we exploit
 // Defensive Pacts to do so with fewer diplomatic penalties?
 DeclareWar(eTargetPlayer);
 ```
 
 **After (Backup Branch):**
 ```cpp
-// Check if declaring war on this target would trigger defensive pacts 
+// Check if declaring war on this target would trigger defensive pacts
 // that create unfavorable matchups
 int iAlliedAgainstUs = 0;
 int iTargetAllyStrength = 0;
@@ -84,7 +84,7 @@ if (iAlliedAgainstUs > 0)
             FILogFile* pLog = LOGFILEMGR.GetLog(strLogName, FILogFile::kDontTimeStamp);
             CvString strLogMsg;
             strLogMsg.Format("CvDiplomacyAI::DoUpdateWarTargets - War against %s aborted: "
-                "defensive pacts create unfavorable odds", 
+                "defensive pacts create unfavorable odds",
                 GET_PLAYER(eTargetPlayer).getName());
             if (pLog)
                 pLog->Msg(strLogMsg);
@@ -144,10 +144,10 @@ With enhancement:
 
 ## Enhancement #2: Score Victory Validation
 
-**File:** `CvDiplomacyAI.cpp`  
-**Location:** `GetScoreVictoryProgress()` function (~line 3049)  
-**Lines Added:** 8  
-**Lines Removed:** 1 (comment update)  
+**File:** `CvDiplomacyAI.cpp`
+**Location:** `GetScoreVictoryProgress()` function (~line 3049)
+**Lines Added:** 8
+**Lines Removed:** 1 (comment update)
 **Net:** +7 lines
 
 ### What It Does
@@ -159,7 +159,7 @@ Adds validation to ensure Score victory is actually enabled in the game before c
 **Before (Current Branch):**
 ```cpp
 /// How close are we to achieving a Time victory?
-/// FIXME: Needs a "is time victory disabled?" check before this function 
+/// FIXME: Needs a "is time victory disabled?" check before this function
 ///        can be of much use
 int CvDiplomacyAI::GetScoreVictoryProgress() const
 {
@@ -225,10 +225,10 @@ int CvDiplomacyAI::GetScoreVictoryProgress() const
 
 ## Enhancement #3: Deal Renewal Preparation
 
-**File:** `CvDiplomacyAI.cpp`  
-**Location:** `DoSendStatementToPlayer()` function (~line 30837)  
-**Lines Added:** 6  
-**Lines Removed:** 0  
+**File:** `CvDiplomacyAI.cpp`
+**Location:** `DoSendStatementToPlayer()` function (~line 30837)
+**Lines Added:** 6
+**Lines Removed:** 0
 **Net:** +6 lines
 
 ### What It Does
@@ -243,8 +243,8 @@ if(eMessageType != NUM_DIPLO_MESSAGE_TYPES)
 {
     CvDeal kDeal = *pDeal;
     szText = GetDiploStringForMessage(eMessageType);
-    CvDiplomacyRequests::SendDealRequest(GetID(), ePlayer, &kDeal, 
-        DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szText, LEADERHEAD_ANIM_REQUEST, 
+    CvDiplomacyRequests::SendDealRequest(GetID(), ePlayer, &kDeal,
+        DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szText, LEADERHEAD_ANIM_REQUEST,
         /* bRenew */ true);
 }
 ```
@@ -257,8 +257,8 @@ if(eMessageType != NUM_DIPLO_MESSAGE_TYPES)
     CvGameDeals::PrepareRenewDeal(&kDeal);          // NEW
     pDeal->m_bCheckedForRenewal = true;             // NEW
     szText = GetDiploStringForMessage(eMessageType);
-    CvDiplomacyRequests::SendDealRequest(GetID(), ePlayer, &kDeal, 
-        DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szText, LEADERHEAD_ANIM_REQUEST, 
+    CvDiplomacyRequests::SendDealRequest(GetID(), ePlayer, &kDeal,
+        DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szText, LEADERHEAD_ANIM_REQUEST,
         /* bRenew */ true);
 }
 ```
@@ -405,8 +405,8 @@ Would you like me to:
 
 ---
 
-**Generated:** 2026-01-13  
-**Analysis Status:** COMPLETE  
-**Recommendation:** IMPLEMENT ALL ENHANCEMENTS  
-**Risk Level:** ✅ LOW  
+**Generated:** 2026-01-13
+**Analysis Status:** COMPLETE
+**Recommendation:** IMPLEMENT ALL ENHANCEMENTS
+**Risk Level:** ✅ LOW
 **Gameplay Impact:** ⭐ POSITIVE

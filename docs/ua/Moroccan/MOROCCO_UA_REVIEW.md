@@ -31,7 +31,7 @@ The trait enables:
 bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility) const
 {
     // ... validation checks ...
-    
+
     if (GET_PLAYER(m_eOwner).GetPlayerTraits()->IsCanPlunderWithoutWar())
     {
         PlayerTypes eTradeUnitDest = GC.getGame().GetGameTrade()->GetDestFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
@@ -65,8 +65,8 @@ if (m_pPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
         GET_PLAYER(eOwningPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 3);
     }
     // Diplo penalty with destination civ if not at war
-    if (eOwningPlayer != eDestPlayer && GET_PLAYER(eDestPlayer).isMajorCiv() 
-        && pPlunderPlot->isVisible(eDestTeam) 
+    if (eOwningPlayer != eDestPlayer && GET_PLAYER(eDestPlayer).isMajorCiv()
+        && pPlunderPlot->isVisible(eDestTeam)
         && !GET_TEAM(m_pPlayer->getTeam()).isAtWar(eDestTeam))
     {
         GET_PLAYER(eDestPlayer).GetDiplomacyAI()->ChangeNumTradeRoutesPlundered(m_pPlayer->GetID(), 1);
@@ -125,33 +125,33 @@ if (GET_PLAYER(m_eOwner).GetPlayerTraits()->IsCanPlunderWithoutWar())
     {
         // NEW: Check if we should plunder based on diplomatic status
         PlayerTypes eTradeUnitOwner = GC.getGame().GetGameTrade()->GetOwnerFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
-        
+
         // Do NOT plunder allies, vassals, or players we're afraid of
         if (eTradeUnitOwner != NO_PLAYER)
         {
             TeamTypes eOwnerTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
             TeamTypes eOwnerTeam = m_pPlayer->getTeam();
-            
+
             // Check alliance
-            if (GET_TEAM(eMoroccoTeam).IsAtPeace(eOwnerTeam) && 
+            if (GET_TEAM(eMoroccoTeam).IsAtPeace(eOwnerTeam) &&
                 GET_TEAM(eMoroccoTeam).GetAllianceStrength(eOwnerTeam) > ALLIANCE_LEVEL_NONE)
             {
                 return false;  // Don't plunder allies
             }
-            
+
             // Check vassal status
-            if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) || 
+            if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
                 GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
             {
                 return false;  // Don't plunder vassals or overlords
             }
-            
+
             // Check if we're afraid of this player
             if (GET_PLAYER(m_eOwner).GetDiplomacyAI()->IsAfraidOf(eTradeUnitOwner))
             {
                 return false;  // Don't plunder civs we fear
             }
-            
+
             return true;  // Can plunder otherwise (neutral/rival/enemy)
         }
     }
@@ -183,7 +183,7 @@ if (GET_PLAYER(eVictimPlayer).isHuman() && !m_pPlayer->isHuman())
     // 1. Demand cessation (diplomatic penalty on Morocco)
     // 2. Declare war immediately
     // 3. Ignore it
-    
+
     CvNotifications* pNotifications = GET_PLAYER(eVictimPlayer).GetNotifications();
     if (pNotifications)
     {

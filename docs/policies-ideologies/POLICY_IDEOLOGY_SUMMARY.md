@@ -1,8 +1,8 @@
 # Policies & Ideologies Review — Summary & Action Items
 
-**Generated:** January 9, 2026  
-**Scope:** Complete review of social policy, ideology, tenet, and policy-tree systems  
-**Documents Created:** 3 (main review, fixes, quick reference)  
+**Generated:** January 9, 2026
+**Scope:** Complete review of social policy, ideology, tenet, and policy-tree systems
+**Documents Created:** 3 (main review, fixes, quick reference)
 
 ---
 
@@ -10,12 +10,12 @@
 
 A comprehensive analysis of the Civ5 mod's Policies/Ideologies subsystem has been completed, covering:
 
-✅ **Architecture:** 3 core ideologies (Freedom, Autocracy, Order) + Heritage  
-✅ **Mechanics:** Social policy selection, ideology adoption, tenet progression, ideology switching  
-✅ **AI Systems:** Flavor-based weighting, diplomatic coordination, public opinion response  
-✅ **Data:** SQL/XML configuration, unit/building gating, balance tuning  
-✅ **Issues:** 6 identified (1 critical, 2-3 moderate, remainder low-priority)  
-✅ **Fixes:** Detailed code snippets and implementation guidance for all issues  
+✅ **Architecture:** 3 core ideologies (Freedom, Autocracy, Order) + Heritage
+✅ **Mechanics:** Social policy selection, ideology adoption, tenet progression, ideology switching
+✅ **AI Systems:** Flavor-based weighting, diplomatic coordination, public opinion response
+✅ **Data:** SQL/XML configuration, unit/building gating, balance tuning
+✅ **Issues:** 6 identified (1 critical, 2-3 moderate, remainder low-priority)
+✅ **Fixes:** Detailed code snippets and implementation guidance for all issues
 
 ---
 

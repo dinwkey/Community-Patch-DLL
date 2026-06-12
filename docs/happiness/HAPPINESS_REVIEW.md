@@ -1,6 +1,6 @@
 # Happiness / Amenities System Review
 
-**Date:** January 9, 2026  
+**Date:** January 9, 2026
 **Scope:** Empire happiness mechanics, penalties, luxury distribution
 
 ---
@@ -147,12 +147,12 @@ if (MOD_BALANCE_VP)
    - Exclude puppets (unless Venice), razing, resistance, and occupied cities
    - Calculate "Need Score" = `Population - LocalHappiness` for each city
    - Sort cities by Need (descending) and by Population (descending)
-   
+
 3. **Distribution Phase 1: Fill Needs**
    - Iterate through cities sorted by Need
    - Give 1 happiness to each city with Need > 0
    - Repeat until all cities are full or happiness runs out
-   
+
 4. **Distribution Phase 2: Distribute Excess**
    - If happiness remains, distribute evenly by population
    - Higher population cities get more happiness per round-robin pass
@@ -173,7 +173,7 @@ void CvPlayer::DistributeHappinessToCities()
 
         pLoopCity->ResetHappinessFromEmpire();
 
-        if (pLoopCity->IsRazing() || pLoopCity->IsResistance() || 
+        if (pLoopCity->IsRazing() || pLoopCity->IsResistance() ||
             (pLoopCity->IsOccupied() && !pLoopCity->IsNoOccupiedUnhappiness()))
             continue;  // Don't distribute to these cities
 
@@ -246,7 +246,7 @@ All legacy sources **disabled** for VP. Instead:
 
 1. **Public Opinion Unhappiness:** `GetCulture()->GetPublicOpinionUnhappiness()`
    - Ideology pressure from other civs
-   
+
 2. **JFD Special Sources** (if MOD_BALANCE_CORE_JFD):
    - `GetUnhappinessFromCityJFDSpecial()` - includes specialists
 
@@ -511,8 +511,8 @@ int CvPlayer::GetUnhappinessCombatStrengthPenalty() const
     if (MOD_BALANCE_VP)
     {
         // -10 if unhappy, -20 if very unhappy
-        return IsEmpireVeryUnhappy() ? 
-               /*-20*/ GD_INT_GET(VERY_UNHAPPY_MAX_COMBAT_PENALTY) : 
+        return IsEmpireVeryUnhappy() ?
+               /*-20*/ GD_INT_GET(VERY_UNHAPPY_MAX_COMBAT_PENALTY) :
                /*-10*/ GD_INT_GET(VERY_UNHAPPY_MAX_COMBAT_PENALTY) / 2;
     }
 
@@ -675,7 +675,7 @@ When `IsEmpireSuperUnhappy()` returns true (happiness < 20):
 ### Weaknesses
 1. **Documentation:** Many functions lack comments explaining formulas
 2. **Magic numbers:** Hardcoded values like `/ 100` for percentage conversions
-3. **Naming inconsistency:** `GetHappinessFromX` vs `GetUnhappinessFromX` vs `GetX` 
+3. **Naming inconsistency:** `GetHappinessFromX` vs `GetUnhappinessFromX` vs `GetX`
 4. **Duplication:** Similar median calculation code repeated for each citizen need
 5. **Complex dependencies:** Distribution system requires careful update ordering
 
@@ -725,25 +725,25 @@ enum CitizenNeedTypes
 int CvCity::GetCitizenNeed(CitizenNeedTypes eNeed, bool bForceRecalc, int iAssumedExtraYieldRate) const
 {
     YieldTypes eYield = GetYieldForNeed(eNeed);
-    
+
     // Get median threshold
     float fMedian = GetNeedMedian(eYield, bForceRecalc, 0);
-    
+
     // Get city yield
     int iYield = getYieldRateTimes100(eYield, false, false) / 100;
     if (bForceRecalc)
         iYield += iAssumedExtraYieldRate;
-    
+
     // Calculate deficit
     if (iYield >= fMedian)
         return 0;
-    
+
     int iDeficit = (int)ceil(fMedian - (float)iYield);
-    
+
     // Apply flat reduction
     int iReduction = GetFlatReductionForNeed(eNeed);
     iReduction += GET_PLAYER(getOwner()).GetFlatReductionGlobalForNeed(eNeed);
-    
+
     return max(0, iDeficit - iReduction);
 }
 ```
@@ -761,7 +761,7 @@ struct HappinessSource
     bool bLegacyOnly;
 };
 
-static const HappinessSource g_HappinessSources[] = 
+static const HappinessSource g_HappinessSources[] =
 {
     { "TXT_KEY_HAPPINESS_LUXURIES", &CvPlayer::GetBonusHappinessFromLuxuriesFlat, true, false },
     { "TXT_KEY_HAPPINESS_RELIGION", &CvPlayer::GetHappinessFromReligion, false, false },
@@ -771,15 +771,15 @@ static const HappinessSource g_HappinessSources[] =
 void CvPlayer::DoUpdateTotalHappiness()
 {
     m_iHappiness = GetBaseHappiness();
-    
+
     for (const HappinessSource& source : g_HappinessSources)
     {
         if ((source.bVPOnly && !MOD_BALANCE_VP) || (source.bLegacyOnly && MOD_BALANCE_VP))
             continue;
-        
+
         m_iHappiness += (this->*source.pGetHappinessFunc)();
     }
-    
+
     // ... distribution ...
 }
 ```

@@ -2,10 +2,10 @@
 
 > Historical note: This backup-branch comparison was written for earlier `feature/copilot` states. The maintained branch is now `custom/ai-gameplay-enhancements`; comparison labels below are dated context.
 
-**Generated:** 2026-01-13  
-**Purpose:** Analyze globals cleanup in backup branch  
-**Comparison:** feature/copilot vs feature/copilot-backup  
-**File:** CvGlobals.cpp and CvGlobals.h  
+**Generated:** 2026-01-13
+**Purpose:** Analyze globals cleanup in backup branch
+**Comparison:** feature/copilot vs feature/copilot-backup
+**File:** CvGlobals.cpp and CvGlobals.h
 **Net Lines:** +39/-211 (net -172 lines)
 
 ---
@@ -28,8 +28,8 @@ The backup branch contains **2 major cleanups** to the Globals code:
 
 ## Enhancement 1: Minidump Creation Simplification
 
-**Type:** Code refactoring / cleanup  
-**Purpose:** Simplify crash dump creation  
+**Type:** Code refactoring / cleanup
+**Purpose:** Simplify crash dump creation
 **Impact:** 180 lines removed, code clarity improved
 
 ### The Change
@@ -211,8 +211,8 @@ sprintf_s(version_info, sizeof(version_info),
 
 ## Enhancement 2: Unused Component Removal
 
-**Type:** Dead code cleanup  
-**Purpose:** Remove unused definition  
+**Type:** Dead code cleanup
+**Purpose:** Remove unused definition
 **Impact:** 3 lines removed (1 in header, 2 in implementation)
 
 ### The Change
@@ -274,7 +274,7 @@ sprintf_s(version_info, sizeof(version_info),
 
 **Original approach:** Load dbghelp.dll at runtime
 - Pros: Can fall back to different versions
-- Cons: 
+- Cons:
   - Complex error handling
   - Version detection overhead
   - Unnecessary at this point in Windows history
@@ -357,8 +357,8 @@ Would you like me to:
 
 ---
 
-**Generated:** 2026-01-13  
-**Analysis Status:** COMPLETE  
-**Recommendation:** IMPLEMENT  
-**Risk Level:** ✅ MINIMAL  
+**Generated:** 2026-01-13
+**Analysis Status:** COMPLETE
+**Recommendation:** IMPLEMENT
+**Risk Level:** ✅ MINIMAL
 **Code Quality Impact:** ⭐⭐⭐⭐⭐ (180 lines of cleaner code)

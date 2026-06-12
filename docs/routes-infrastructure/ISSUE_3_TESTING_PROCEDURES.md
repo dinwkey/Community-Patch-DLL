@@ -1,7 +1,7 @@
 # Issue 3 Testing Procedures: Route Maintenance & Strategic Value
 
-**Implementation Date:** January 11, 2026  
-**Modified Function:** `CvBuilderTaskingAI::GetRouteDirectives()`  
+**Implementation Date:** January 11, 2026
+**Modified Function:** `CvBuilderTaskingAI::GetRouteDirectives()`
 **Change Location:** Lines 1715-1759 in `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp`
 
 ## Setup Requirements
@@ -27,11 +27,11 @@
 
 ### Expected Results
 ```
-Railroad Route Value = [Base Value: +30 GPT] - [Maintenance: ~10/tile] + [Movement Bonus: 500] 
-                     = ~20 - 10 + 500 
+Railroad Route Value = [Base Value: +30 GPT] - [Maintenance: ~10/tile] + [Movement Bonus: 500]
+                     = ~20 - 10 + 500
                      = +510 (positive)
-                     
-Road Route Value    = [Base Value: +30 GPT] - [Maintenance: ~2/tile] 
+
+Road Route Value    = [Base Value: +30 GPT] - [Maintenance: ~2/tile]
                      = ~28 (positive)
 
 DECISION: Railroad selected (510 > 28)
@@ -66,12 +66,12 @@ DECISION: Railroad selected (510 > 28)
 ### Expected Results
 ```
 Railroad Route Value = [Base Value: -20 GPT] - [Maintenance: ~10/tile] + [Movement Bonus Calc]
-                     
+
 Movement Bonus Calculation (not wealthy, high military threat):
   - Base bonus: 500
   - Wealth factor: 100% (15 GPT < 25 GPT threshold) = 500
   - War multiplier: 150% (70 > 50) = 500 × 1.5 = 750
-  
+
 Railroad Value = -30 + 750 = +720 (POSITIVE!)
 
 Road Route Value = [Base Value: -20 GPT] - [Maintenance: ~2/tile]
@@ -116,7 +116,7 @@ bCanAffordNegativeRoute = (-5 > 0) = FALSE
 Railroad Route Value (before constraint) = -40 - 10 + 500 = +450
 Treasury Constraint Applied: bCanAffordNegativeRoute=false && iRailroadValue<0
   → Does NOT apply (iRailroadValue is positive, so constraint doesn't trigger)
-  
+
 HOWEVER: If maintenance exceeds movement bonus:
 Railroad Route Value (before constraint) = -40 - 10 + 350 = +300 (still positive)
 
@@ -215,7 +215,7 @@ Location: Game debug console / log
 
 Verify route directives are generated:
   BuilderDirective(BUILD_ROUTE, ROUTE_RAILROAD, pPlot)
-  
+
 Not generated if value ≤ 0:
   BuilderDirective(BUILD_ROUTE, ROUTE_ROAD, pPlot)
 ```

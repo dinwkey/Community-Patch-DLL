@@ -11,7 +11,10 @@
 #define CV_UNIT_SIGHTING_MANAGER_H
 
 #include <map>
+#include <utility>
 #include <vector>
+
+#include "CvEnums.h"
 
 class CvCity;
 class CvPlayer;
@@ -54,13 +57,12 @@ enum UnitSightingFlags
 };
 
 /// Per-unit sighting record with fog-of-war prediction support.
-/// Size: 22 bytes per unit.
 struct UnitSighting
 {
 	// === Identification ===
-	unsigned short unitId;           // Unit's ID (for tracking same unit across turns)
-	unsigned char  unitType;         // UnitTypes enum
-	unsigned char  owner;            // PlayerTypes — which civ owns it
+	int            unitId;           // Unit's ID (for tracking same unit across turns)
+	UnitTypes      unitType;         // UnitTypes enum
+	PlayerTypes    owner;            // PlayerTypes - which civ owns it
 
 	// === Position ===
 	short          x, y;             // Last confirmed position
@@ -152,11 +154,11 @@ private:
 
 	CvPlayer*                   m_pPlayer;
 	std::vector<UnitSighting>   m_Sightings;
-	std::map<unsigned int, int> m_SightingIndex;  // Key = (owner << 16) | unitId → index in m_Sightings
+	std::map<std::pair<PlayerTypes, int>, int> m_SightingIndex;  // Key = owner/unitId -> index in m_Sightings
 
-	unsigned int MakeKey(PlayerTypes eOwner, int iUnitId) const
+	std::pair<PlayerTypes, int> MakeKey(PlayerTypes eOwner, int iUnitId) const
 	{
-		return ((unsigned int)eOwner << 16) | (unsigned int)(iUnitId & 0xFFFF);
+		return std::make_pair(eOwner, iUnitId);
 	}
 };
 
