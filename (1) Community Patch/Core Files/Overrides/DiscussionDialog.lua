@@ -674,7 +674,7 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_DONT_STOP_DIGGING" );
 			strButton2Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_STOP_DIGGING" );
 			bHideBackButton = true;
-		
+
 		-- Player plundered AI's trade route
 		elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
 			strButton1Text = Locale.ConvertTextKey( "TXT_KEY_DIPLO_DISCUSS_DONT_STOP_PLUNDERING" );
@@ -778,7 +778,7 @@ function LeaderMessageHandler( iPlayer, iDiploUIState, szLeaderMessage, iAnimati
 			Controls.Button12:SetHide(false);
 			Controls.Button12:SetToolTipString(strButton12Tooltip);
 		end
-		
+
 		-- Some situations we force the human to answer - he can't back out
 		if (bHideBackButton) then
 	 		Controls.BackButton:SetHide(true);
@@ -1018,7 +1018,7 @@ function OnButton1()
     -- AI asking you to stop digging
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_DIGGING) then
 	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_STOP_DIGGING, g_iAIPlayer, iButtonID, iAgainstPlayer);
-	
+
     -- AI asking you to stop plundering trade routes
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
 	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_PLUNDERED_TRADE_ROUTE_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer);
@@ -1194,7 +1194,7 @@ function OnButton2()
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_STOP_DIGGING) then
 	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_STOP_DIGGING, g_iAIPlayer, iButtonID, iAgainstPlayer);
 
-    -- AI asking you to stop plundering trade routes	
+    -- AI asking you to stop plundering trade routes
 	elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_PLUNDERED_TRADE_ROUTE) then
 	   Game.DoFromUIDiploEvent( FromUIDiploEventTypes.FROM_UI_DIPLO_EVENT_PLUNDERED_TRADE_ROUTE_RESPONSE, g_iAIPlayer, iButtonID, iAgainstPlayer);
 
@@ -1501,7 +1501,7 @@ Controls.Button11:RegisterCallback( Mouse.eLClick, OnButton11 );
 ----------------------------------------------------------------
 function OnButton12()
 	g_InstanceManager:ResetInstances();
-    	
+
 	local pPlayer = Players[Game.GetActivePlayer()];
 	local pTeam = Teams[pPlayer:GetTeam()];
 	local pAIPlayer = Players[g_iAIPlayer];
@@ -1518,8 +1518,8 @@ function OnButton12()
 		end
     -- Default mode
     elseif (g_DiploUIState == DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT) then
-		
-	end	 
+
+	end
 end
 Controls.Button12:RegisterCallback( Mouse.eLClick, OnButton12 );
 

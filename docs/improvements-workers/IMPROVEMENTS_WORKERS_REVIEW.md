@@ -117,9 +117,9 @@ bool CityStrategyAIHelpers::IsTestCityStrategy_NeedTileImprovers(AICityStrategyT
 {
     int iCurrentNumCities = kPlayer.getCitiesNeedingTerrainImprovements();
     int iNumWorkers = kPlayer.GetNumUnitsWithUnitAI(UNITAI_WORKER, true);
-    
+
     int iModdedNumWorkers = iNumWorkers * pCityStrategy->GetWeightThreshold() / 100;
-    
+
     // Trigger if fewer workers than cities or zero workers
     if(iModdedNumWorkers <= iCurrentNumCities || iModdedNumWorkers == 0)
     {
@@ -127,7 +127,7 @@ bool CityStrategyAIHelpers::IsTestCityStrategy_NeedTileImprovers(AICityStrategyT
         if(GC.getGame().getGameTurn() >= iDesperateTurn)
             return true;
     }
-    
+
     return false;
 }
 ```
@@ -144,17 +144,17 @@ bool CityStrategyAIHelpers::IsTestCityStrategy_NeedTileImprovers(AICityStrategyT
 bool CityStrategyAIHelpers::IsTestCityStrategy_WantTileImprovers(AICityStrategyTypes eStrategy, CvCity* pCity)
 {
     int iNumBuilders = kPlayer.GetNumUnitsWithUnitAI(UNITAI_WORKER, true);
-    
+
     if(iNumBuilders <= 0)
         return true; // immediately want if zero
-    
+
     if (pCity->getPopulation() >= GD_INT_GET(AI_CITYSTRATEGY_WANT_TILE_IMPROVERS_MINIMUM_SIZE)) // 4
     {
         int iCurrentNumCities = kPlayer.getCitiesNeedingTerrainImprovements();
         if (iNumBuilders < iCurrentNumCities * pCityStrategy->GetWeightThreshold()) // limit per city
             return true;
     }
-    
+
     return false;
 }
 ```
@@ -172,9 +172,9 @@ bool CityStrategyAIHelpers::IsTestCityStrategy_EnoughTileImprovers(AICityStrateg
     int iNumBuilders = kPlayer.GetNumUnitsWithUnitAI(UNITAI_WORKER, true);
     if (iNumBuilders <= 0)
         return false;
-    
+
     int iNumCities = kPlayer.getCitiesNeedingTerrainImprovements();
-    
+
     // (workers * 100) >= (threshold * cities)?
     return (iNumBuilders * 100) >= iPerCityThreshold * iNumCities;
 }
@@ -195,29 +195,29 @@ bool CityStrategyAIHelpers::IsTestCityStrategy_EnoughTileImprovers(AICityStrateg
 int CvBuilderTaskingAI::GetTurnsToBuild(const CvUnit* pUnit, BuildTypes eBuild, const CvPlot* pPlot) const
 {
     int iBuildRate = pUnit ? pUnit->workRate(false) : 1;
-    
+
     // Get base build time from DB
     int iBuiltQuantity = GC.getBuildInfo(eBuild)->getTime();
-    
+
     // Adjust by feature (removing forest/jungle takes longer)
     FeatureTypes eFeature = pPlot->getFeatureType();
     if(eFeature != NO_FEATURE)
     {
         iBuiltQuantity += GC.getFeatureInfo(eFeature)->getBuildTime();
     }
-    
+
     // Adjust by terrain
     TerrainTypes eTerrain = pPlot->getTerrainType();
     if(eTerrain != NO_TERRAIN)
     {
         iBuiltQuantity += GC.getTerrainInfo(eTerrain)->getBuildTime();
     }
-    
+
     // Apply tech modifier from Build_TechTimeChanges
     int iTerrainTime = iBuiltQuantity;
     int iModifier = getTechModifier(...) + getHandicapModifier(...);
     iBuiltQuantity = (iBuiltQuantity * (100 + iModifier)) / 100;
-    
+
     // Calculate turns
     int iTurns = (iBuiltQuantity + iBuildRate - 1) / iBuildRate; // ceil division
     return std::max(1, iTurns);
@@ -385,7 +385,7 @@ INSERT INTO Build_TechTimeChanges (BuildType, TechType, TimeChange) VALUES
 
 **Problem:** Builder scoring uses gross gold yield, ignoring maintenance costs.
 
-**Impact:** 
+**Impact:**
 - Builder may prioritize a tile that yields +3 GPT but costs +4 GPT maintenance (net -1)
 - Gold-focused improvements may appear attractive but drain treasury over time
 
@@ -401,7 +401,7 @@ INSERT INTO Build_TechTimeChanges (BuildType, TechType, TimeChange) VALUES
 
 **Problem:** Tech tree distance is used to predict when tech unlock occurs, but position in tree is not a reliable predictor of actual research timeline.
 
-**Impact:** 
+**Impact:**
 - Build times for late-game improvements (railroads, airports) may be estimated incorrectly
 - Route building priority may change unexpectedly when techs are researched early/late
 
@@ -485,12 +485,12 @@ Turn N:
        a. UpdateRoutePlots() — score all city connection routes
        b. UpdateImprovementPlots() — score all unimproved tiles
        c. Combine scores, sort by priority
-       
+
   2. Worker units call GetAssignedDirective()
        a. Match unit to highest-priority directive in queue
        b. If unit already has directive, keep it (don't thrash)
        c. Return new directive if old one complete
-       
+
   3. ExecuteWorkerMove()
        a. Move unit toward target plot
        b. If reached, execute build action (GC.getBuildInfo(eBuild)->getTime())
@@ -526,7 +526,7 @@ function getUnitBuildProgressData()
     local buildProgress = pUnit:GetBuildProgress()
     local buildTime = pUnit:GetBuildTime()
     local turnsLeft = pUnit:GetBuildTurnsLeft()
-    
+
     -- Display to UI
     ...
 end
@@ -637,4 +637,3 @@ Displays improvement yield icons on tile when selected.
 ---
 
 **Document Status:** Initial review complete. See [Tier 1](#tier-1-critical-clarity) recommendations for next steps.
-

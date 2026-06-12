@@ -1,6 +1,6 @@
 # Culture & Borders System Review
 
-**Date:** January 2026  
+**Date:** January 2026
 **Scope:** Culture accumulation, border expansion, culture pressure mechanics, and culture flip dynamics in Community Patch/Vox Populi
 
 ---
@@ -30,34 +30,34 @@ Culture accumulation uses **exponential scaling** with multiple modifiers:
 int GetJONSCultureThreshold() const {
     // Base cost
     int iCultureThreshold = GD_INT_GET(CULTURE_COST_FIRST_PLOT);  // 20
-    
+
     // Exponential scaling: cost^exponent
     float fExponent = GD_FLOAT_GET(CULTURE_COST_LATER_PLOT_EXPONENT);  // 1.35
     int iAdditionalCost = GetJONSCultureLevel() * GD_INT_GET(CULTURE_COST_LATER_PLOT_MULTIPLIER);  // 15
     double dAdditionalCost = pow((double)iAdditionalCost, (double)fExponent);
-    
+
     // Policy modifiers
     int iPolicyExponentMod = GetPlayer().GetPlotCultureExponentModifier();
     fExponent = fExponent * (100 + iPolicyExponentMod) / 100;
-    
+
     // Religion modifiers
     int iReligionMod = GetMajorityReligionMod() + GetSecondaryPantheonMod();
-    
+
     // Final modifiers: -85% minimum
     int iModifier = GetPlayerMod() + GetCityMod() + iReligionMod;
     iModifier = max(iModifier, GD_INT_GET(CULTURE_PLOT_COST_MOD_MINIMUM));
-    
+
     iCultureThreshold *= (100 + iModifier) / 100;
-    
+
     // Game speed adjustment
     iCultureThreshold *= GameSpeed.getCulturePercent() / 100;
-    
+
     // Round to divisor (5)
     iDivisor = GD_INT_GET(CULTURE_COST_VISIBLE_DIVISOR);
     if (iCultureThreshold > iDivisor * 2) {
         iCultureThreshold = (iCultureThreshold / iDivisor) * iDivisor;
     }
-    
+
     return iCultureThreshold;
 }
 ```
@@ -65,7 +65,7 @@ int GetJONSCultureThreshold() const {
 ### Issues & Observations
 
 #### Issue 1.1: Overflow Risk in Exponential Calculation
-**Severity:** Medium  
+**Severity:** Medium
 **Location:** Line 17327
 
 The overflow check is **insufficient**:
@@ -73,7 +73,7 @@ The overflow check is **insufficient**:
 iCultureThreshold += (dAdditionalCost < INT_MAX / 256 ? int(dAdditionalCost) : INT_MAX / 256);
 ```
 
-**Problem:** 
+**Problem:**
 - The divisor `256` is arbitrary and may not prevent overflow in all cases
 - At high culture levels, `pow()` can exceed `INT_MAX / 256` long before reaching `INT_MAX`
 - No safeguard for very late-game scenarios with heavily modded exponents
@@ -87,7 +87,7 @@ iCultureThreshold += iCapCost;
 ```
 
 #### Issue 1.2: Rounding/Divisor Logic May Cause Inconsistency
-**Severity:** Low  
+**Severity:** Low
 **Location:** Line 17532-17538
 
 ```cpp
@@ -108,7 +108,7 @@ if (iCultureThreshold > iDivisor * 2) {
 - Consider making it consistent: `iCultureThreshold = ((iCultureThreshold + iDivisor - 1) / iDivisor) * iDivisor;` (always round up)
 
 #### Issue 1.3: Minor Civ Culture Cost Scaling
-**Severity:** Low  
+**Severity:** Low
 **Location:** Line 17485-17488
 
 ```cpp
@@ -140,14 +140,14 @@ Border expansion via culture occurs in `DoJONSCultureLevelIncrease()`:
 void DoJONSCultureLevelIncrease() {
     int iOverflow = GetJONSCultureStoredTimes100() - GetJONSCultureThreshold() * 100;
     bool bIsHumanControlled = IsHuman() && !IsPuppet();
-    
+
     if (!MOD_UI_CITY_EXPANSION || !bIsHumanControlled) {
         SetJONSCultureStoredTimes100(iOverflow);
         ChangeJONSCultureLevel(1);
     }
-    
+
     CvPlot* pPlotToAcquire = GetNextBuyablePlot(false);
-    
+
     if (pPlotToAcquire) {
         if (MOD_UI_CITY_EXPANSION && bIsHumanControlled) {
             // Defer to human picker
@@ -169,7 +169,7 @@ void DoJONSCultureLevelIncrease() {
 ### Issues & Observations
 
 #### Issue 2.1: Deferred Culture Level Increase for Humans
-**Severity:** Medium  
+**Severity:** Medium
 **Location:** Line 17337-17369
 
 **Problem:**
@@ -198,7 +198,7 @@ if (pPlotToAcquire) {
 ```
 
 #### Issue 2.2: GetNextBuyablePlot() Unverified Behavior
-**Severity:** Medium  
+**Severity:** Medium
 **Location:** Line 17334
 
 **Problem:**
@@ -214,22 +214,22 @@ if (pPlotToAcquire) {
 - Verify it respects city work range and player expansion traits
 
 #### Issue 2.3: Border Growth Rate Bonus (WLTKD/GA) Not Integrated
-**Severity:** Low  
+**Severity:** Low
 **Location:** [CvCity.cpp](CvGameCoreDLL_Expansion2/CvCity.cpp#L18678-18687)
 
 ```cpp
 int GetBorderGrowthRateIncreaseTotal() {
     int iModifier = GetBorderGrowthRateIncrease() + kOwner.GetBorderGrowthRateIncreaseGlobal();
-    
+
     // ... Religion modifiers ...
-    
+
     // Double border growth during GA or WLTKD
-    if ((kOwner.IsDoubleBorderGrowthGA() && kOwner.isGoldenAge()) || 
+    if ((kOwner.IsDoubleBorderGrowthGA() && kOwner.isGoldenAge()) ||
         (kOwner.IsDoubleBorderGrowthWLTKD() && GetWeLoveTheKingDayCounter() > 0)) {
         iModifier *= 2;
         iModifier += 100;  // Double the base rate
     }
-    
+
     return iModifier;
 }
 ```
@@ -272,7 +272,7 @@ int GetPressurePerTurn(ReligionTypes eReligion, int* iNumSourceCities) {
 - Consider adding caps if pressure can exceed city religious resistance
 
 #### Issue 3.2: Tourism vs. Culture Pressure Ambiguity
-**Severity:** Low  
+**Severity:** Low
 
 **Problem:**
 - Player-level culture (tourism) and city-level religious pressure are conflated in UI tooltips
@@ -337,7 +337,7 @@ Resistance blocks:
 ```
 
 #### Issue 4.2: Resistance Halving on Emergency Bonus is Opaque
-**Severity:** Low  
+**Severity:** Low
 **Location:** [CvCity.cpp](CvGameCoreDLL_Expansion2/CvCity.cpp#L19725-19727)
 
 ```cpp
@@ -453,7 +453,7 @@ Key values are accessed via `GD_INT_GET()` and `GD_FLOAT_GET()` macro functions,
 - Or add hard ceiling: `if (cost > 10000) cost = 10000;`
 
 #### Issue 6.2: Religion Modifier Stacking
-**Severity:** Medium  
+**Severity:** Medium
 **Location:** [CvCity.cpp](CvGameCoreDLL_Expansion2/CvCity.cpp#L17488-17518)
 
 ```cpp

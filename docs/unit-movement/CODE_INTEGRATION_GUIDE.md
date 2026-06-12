@@ -30,20 +30,20 @@ if (pathfinder.Configure(config)) {
         pStart->getX(), pStart->getY(),
         pDest->getX(), pDest->getY()
     );
-    
+
     if (bFound) {
         SPath path = pathfinder.GetCurrentPath();
-        
+
         // Use path for movement
         for (int i = 1; i < path.vPlots.size(); i++) {
-            pSettler->PushMission(MISSION_MOVE_TO, 
-                                   path.vPlots[i].x, 
+            pSettler->PushMission(MISSION_MOVE_TO,
+                                   path.vPlots[i].x,
                                    path.vPlots[i].y);
         }
     } else {
         LOGFILEMGR.GetLog("path_failures.log")->Msg(
             "Could not find path from (%d,%d) to (%d,%d)",
-            pStart->getX(), pStart->getY(), 
+            pStart->getX(), pStart->getY(),
             pDest->getX(), pDest->getY()
         );
     }
@@ -74,7 +74,7 @@ if (pathfinder.Configure(config)) {
         pExplorer->getX(), pExplorer->getY(),
         pDest->getX(), pDest->getY()
     );
-    
+
     if (bFound) {
         SPath path = pathfinder.GetCurrentPath();
         // Explorer avoids enemy territory while exploring
@@ -104,17 +104,17 @@ if (pathfinder.Configure(config)) {
         pCatapult->getX(), pCatapult->getY(),
         pEnemyCity->getX(), pEnemyCity->getY()
     );
-    
+
     if (bFound) {
         SPath path = pathfinder.GetCurrentPath();
         // Catapult moves to ring 1 position and can bombard
-        
+
         // Verify catapult can actually bombard from final position
         CvPlot* pFinalPlot = GC.getMap().plot(
-            path.vPlots.back().x, 
+            path.vPlots.back().x,
             path.vPlots.back().y
         );
-        
+
         if (pCatapult->canEverRangeStrikeAt(pEnemyCity->plot(), pFinalPlot)) {
             // Safe to move here
         }
@@ -153,8 +153,8 @@ if (iCost == INT_MAX) {
     printf("Cannot move to hills plot\n");
 } else {
     int iMovesLeft = iMaxMoves - iCost;
-    printf("Cost: %d / %d MP (%.1f tiles)\n", 
-           iCost, iMaxMoves, 
+    printf("Cost: %d / %d MP (%.1f tiles)\n",
+           iCost, iMaxMoves,
            (float)iCost / GD_INT_GET(MOVE_DENOMINATOR));
 }
 ```
@@ -225,35 +225,35 @@ if (!pUnit->canEmbarkOnto(*pLandPlot, *pCoastPlot)) {
 int GetAIMovementFlags(CvUnit* pUnit, CvPlot* pDestPlot)
 {
     int iFlags = 0;
-    
+
     // All AI units: ignore danger on movement (decisions made elsewhere)
     iFlags |= CvUnit::MOVEFLAG_IGNORE_DANGER;
-    
+
     // Combat units: prepare to attack if needed
     if (pUnit->IsCombatUnit()) {
         iFlags |= CvUnit::MOVEFLAG_ATTACK;
-        
+
         // Melee units: don't bother with support (too complex for pathfinding)
         if (!pUnit->IsCanAttackRanged()) {
             iFlags |= CvUnit::MOVEFLAG_NO_DEFENSIVE_SUPPORT;
         }
-        
+
         // Ranged units besieging a city: stop nearby
         if (pDestPlot && pDestPlot->isEnemyCity(*pUnit)) {
             iFlags |= CvUnit::MOVEFLAG_APPROX_TARGET_RING1;
         }
     }
-    
+
     // Civilian units: avoid neutral hostile units
     if (pUnit->getUnitCombatType() == NO_UNITCOMBAT) {
         iFlags |= CvUnit::MOVEFLAG_DONT_STACK_WITH_NEUTRAL;
     }
-    
+
     // Naval units: don't embark onto land
     if (pUnit->getDomainType() == DOMAIN_SEA) {
         iFlags |= CvUnit::MOVEFLAG_NO_EMBARK;
     }
-    
+
     return iFlags;
 }
 
@@ -276,23 +276,23 @@ CvUnit* pEscort = pCivilian->getEscort();
 
 if (pCivilian && pEscort) {
     // Compute path for civilian, ignoring escort's ZOC
-    
+
     CvPathFinder& pathfinder = GC.getPathFinder();
-    
+
     // Build ignore list containing escort's current plot
     PlotIndexContainer plotsToIgnore;
     plotsToIgnore.push_back(pEscort->plot()->GetPlotIndex());
-    
+
     // Create config with selective ZOC
     SPathFinderUserData config(pCivilian, CvUnit::MOVEFLAG_SELECTIVE_ZOC, INT_MAX);
     config.plotsToIgnoreForZOC = plotsToIgnore;
-    
+
     if (pathfinder.Configure(config)) {
         bool bFound = pathfinder.GeneratePath(
             pCivilian->getX(), pCivilian->getY(),
             pDest->getX(), pDest->getY()
         );
-        
+
         if (bFound) {
             // Civilian can move without escort slowing it down
             SPath path = pathfinder.GetCurrentPath();
@@ -323,17 +323,17 @@ if (pathfinder.Configure(config)) {
         pUnit->getX(), pUnit->getY(),
         -1, -1  // Invalid destination triggers reachable plots mode
     );
-    
+
     // Query reachable plots from internal pathfinder state
-    // (Note: this requires custom implementation; standard pathfinder 
+    // (Note: this requires custom implementation; standard pathfinder
     //  doesn't expose reachable set directly)
-    
+
     for (int iX = 0; iX < GC.getMap().getGridWidth(); iX++) {
         for (int iY = 0; iY < GC.getMap().getGridHeight(); iY++) {
             const CvAStarNode* pNode = pathfinder.GetNode(iX, iY);
             if (pNode && pNode->m_iTurns <= iMaxTurns && pNode->m_iTurns >= 0) {
                 CvPlot* pPlot = GC.getMap().plotUnchecked(iX, iY);
-                printf("Reachable: (%d, %d) in %d turns\n", 
+                printf("Reachable: (%d, %d) in %d turns\n",
                        iX, iY, pNode->m_iTurns);
             }
         }
@@ -357,7 +357,7 @@ CvPathFinder& pathfinder = GC.getPathFinder();
 SPathFinderUserData config(pUnit, 0, INT_MAX);
 if (pathfinder.Configure(config)) {
     bool bPathStillValid = pathfinder.VerifyPath(cachedPath);
-    
+
     if (bPathStillValid) {
         printf("Cached path is still usable\n");
         // Continue using cachedPath
@@ -380,20 +380,20 @@ if (pathfinder.Configure(config)) {
 void ComputeAIMovement(CvPlayer* pPlayer)
 {
     CvPathFinder& pathfinder = GC.getPathFinder();
-    
+
     int iUnitsProcessed = 0;
     int iMaxPerTurn = 10;  // Limit to 10 units per turn
-    
+
     for (int iUnitLoop = 0; iUnitLoop < pPlayer->getNumUnits(); iUnitLoop++) {
         if (iUnitsProcessed >= iMaxPerTurn) {
             break;  // Spread pathfinding across turns
         }
-        
+
         CvUnit* pUnit = pPlayer->getUnit(iUnitLoop);
         if (!pUnit || !pUnit->canMove()) {
             continue;
         }
-        
+
         // Pathfind for this unit
         CvPlot* pDest = pUnit->GetAITargetPlot();
         if (pDest) {
@@ -402,7 +402,7 @@ void ComputeAIMovement(CvPlayer* pPlayer)
                 if (pathfinder.GeneratePath(
                     pUnit->getX(), pUnit->getY(),
                     pDest->getX(), pDest->getY())) {
-                    
+
                     pUnit->SetPath(pathfinder.GetCurrentPath());
                     iUnitsProcessed++;
                 }
@@ -431,14 +431,14 @@ std::vector<CachedPath> g_vPathCache;
 SPath GetOrComputePath(CvUnit* pUnit, CvPlot* pDest)
 {
     int iTurn = GC.getGame().getGameTurn();
-    
+
     // Check cache
     for (const auto& cached : g_vPathCache) {
         if (cached.iUnitID == pUnit->GetID() &&
             cached.iDestX == pDest->getX() &&
             cached.iDestY == pDest->getY() &&
             cached.iTurnComputed == iTurn) {
-            
+
             // Path is fresh; verify it
             CvPathFinder& pathfinder = GC.getPathFinder();
             SPathFinderUserData config(pUnit, 0, INT_MAX);
@@ -449,7 +449,7 @@ SPath GetOrComputePath(CvUnit* pUnit, CvPlot* pDest)
             }
         }
     }
-    
+
     // Not cached or invalid; recompute
     CvPathFinder& pathfinder = GC.getPathFinder();
     SPathFinderUserData config(pUnit, 0, INT_MAX);
@@ -457,22 +457,22 @@ SPath GetOrComputePath(CvUnit* pUnit, CvPlot* pDest)
         if (pathfinder.GeneratePath(
             pUnit->getX(), pUnit->getY(),
             pDest->getX(), pDest->getY())) {
-            
+
             SPath newPath = pathfinder.GetCurrentPath();
-            
+
             // Cache it
             CachedPath cached = {pUnit->GetID(), pDest->getX(), pDest->getY(), newPath, iTurn};
             g_vPathCache.push_back(cached);
-            
+
             // Limit cache size
             if (g_vPathCache.size() > 100) {
                 g_vPathCache.erase(g_vPathCache.begin());
             }
-            
+
             return newPath;
         }
     }
-    
+
     return SPath();  // Empty path (no solution)
 }
 ```
@@ -490,19 +490,19 @@ void LogMovementDecision(CvUnit* pUnit, CvPlot* pDestination)
 {
     FILogFile* pLog = LOGFILEMGR.GetLog("unit_movement_debug.log");
     if (!pLog) return;
-    
+
     pLog->Msg("=== MOVEMENT DECISION ===");
-    pLog->Msg("Unit: %s (ID %d, Owner: %s)", 
-              pUnit->getName().c_str(), pUnit->GetID(), 
+    pLog->Msg("Unit: %s (ID %d, Owner: %s)",
+              pUnit->getName().c_str(), pUnit->GetID(),
               GET_PLAYER(pUnit->getOwner()).getName());
     pLog->Msg("Current Position: (%d, %d)", pUnit->getX(), pUnit->getY());
     pLog->Msg("Destination: (%d, %d)", pDestination->getX(), pDestination->getY());
     pLog->Msg("Base Moves: %d", pUnit->baseMoves(false));
     pLog->Msg("Moves Remaining: %d", pUnit->movesLeft());
-    pLog->Msg("Domain: %s", pUnit->getDomainType() == DOMAIN_LAND ? "Land" : 
+    pLog->Msg("Domain: %s", pUnit->getDomainType() == DOMAIN_LAND ? "Land" :
                             pUnit->getDomainType() == DOMAIN_SEA ? "Sea" : "Air");
     pLog->Msg("Embarked: %s", pUnit->isEmbarked() ? "Yes" : "No");
-    
+
     // Log nearby threats
     for (int iX = pUnit->getX() - 3; iX <= pUnit->getX() + 3; iX++) {
         for (int iY = pUnit->getY() - 3; iY <= pUnit->getY() + 3; iY++) {
@@ -528,24 +528,24 @@ void LogMovementDecision(CvUnit* pUnit, CvPlot* pDestination)
 void ProfilePathfinding(CvUnit* pUnit, CvPlot* pDest)
 {
     clock_t tStart = clock();
-    
+
     CvPathFinder& pathfinder = GC.getPathFinder();
     SPathFinderUserData config(pUnit, 0, INT_MAX);
-    
+
     if (pathfinder.Configure(config)) {
         if (pathfinder.GeneratePath(
             pUnit->getX(), pUnit->getY(),
             pDest->getX(), pDest->getY())) {
-            
+
             clock_t tEnd = clock();
             double dElapsed = (double)(tEnd - tStart) / CLOCKS_PER_SEC * 1000;  // ms
-            
+
             SPath path = pathfinder.GetCurrentPath();
-            
+
             if (dElapsed > 10.0) {  // Warn if > 10ms
                 FILogFile* pLog = LOGFILEMGR.GetLog("pathfinder_slow.log");
-                pLog->Msg("Slow pathfind: %.2f ms for %s (distance %d, path length %d)", 
-                          dElapsed, pUnit->getName().c_str(), 
+                pLog->Msg("Slow pathfind: %.2f ms for %s (distance %d, path length %d)",
+                          dElapsed, pUnit->getName().c_str(),
                           plotDistance(pUnit->getX(), pUnit->getY(), pDest->getX(), pDest->getY()),
                           path.vPlots.size());
             }
@@ -639,6 +639,6 @@ for (const auto& plot : path.vPlots) {
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** January 2025  
+**Document Version:** 1.0
+**Last Updated:** January 2025
 **Maintenance:** Community Patch DLL developers

@@ -60,8 +60,8 @@ unsigned char CvUnitSightingManager::ComputeFlags(CvUnit* pUnit) const
 /// Get or create a sighting record for the given unit.
 UnitSighting* CvUnitSightingManager::GetOrCreateSighting(CvUnit* pUnit)
 {
-	unsigned int uKey = MakeKey(pUnit->getOwner(), pUnit->GetID());
-	std::map<unsigned int, int>::iterator it = m_SightingIndex.find(uKey);
+	std::pair<PlayerTypes, int> unitKey = MakeKey(pUnit->getOwner(), pUnit->GetID());
+	std::map<std::pair<PlayerTypes, int>, int>::iterator it = m_SightingIndex.find(unitKey);
 
 	if (it != m_SightingIndex.end())
 	{
@@ -84,34 +84,33 @@ UnitSighting* CvUnitSightingManager::GetOrCreateSighting(CvUnit* pUnit)
 		}
 
 		// Remove the evicted entry from the index
-		unsigned int uOldKey = MakeKey((PlayerTypes)m_Sightings[iOldestIdx].owner,
-		                               (int)m_Sightings[iOldestIdx].unitId);
-		m_SightingIndex.erase(uOldKey);
+		std::pair<PlayerTypes, int> oldKey = MakeKey(m_Sightings[iOldestIdx].owner, m_Sightings[iOldestIdx].unitId);
+		m_SightingIndex.erase(oldKey);
 
 		// Replace in-place
 		UnitSighting& sighting = m_Sightings[iOldestIdx];
 		memset(&sighting, 0, sizeof(UnitSighting));
-		sighting.unitId = (unsigned short)(pUnit->GetID() & 0xFFFF);
-		sighting.unitType = (unsigned char)pUnit->getUnitType();
-		sighting.owner = (unsigned char)pUnit->getOwner();
+		sighting.unitId = pUnit->GetID();
+		sighting.unitType = pUnit->getUnitType();
+		sighting.owner = pUnit->getOwner();
 		sighting.turnStartX = -1;  // Sentinel: no movement tracked yet
 		sighting.turnStartY = -1;
-		m_SightingIndex[uKey] = iOldestIdx;
+		m_SightingIndex[unitKey] = iOldestIdx;
 		return &sighting;
 	}
 
 	// Append new sighting
 	UnitSighting sighting;
 	memset(&sighting, 0, sizeof(UnitSighting));
-	sighting.unitId = (unsigned short)(pUnit->GetID() & 0xFFFF);
-	sighting.unitType = (unsigned char)pUnit->getUnitType();
-	sighting.owner = (unsigned char)pUnit->getOwner();
+	sighting.unitId = pUnit->GetID();
+	sighting.unitType = pUnit->getUnitType();
+	sighting.owner = pUnit->getOwner();
 	sighting.turnStartX = -1;  // Sentinel: no movement tracked yet
 	sighting.turnStartY = -1;
 
 	int iNewIdx = (int)m_Sightings.size();
 	m_Sightings.push_back(sighting);
-	m_SightingIndex[uKey] = iNewIdx;
+	m_SightingIndex[unitKey] = iNewIdx;
 	return &m_Sightings[iNewIdx];
 }
 
@@ -254,8 +253,8 @@ void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pT
 /// Called when a unit is destroyed — remove from tracking.
 void CvUnitSightingManager::OnUnitDestroyed(PlayerTypes eOwner, int iUnitId)
 {
-	unsigned int uKey = MakeKey(eOwner, iUnitId);
-	std::map<unsigned int, int>::iterator it = m_SightingIndex.find(uKey);
+	std::pair<PlayerTypes, int> unitKey = MakeKey(eOwner, iUnitId);
+	std::map<std::pair<PlayerTypes, int>, int>::iterator it = m_SightingIndex.find(unitKey);
 
 	if (it == m_SightingIndex.end())
 		return;
@@ -269,9 +268,8 @@ void CvUnitSightingManager::OnUnitDestroyed(PlayerTypes eOwner, int iUnitId)
 		m_Sightings[iIdx] = m_Sightings[iLast];
 
 		// Update the swapped element's index
-		unsigned int uSwappedKey = MakeKey((PlayerTypes)m_Sightings[iIdx].owner,
-		                                   (int)m_Sightings[iIdx].unitId);
-		m_SightingIndex[uSwappedKey] = iIdx;
+		std::pair<PlayerTypes, int> swappedKey = MakeKey(m_Sightings[iIdx].owner, m_Sightings[iIdx].unitId);
+		m_SightingIndex[swappedKey] = iIdx;
 	}
 
 	m_Sightings.pop_back();
@@ -330,8 +328,8 @@ void CvUnitSightingManager::UpdateGhosts(int currentTurn)
 /// Find a specific sighting by owner and unitId.
 UnitSighting* CvUnitSightingManager::GetSighting(PlayerTypes eOwner, int iUnitId)
 {
-	unsigned int uKey = MakeKey(eOwner, iUnitId);
-	std::map<unsigned int, int>::iterator it = m_SightingIndex.find(uKey);
+	std::pair<PlayerTypes, int> unitKey = MakeKey(eOwner, iUnitId);
+	std::map<std::pair<PlayerTypes, int>, int>::iterator it = m_SightingIndex.find(unitKey);
 	if (it != m_SightingIndex.end())
 		return &m_Sightings[it->second];
 	return NULL;
@@ -339,8 +337,8 @@ UnitSighting* CvUnitSightingManager::GetSighting(PlayerTypes eOwner, int iUnitId
 
 const UnitSighting* CvUnitSightingManager::GetSighting(PlayerTypes eOwner, int iUnitId) const
 {
-	unsigned int uKey = MakeKey(eOwner, iUnitId);
-	std::map<unsigned int, int>::const_iterator it = m_SightingIndex.find(uKey);
+	std::pair<PlayerTypes, int> unitKey = MakeKey(eOwner, iUnitId);
+	std::map<std::pair<PlayerTypes, int>, int>::const_iterator it = m_SightingIndex.find(unitKey);
 	if (it != m_SightingIndex.end())
 		return &m_Sightings[it->second];
 	return NULL;
@@ -851,7 +849,7 @@ void CvUnitSightingManager::Read(FDataStream& kStream)
 		kStream >> s.avgDY;
 
 		// Rebuild index
-		unsigned int uKey = MakeKey((PlayerTypes)s.owner, (int)s.unitId);
-		m_SightingIndex[uKey] = i;
+		std::pair<PlayerTypes, int> unitKey = MakeKey(s.owner, s.unitId);
+		m_SightingIndex[unitKey] = i;
 	}
 }

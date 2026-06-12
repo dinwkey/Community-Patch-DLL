@@ -2642,7 +2642,7 @@ void CvBuilderTaskingAI::UpdateFutureYields(const vector<BuildTypes>& aPossibleB
 			CvTechEntry* pkTech = GC.getTechInfo(eTech);
 
 			// ISSUE 2 FIX NOTE: Scale bonus with how far ahead the tech is from our current tech level
-			// This uses tree position (GridX), which is a heuristic. Ideally this would use EconomicAI 
+			// This uses tree position (GridX), which is a heuristic. Ideally this would use EconomicAI
 			// to get actual estimated research turn, accounting for player's tech priorities
 			int iMultiplier = max(100 - max(pkTech->GetGridX() - iOurAverageTechX, 0) * 10, 0);
 			if (iMultiplier == 0)
@@ -3181,7 +3181,7 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 	{
 		iWeight = iWeight * 2;
 	}
-	
+
 	// === DEFENSIVE STRATEGIC CLEARING ===
 	// If at war with a civ that has forest/jungle bonuses (like Iroquois with Woodsman),
 	// clearing forests near our cities denies them terrain advantage.
@@ -3196,7 +3196,7 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 			|| pCity->isUnderSiege()
 			|| pCity->getThreatValue() >= 35
 			|| (pMilitaryAI && pMilitaryAI->IsExposedToEnemy(pCity, NO_PLAYER));
-		
+
 		// Only consider defensive clearing close to the city (within 3 tiles)
 		if (iDistToCity <= 3 && bRelevantDefensiveCity)
 		{
@@ -3206,19 +3206,19 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 				CvPlayer& kPlayer = GET_PLAYER((PlayerTypes)iI);
 				if (!kPlayer.isAlive() || kPlayer.GetID() == m_pPlayer->GetID())
 					continue;
-				
+
 				if (!m_pPlayer->IsAtWarWith(kPlayer.GetID()))
 					continue;
-				
+
 				// Check for Woodland movement bonus trait (Iroquois)
 				// Units from civs with this trait get Woodsman promotion and fight well in forests
 				bool bEnemyHasForestBonus = kPlayer.GetPlayerTraits()->IsWoodlandMovementBonus();
-				
+
 				if (bEnemyHasForestBonus)
 				{
 					// Significant bonus for clearing forests when fighting forest-bonus civs
 					int iBaseBonus = 500;
-					
+
 					// Extra bonus if this is near a threatened city
 					if (pCity->isInDangerOfFalling())
 					{
@@ -3228,22 +3228,22 @@ void CvBuilderTaskingAI::AddChopDirectives(vector<OptionWithScore<BuilderDirecti
 					{
 						iBaseBonus += 500;
 					}
-					
+
 					// Extra bonus for closer tiles (higher priority)
 					iBaseBonus += (4 - iDistToCity) * 100; // +300 for adjacent, +200 for 2 tiles, +100 for 3
-					
+
 					// Extra bonus if we're fighting multiple enemies (likely defensive)
 					if (GET_TEAM(m_pPlayer->getTeam()).getAtWarCount(true) > 1)
 					{
 						// Defensive war makes terrain denial more valuable
 						iBaseBonus += 200;
 					}
-					
+
 					iDefensiveClearBonus = max(iDefensiveClearBonus, iBaseBonus);
 				}
 			}
 		}
-		
+
 		// Apply defensive clearing bonus
 		if (iDefensiveClearBonus > 0)
 		{
@@ -3382,10 +3382,10 @@ bool CvBuilderTaskingAI::ShouldBuilderConsiderPlot(CvUnit* pUnit, CvPlot* pPlot)
 		CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(eFalloutFeature);
 		if (pkFeatureInfo)
 			iFalloutDamage = pkFeatureInfo->getTurnDamage();
-		
+
 		int iHealRate = pUnit->healRate(pPlot);
 		int iNetDamagePerTurn = iFalloutDamage - iHealRate;
-		
+
 		// Only work on fallout if unit can heal faster than damage or has enough HP buffer
 		if (iNetDamagePerTurn > 0 && pUnit->GetCurrHitPoints() < (iNetDamagePerTurn * 3))
 		{
@@ -3393,7 +3393,7 @@ bool CvBuilderTaskingAI::ShouldBuilderConsiderPlot(CvUnit* pUnit, CvPlot* pPlot)
 			{
 				CvString strLog;
 				strLog.Format(
-					"%i,Bailing due to fallout,%d,%d,%d", 
+					"%i,Bailing due to fallout,%d,%d,%d",
 					pUnit->GetID(),
 					pPlot->getX(),
 					pPlot->getY(),
@@ -4213,11 +4213,11 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 		if (iNewYieldTimes100 != 0 || iFutureYieldTimes100 != 0)
 		{
 			int iCityYieldModifier = pOwningCity ? GetYieldCityModifierTimes100(pOwningCity, eYield) : 100;
-			
+
 			// ISSUE 1 FIX: For YIELD_GOLD, subtract maintenance cost to get net gold value
 			int iAdjustedNewYieldTimes100 = iNewYieldTimes100;
 			int iAdjustedFutureYieldTimes100 = iFutureYieldTimes100;
-			
+
 			if (eYield == YIELD_GOLD && eImprovement != NO_IMPROVEMENT && pkImprovementInfo)
 			{
 				// Get maintenance cost from improvement entry
@@ -4228,20 +4228,20 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 					int iMaintenanceTimes100 = iMaintenanceCost * 100;
 					iAdjustedNewYieldTimes100 -= iMaintenanceTimes100;
 					iAdjustedFutureYieldTimes100 -= iMaintenanceTimes100;
-					
+
 					// Penalize negative gold improvements to 50% weight
 					if (iAdjustedNewYieldTimes100 < 0)
 					{
 						iAdjustedNewYieldTimes100 = (iAdjustedNewYieldTimes100 * 50) / 100;
 					}
-					
+
 					if (iAdjustedFutureYieldTimes100 < 0)
 					{
 						iAdjustedFutureYieldTimes100 = (iAdjustedFutureYieldTimes100 * 50) / 100;
 					}
 				}
 			}
-			
+
 			iYieldScore += (iAdjustedNewYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
 			iPotentialScore += (iAdjustedFutureYieldTimes100 * iYieldModifier * iCityYieldModifier) / 10000;
 		}
@@ -4550,14 +4550,14 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 	{
 		int iBonusRange = pTraits->GetNearbyImprovementBonusRange();
 		int iCombatBonusValue = pTraits->GetNearbyImprovementCombatBonus();
-		
+
 		// Track strategic value of covered tiles
 		int iTilesWithStrategicValue = 0;
 		int iChokepointsCovered = 0;
 		int iCitiesCovered = 0;
 		bool bNearBorder = false;
 		bool bNearThreatenedCity = false;
-		
+
 		for (int iI = 0; iI < RING_PLOTS[iBonusRange]; iI++)
 		{
 			CvPlot* pCoveredPlot = iterateRingPlots(pPlot, iI);
@@ -4585,7 +4585,7 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 			if (!bTileAlreadyCovered)
 			{
 				iSecondaryScore += iCombatBonusValue * 2;
-				
+
 				// Strategic value: check if this covered tile is strategically important
 				// 1. Chokepoints - great for blocking enemy advances
 				if (pCoveredPlot->IsChokePoint())
@@ -4593,7 +4593,7 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 					iChokepointsCovered++;
 					iTilesWithStrategicValue++;
 				}
-				
+
 				// 2. Near a city - bonus helps garrison and city defenders
 				if (pCoveredPlot->isCity())
 				{
@@ -4602,20 +4602,20 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 					{
 						iCitiesCovered++;
 						iTilesWithStrategicValue++;
-						
+
 						// Extra value if city is threatened
 						if (pCity->isInDangerOfFalling() || pCity->isUnderSiege())
 							bNearThreatenedCity = true;
 					}
 				}
-				
+
 				// 3. High defense terrain tiles are good defensive positions
 				int iDefenseMod = pCoveredPlot->defenseModifier(m_pPlayer->getTeam(), false, false);
 				if (iDefenseMod >= 25)
 					iTilesWithStrategicValue++;
 			}
 		}
-		
+
 		// Check if encampment would be near border (defensive value)
 		for (int iI = 0; iI < RING_PLOTS[3]; iI++)
 		{
@@ -4630,21 +4630,21 @@ PlotBuildScore CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, ImprovementType
 				}
 			}
 		}
-		
+
 		// Strategic placement bonuses
 		// Encampments near chokepoints are extremely valuable for defense
 		iSecondaryScore += iChokepointsCovered * iCombatBonusValue * 3;
-		
+
 		// Cities covered by the combat bonus help with defense significantly
 		iSecondaryScore += iCitiesCovered * iCombatBonusValue * 2;
-		
+
 		// High defense terrain in range makes encampment more valuable
 		iSecondaryScore += iTilesWithStrategicValue * iCombatBonusValue;
-		
+
 		// Near border during wartime? Extra priority
 		if (bNearBorder)
 			iSecondaryScore += iCombatBonusValue * 5;
-		
+
 		// Threatened city needs encampment protection urgently
 		if (bNearThreatenedCity)
 			iSecondaryScore += iCombatBonusValue * 10;

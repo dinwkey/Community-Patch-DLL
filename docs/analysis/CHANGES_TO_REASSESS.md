@@ -18,12 +18,12 @@
   - Heuristic improvements
   - Recursion guard implementation
   - **Status: ✅ COMPLETE - Selective re-implementation (Commit 5b6a839ca)**
-  
+
 - \CvAStar.h\ - 8 lines changed
   - API adjustments (PathHeuristic/StepHeuristic signature)
   - Generation ID type expansion (unsigned short → unsigned int)
   - **Status: ✅ COMPLETE**
-  
+
 - \CvAStarNode.h\ - 3 lines changed
   - bNeedStackingCheck bit field added for performance
   - Generation ID type expansion
@@ -45,10 +45,10 @@ All changes preserve upstream/master improvements while layering focused enhance
 **PHASE 1: COMPLETE** ✅
 - \CvMilitaryAI.h\ - 3 method declarations added (DONE)
   - CalculateProximityWeightedThreat()
-  - AreEnemiesMovingTowardUs()  
+  - AreEnemiesMovingTowardUs()
   - GetAlliedThreatMultiplier()
   - Reference: docs/military-ai/CODE_CHANGES_REFERENCE.md
-  
+
 - \CvMilitaryAI.cpp\ - ~130 lines of core threat assessment (DONE)
   - Implement CalculateProximityWeightedThreat() (Issue 4.1) ✅
   - Implement AreEnemiesMovingTowardUs() (Issue 4.1) ✅
@@ -117,7 +117,7 @@ Core fixes addressing fundamental economic AI issues:
 **PHASE 2: OPTIONAL** ✅ (COMPLETE)
 - \CvBuilderTaskingAI.h\ - Added method declaration (DONE)
   - CalculateStrategicLocationValue() strategic location evaluator
-  
+
 - \CvBuilderTaskingAI.cpp\ - ~160 lines of strategic enhancements (DONE)
   - CalculateStrategicLocationValue(): Enemy proximity + threatened city detection (~80 lines)
     * <5 tiles from enemy = 50 points (critical)
@@ -208,12 +208,12 @@ Strategic enhancements for wartime railroad prioritization:
 - \CvTechClasses.cpp\ / \.h\ - Technology system
 - \CvTradeClasses.cpp\ / \.h\ - Trade routes (+227 lines)
   - IMPORTANT: Your changes to trade mechanics
-  
+
 - \CvPolicyClasses.cpp\ / \.h\ - Policies/ideologies
 - \CvPolicyAI.cpp\ - Policy decisions
 - \CvReligionClasses.cpp\ - Religion system (247 lines modified)
   - IMPORTANT: Religion & belief changes
-  
+
 - \CvBeliefClasses.cpp\ - Belief mechanics
 - \CvDealClasses.cpp\ - Deal mechanics
 - \CvDealAI.cpp\ - Deal AI

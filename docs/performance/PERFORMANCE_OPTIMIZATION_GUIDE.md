@@ -1,7 +1,7 @@
 # Performance Optimizations: Implementation Guide
 ## Theming Caching, Lazy Influence Trends, and Batch Updates
 
-**Status:** Implemented in CvCultureClasses.h/cpp  
+**Status:** Implemented in CvCultureClasses.h/cpp
 **Date:** January 9, 2026
 
 ---

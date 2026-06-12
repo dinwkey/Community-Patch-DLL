@@ -23,18 +23,18 @@ Create unified modifier application in `CvPlayerCulture`:
 
 // Apply tourism with all modifiers
 // Returns: actual influence change applied (post-modifier)
-int ApplyTourismTowardsCiv(PlayerTypes eTargetPlayer, int iBaseTourism, 
-                            bool bApplyModifiers = true, 
+int ApplyTourismTowardsCiv(PlayerTypes eTargetPlayer, int iBaseTourism,
+                            bool bApplyModifiers = true,
                             bool bModifyForGameSpeed = true,
                             bool bShowPopup = false,
                             CvPlot* pPlot = NULL);
 
 // Get tourism modifier without applying (for UI)
-int GetTourismModifierWith(PlayerTypes eTargetPlayer, 
-                           bool bIgnoreReligion = false, 
-                           bool bIgnoreOpenBorders = false, 
-                           bool bIgnoreTrade = false, 
-                           bool bIgnorePolicies = false, 
+int GetTourismModifierWith(PlayerTypes eTargetPlayer,
+                           bool bIgnoreReligion = false,
+                           bool bIgnoreOpenBorders = false,
+                           bool bIgnoreTrade = false,
+                           bool bIgnorePolicies = false,
                            bool bIgnoreIdeologies = false) const;
 ```
 
@@ -46,44 +46,44 @@ int GetTourismModifierWith(PlayerTypes eTargetPlayer,
    int CvPlayerCulture::ApplyTourismTowardsCiv(...)
    {
        int iInfluenceChange = iBaseTourism;
-       
+
        if (!bApplyModifiers) {
            ChangeInfluenceOnTimes100(eTargetPlayer, iInfluenceChange * 100);
            return iInfluenceChange;
        }
-       
+
        // Apply all modifiers in order
        int iModifierPercent = 100;
-       
+
        // Religion
        iModifierPercent += GetTourismModifierSharedReligion(eTargetPlayer);
-       
+
        // Trade routes
        iModifierPercent += GetTourismModifierTradeRoute();
-       
+
        // Open borders
        iModifierPercent += GetTourismModifierOpenBorders();
-       
+
        // Policies
        iModifierPercent += GetTourismModifierPolicies(eTargetPlayer);
-       
+
        // Ideologies
        iModifierPercent += GetTourismModifierIdeologies();
-       
+
        // Apply modifiers
        int iModifiedTourism = (iInfluenceChange * iModifierPercent) / 100;
-       
+
        // Game speed scaling
        if (bModifyForGameSpeed) {
            iModifiedTourism = iModifiedTourism * GC.getGame().getGameSpeedInfo()->getTourismModifier() / 100;
        }
-       
+
        // Apply
-       int iRealInfluence = ChangeInfluenceOnTimes100(eTargetPlayer, 
-                                                       iModifiedTourism * 100, 
+       int iRealInfluence = ChangeInfluenceOnTimes100(eTargetPlayer,
+                                                       iModifiedTourism * 100,
                                                        false,  // modifiers already applied
                                                        false); // game speed already applied
-       
+
        // Optional: Show popup
        if (bShowPopup && pPlot && pPlot->GetActiveFogOfWarMode() == FOGOFWARMODE_OFF) {
            InfluenceLevelTypes eLevel = GetInfluenceLevel(eTargetPlayer);
@@ -91,7 +91,7 @@ int GetTourismModifierWith(PlayerTypes eTargetPlayer,
            sprintf_s(text, "+%d [ICON_TOURISM]", iRealInfluence);
            SHOW_PLOT_POPUP(pPlot, GetID(), text);
        }
-       
+
        return iRealInfluence;
    }
    ```
@@ -100,16 +100,16 @@ int GetTourismModifierWith(PlayerTypes eTargetPlayer,
    ```cpp
    // Before:
    int iTourismBlast = GetTourismBlastStrength();
-   iTourismBlastAfterModifier = kUnitOwner.GetCulture()->ChangeInfluenceOn(eOwner, 
-                                                                             iTourismBlast, 
+   iTourismBlastAfterModifier = kUnitOwner.GetCulture()->ChangeInfluenceOn(eOwner,
+                                                                             iTourismBlast,
                                                                              true, true);
-   
+
    // After:
    int iTourismBlast = GetTourismBlastStrength();
-   iTourismBlastAfterModifier = kUnitOwner.GetCulture()->ApplyTourismTowardsCiv(eOwner, 
-                                                                                   iTourismBlast, 
-                                                                                   true, true, 
-                                                                                   true, 
+   iTourismBlastAfterModifier = kUnitOwner.GetCulture()->ApplyTourismTowardsCiv(eOwner,
+                                                                                   iTourismBlast,
+                                                                                   true, true,
+                                                                                   true,
                                                                                    pPlot);
    ```
 
@@ -125,7 +125,7 @@ int GetTourismModifierWith(PlayerTypes eTargetPlayer,
        int iIdeologies;
        int iFinal;
    };
-   
+
    TourismModifierBreakdown GetTourismModifierBreakdown(PlayerTypes eTargetPlayer) const {
        TourismModifierBreakdown bd;
        bd.iBase = 100;
@@ -194,31 +194,31 @@ void InvalidateForeignWorkCache() {
 void CvPlayerCulture::UpdateForeignWorkCache()
 {
     InvalidateForeignWorkCache();
-    
+
     // Build cache for each other player
     for (int iLoopPlayer = 0; iLoopPlayer < MAX_MAJOR_CIVS; iLoopPlayer++) {
         PlayerTypes eLoopPlayer = (PlayerTypes)iLoopPlayer;
         if (eLoopPlayer == m_pPlayer->GetID() || !GET_PLAYER(eLoopPlayer).isAlive()) {
             continue;
         }
-        
+
         ForeignWorkCombination combo;
         combo.iTurn = GC.getGame().getGameTurn();
-        
+
         // Find all works by other civs in our empire
         int iCityLoop = 0;
         for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop)) {
             for (int iBuildingClassLoop = 0; iBuildingClassLoop < GC.getNumBuildingClassInfos(); iBuildingClassLoop++) {
                 BuildingClassTypes eBuildingClass = (BuildingClassTypes)iBuildingClassLoop;
                 int iSlots = pCity->GetCityCulture()->GetNumFilledGreatWorkSlots(GREAT_WORK_SLOT_ANY);
-                
+
                 for (int iSlot = 0; iSlot < iSlots; iSlot++) {
                     int iGreatWorkIndex = pCity->GetCityCulture()->GetGreatWorkIndex(eBuildingClass, iSlot);
                     if (iGreatWorkIndex >= 0) {
                         CvGameCulture* pGameCulture = GC.getGame().GetGameCulture();
                         PlayerTypes eCreator = pGameCulture->GetGreatWorkCreator(iGreatWorkIndex);
                         EraTypes eEra = (EraTypes)GC.getGame().GetGameCulture()->GetGreatWorkEra(iGreatWorkIndex);
-                        
+
                         if (eCreator != m_pPlayer->GetID()) {
                             combo.bCivsSeen[eCreator] = true;
                             if (eEra != NO_ERA) {
@@ -229,20 +229,20 @@ void CvPlayerCulture::UpdateForeignWorkCache()
                 }
             }
         }
-        
+
         m_ForeignWorkCache[eLoopPlayer] = combo;
     }
 }
 
 // In theming calculation:
 bool CvCultureClasses::IsValidForForeignThemingBonus(
-    CvThemingBonusInfo *pBonusInfo, 
-    EraTypes eEra, 
-    vector<EraTypes> &aForeignErasSeen, 
-    vector<EraTypes> &aErasSeen, 
-    PlayerTypes ePlayer, 
-    vector<PlayerTypes> &aForeignPlayersSeen, 
-    vector<PlayerTypes> &aPlayersSeen, 
+    CvThemingBonusInfo *pBonusInfo,
+    EraTypes eEra,
+    vector<EraTypes> &aForeignErasSeen,
+    vector<EraTypes> &aErasSeen,
+    PlayerTypes ePlayer,
+    vector<PlayerTypes> &aForeignPlayersSeen,
+    vector<PlayerTypes> &aPlayersSeen,
     PlayerTypes eOwner)
 {
     // Check cache first
@@ -255,7 +255,7 @@ bool CvCultureClasses::IsValidForForeignThemingBonus(
             }
         }
     }
-    
+
     // Continue with existing logic for civs, etc.
     return true;
 }
@@ -303,32 +303,32 @@ void CvPlayerCulture::DoInfluenceDecay()
     if (!MOD_BALANCE_INFLUENCE_DECAY) {
         return; // Feature flag for mod balance
     }
-    
+
     // Decay influence that didn't receive tourism this turn
     for (int iLoopPlayer = 0; iLoopPlayer < MAX_MAJOR_CIVS; iLoopPlayer++) {
         PlayerTypes eLoopPlayer = (PlayerTypes)iLoopPlayer;
         if (eLoopPlayer == m_pPlayer->GetID() || !GET_PLAYER(eLoopPlayer).isAlive()) {
             continue;
         }
-        
+
         // Check if we gained tourism toward this player this turn
         int iThisTurnTourism = GetLastTurnInfluenceIPTTimes100(eLoopPlayer);
-        
+
         // If no tourism, decay influence
         if (iThisTurnTourism <= 0) {
             int iCurrentInfluenceTimes100 = GetInfluenceOnTimes100(eLoopPlayer);
             int iDecayAmount = INFLUENCE_DECAY_PER_TURN_TIMES100;
-            
+
             // Never decay below familiar level
             int iMinimumInfluenceTimes100 = GD_INT_GET(INFLUENCE_LEVEL_FAMILIAR) * 100;
-            int iNewInfluenceTimes100 = std::max(iCurrentInfluenceTimes100 - iDecayAmount, 
+            int iNewInfluenceTimes100 = std::max(iCurrentInfluenceTimes100 - iDecayAmount,
                                                   iMinimumInfluenceTimes100);
-            
+
             if (iNewInfluenceTimes100 < iCurrentInfluenceTimes100) {
                 // Apply decay
                 int iDecay = iCurrentInfluenceTimes100 - iNewInfluenceTimes100;
                 ChangeInfluenceOnTimes100(eLoopPlayer, -iDecay);
-                
+
                 // Notify player if they drop an influence level
                 InfluenceLevelTypes eOldLevel = GetInfluenceLevel(eLoopPlayer);
                 InfluenceLevelTypes eNewLevel = eOldLevel; // Will recalc on next check
@@ -337,8 +337,8 @@ void CvPlayerCulture::DoInfluenceDecay()
                     if (pNotifications) {
                         Localization::String strMessage = Localization::Lookup("TXT_KEY_NOTIFICATION_INFLUENCE_DECLINED");
                         strMessage << GET_PLAYER(eLoopPlayer).getCivilizationShortDescriptionKey();
-                        pNotifications->Add(NOTIFICATION_CULTURE_VICTORY_SOMEONE_INFLUENTIAL, 
-                                          strMessage.toUTF8(), 
+                        pNotifications->Add(NOTIFICATION_CULTURE_VICTORY_SOMEONE_INFLUENTIAL,
+                                          strMessage.toUTF8(),
                                           "",
                                           m_pPlayer->getCapitalCity()->getX(),
                                           m_pPlayer->getCapitalCity()->getY(),
@@ -354,7 +354,7 @@ void CvPlayerCulture::DoInfluenceDecay()
 void CvPlayerCulture::DoTurn()
 {
     // ... existing code ...
-    
+
     // At end of turn:
     DoInfluenceDecay();
 }
@@ -427,20 +427,20 @@ bool CvGameCulture::IsValidGreatWorkPlacement(int iGreatWorkIndex) const
     // Check if work already placed in a building
     BuildingTypes eBuilding = NO_BUILDING;
     CvCity* pCity = GetGreatWorkCity(iGreatWorkIndex, eBuilding);
-    
+
     // If in a building, return false (already placed)
     if (pCity != NULL && eBuilding != NO_BUILDING) {
         return false;
     }
-    
+
     // Otherwise valid
     return true;
 }
 
 // In MoveWorkIntoSlot():
-bool CvPlayerCulture::MoveWorkIntoSlot(int iWorkID, int iToCityID, BuildingTypes eToBuilding, 
-                                       int iToSlot, vector<CvGreatWorkAvailableForUse>& works1, 
-                                       vector<CvGreatWorkAvailableForUse>& works2, 
+bool CvPlayerCulture::MoveWorkIntoSlot(int iWorkID, int iToCityID, BuildingTypes eToBuilding,
+                                       int iToSlot, vector<CvGreatWorkAvailableForUse>& works1,
+                                       vector<CvGreatWorkAvailableForUse>& works2,
                                        const set<int>* toIgnore)
 {
     // NEW: Validate work not already placed
@@ -448,7 +448,7 @@ bool CvPlayerCulture::MoveWorkIntoSlot(int iWorkID, int iToCityID, BuildingTypes
         ASSERT(false, "Attempting to place great work that's already in another building!");
         return false;
     }
-    
+
     // ... existing code ...
 }
 ```
@@ -482,15 +482,15 @@ struct TourismModifier {
 // Registry in CvPlayerCulture:
 class CvPlayerCulture {
     // ...
-    
+
     // Add/remove modifiers
     void RegisterTourismModifier(TourismModifierSource eSource, int iValue, PlayerTypes eTarget = NO_PLAYER);
     void UnregisterTourismModifier(TourismModifierSource eSource, PlayerTypes eTarget = NO_PLAYER);
-    
+
     // Query registry
     int GetTourismModifierValue(TourismModifierSource eSource, PlayerTypes eTarget = NO_PLAYER) const;
     int GetTotalTourismModifier(PlayerTypes eTarget) const;
-    
+
 private:
     std::map<std::pair<TourismModifierSource, PlayerTypes>, int> m_TourismModifiers;
 };
@@ -541,5 +541,5 @@ private:
 
 ---
 
-**Status:** Recommended for implementation in next release  
+**Status:** Recommended for implementation in next release
 **Estimated Effort:** Priority 1 = 20-40 hours | Priority 2 (decay) = 10-15 hours

@@ -314,7 +314,7 @@ private:
 	void UpdateDefenseState();
 	void UpdateMilitaryStrategies();
 	void UpdateOperations();
-	
+
 	// Issue 4.1 helper functions for enhanced threat assessment
 	int CalculateProximityWeightedThreat(DomainTypes eDomain);
 	bool AreEnemiesMovingTowardUs(DomainTypes eDomain);
@@ -324,7 +324,7 @@ private:
 	// Strategic reserve & coop-war risk subsystem
 	void ComputeStrategicReserveCities();
 	int ComputeCoopWarRiskScore() const;
-	
+
 	// Issue 7.2: Urgent flavor propagation for immediate threat response
 	void PropagateUrgentFlavorsToDiplomacyAI(const CvEnumMap<FlavorTypes, int>& piDeltaFlavorValues);
 

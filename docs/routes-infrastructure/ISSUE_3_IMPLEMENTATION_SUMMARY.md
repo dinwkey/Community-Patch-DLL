@@ -1,8 +1,8 @@
 # Issue 3 Implementation Summary: Route Maintenance & Strategic Value Scoring
 
-**Date Implemented:** January 11, 2026  
-**File Modified:** `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp`  
-**Function Modified:** `GetRouteDirectives()`  
+**Date Implemented:** January 11, 2026
+**File Modified:** `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp`
+**Function Modified:** `GetRouteDirectives()`
 **Lines Modified:** 1715-1759
 
 ## Problem Statement
@@ -13,7 +13,7 @@ The builder AI was not properly evaluating railroads when their maintenance cost
 
 The railroad value calculation subtracted maintenance costs from economic yields but did not account for:
 1. **Military Strategic Value:** Railroads enable 2x faster unit movement, valuable during war preparation
-2. **Treasury Constraints:** Different behavior needed when empire is profitable vs. bankrupt  
+2. **Treasury Constraints:** Different behavior needed when empire is profitable vs. bankrupt
 3. **War Pressure Weighting:** Movement speed importance scales with military threat level
 
 ## Solution Implemented
@@ -57,9 +57,9 @@ Adjusts movement bonus based on military threat:
 
 ## Code Location
 
-**File:** `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp`  
-**Function:** `GetRouteDirectives()` (line 1622)  
-**Modified Section:** Railroad value calculation (lines 1715-1759)  
+**File:** `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp`
+**Function:** `GetRouteDirectives()` (line 1622)
+**Modified Section:** Railroad value calculation (lines 1715-1759)
 **Key Variables:**
 - `iRailroadValue` – Total value after maintenance (line 1726)
 - `iMovementSpeedBonus` – Calculated strategic value (line 1730)
@@ -68,31 +68,31 @@ Adjusts movement bonus based on military threat:
 ## Testing Strategy
 
 ### Test Case 1: Economic Profitability
-**Scenario:** Late game with profitable railroads  
-**Expected:** Routes are built based on economic yield + movement bonus (all factors positive)  
+**Scenario:** Late game with profitable railroads
+**Expected:** Routes are built based on economic yield + movement bonus (all factors positive)
 **Verify:** Route value > 0 and railroad selected over roads
 
 ### Test Case 2: Military Strategic Value
-**Scenario:** Early war preparation with negative-gold railroad  
-**Expected:** Route built anyway if military pressure > 50  
-**Verify:**  
-- iRailroadValue becomes positive after movement bonus  
+**Scenario:** Early war preparation with negative-gold railroad
+**Expected:** Route built anyway if military pressure > 50
+**Verify:**
+- iRailroadValue becomes positive after movement bonus
 - Railroad selected over roads despite negative gold
 
 ### Test Case 3: Treasury Constraint
-**Scenario:** Empire losing 10 GPT, unprofitable railroad (-50 GPT base yield, -30 GPT maintenance = -80 total)  
-**Expected:** Route value heavily penalized, discouraged if bankrupt  
-**Verify:**  
-- bCanAffordNegativeRoute = false  
-- iRailroadValue becomes negative even with movement bonus  
+**Scenario:** Empire losing 10 GPT, unprofitable railroad (-50 GPT base yield, -30 GPT maintenance = -80 total)
+**Expected:** Route value heavily penalized, discouraged if bankrupt
+**Verify:**
+- bCanAffordNegativeRoute = false
+- iRailroadValue becomes negative even with movement bonus
 - Road selected over railroad
 
 ### Test Case 4: War Pressure Scaling
-**Scenario:** High military pressure (>50), wealthy empire (40+ GPT)  
-**Expected:** Movement bonus = 350 (wealth reduced) × 1.5 (war multiplier) = 525 points  
-**Verify:**  
-- Movement bonus applied correctly  
-- War multiplier increases value appropriately  
+**Scenario:** High military pressure (>50), wealthy empire (40+ GPT)
+**Expected:** Movement bonus = 350 (wealth reduced) × 1.5 (war multiplier) = 525 points
+**Verify:**
+- Movement bonus applied correctly
+- War multiplier increases value appropriately
 - iRailroadValue competitive with roads despite high maintenance
 
 ## Behavior Changes
@@ -121,10 +121,10 @@ Adjusts movement bonus based on military threat:
 
 ## Validation
 
-✅ **Syntax:** No compilation errors  
-✅ **Logic:** All four components properly integrated  
-✅ **Variables:** Uses existing methods (GetGoldPerTurn, GetMilitaryPressure)  
-✅ **Maintenance:** Building on existing maintenance subtraction (preserved)  
+✅ **Syntax:** No compilation errors
+✅ **Logic:** All four components properly integrated
+✅ **Variables:** Uses existing methods (GetGoldPerTurn, GetMilitaryPressure)
+✅ **Maintenance:** Building on existing maintenance subtraction (preserved)
 ✅ **Backward Compatibility:** Only changes railroad value calculation, not core route logic
 
 ## Future Considerations

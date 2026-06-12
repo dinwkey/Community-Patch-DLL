@@ -1,4 +1,4 @@
-﻿/*	-------------------------------------------------------------------------------------------------------
+/*	-------------------------------------------------------------------------------------------------------
 	© 1991-2012 Take-Two Interactive Software and its subsidiaries.  Developed by Firaxis Games.  
 	Sid Meier's Civilization V, Civ, Civilization, 2K Games, Firaxis Games, Take-Two Interactive Software 
 	and their respective logos are all trademarks of Take-Two interactive Software, Inc.  
@@ -1600,11 +1600,11 @@ bool canEnterTerritoryAndTerrain(const CvUnit* pUnit, const CvPlot* pPlot, int i
 static bool CanStopAtParentPlot(const CvAStarNode* parent, const CvUnit* pUnit)
 {
 	const CvPathNodeCacheData& kFromNodeCacheData = parent->m_kCostCacheData;
-	
+
 	//don't leak information - only check if revealed
 	if (!kFromNodeCacheData.bIsRevealedToTeam)
 		return true; //assume valid if we can't see it
-	
+
 	// most importantly, we need to be able to end the turn there
 	if(!kFromNodeCacheData.bCanEnterTerrainPermanent || !kFromNodeCacheData.bCanEnterTerritoryPermanent)
 		return false;
@@ -1622,7 +1622,7 @@ static bool CanStopAtParentPlot(const CvAStarNode* parent, const CvUnit* pUnit)
 	// check stacking (if visible)
 	if (kFromNodeCacheData.bPlotVisibleToTeam && NeedToCheckStacking(parent) && kFromNodeCacheData.bUnitStackingLimitReached)
 		return false;
-		
+
 	return true;
 }
 
@@ -1631,14 +1631,14 @@ static bool CheckEmbarkationTransition(const CvAStarNode* parent, const CvAStarN
 {
 	if (!pCacheData->CanEverEmbark())
 		return true; //not applicable
-		
+
 	const CvPathNodeCacheData& kToNodeCacheData = node->m_kCostCacheData;
 	const CvPathNodeCacheData& kFromNodeCacheData = parent->m_kCostCacheData;
-	
+
 	CvMap& theMap = GC.getMap();
 	CvPlot* pFromPlot = theMap.plotUnchecked(parent->m_iX, parent->m_iY);
 	CvPlot* pToPlot = theMap.plotUnchecked(node->m_iX, node->m_iY);
-	
+
 	//embark required and possible?
 	if (!kFromNodeCacheData.bIsNonNativeDomain && kToNodeCacheData.bIsNonNativeDomain && kToNodeCacheData.bIsRevealedToTeam)
 	{
@@ -1656,7 +1656,7 @@ static bool CheckEmbarkationTransition(const CvAStarNode* parent, const CvAStarN
 		if (!pUnit->canDisembarkOnto(*pFromPlot, *pToPlot, true, kToNodeCacheData.iMoveFlags))
 			return false;
 	}
-	
+
 	return true;
 }
 
@@ -1933,7 +1933,7 @@ int StepCost(const CvAStarNode*, const CvAStarNode* node, const SPathFinderUserD
 
 	//when in doubt, avoid rough plots
 	int iCost = PATH_BASE_COST;
-	if ((plotFlags & CvPlot::PLOT_CACHE_ROUGH) && (!pNewPlot->isRoute() || pNewPlot->IsRoutePillaged())) 
+	if ((plotFlags & CvPlot::PLOT_CACHE_ROUGH) && (!pNewPlot->isRoute() || pNewPlot->IsRoutePillaged()))
 		iCost += PATH_BASE_COST/10;
 		
 	return iCost;

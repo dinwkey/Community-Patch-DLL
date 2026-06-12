@@ -2,10 +2,10 @@
 
 > Historical note: This strategy document describes the earlier `feature/copilot` implementation sequence. The maintained branch is now `custom/ai-gameplay-enhancements`; status, commit counts, and branch labels below are dated context.
 
-**Final Status:** ✅ **COMPLETE**  
-**Branch:** feature/copilot  
-**Upstream Base:** upstream/master (100+ commits preserved)  
-**Build Status:** ✅ All phases verified with clang-build  
+**Final Status:** ✅ **COMPLETE**
+**Branch:** feature/copilot
+**Upstream Base:** upstream/master (100+ commits preserved)
+**Build Status:** ✅ All phases verified with clang-build
 
 ---
 
@@ -67,9 +67,9 @@ Each phase followed an identical pattern:
 
 ### Foundation: Pathfinding System (5b6a839ca)
 
-**What:** A* pathfinding performance improvements + recursion guard + edge case fix  
-**How:** Selective enhancements on top of upstream pathfinder  
-**Why:** Foundation for all path-dependent features (trade routes, threat detection)  
+**What:** A* pathfinding performance improvements + recursion guard + edge case fix
+**How:** Selective enhancements on top of upstream pathfinder
+**Why:** Foundation for all path-dependent features (trade routes, threat detection)
 
 **Key Changes:**
 - UMP-004: Recursion guard prevents stack overflow
@@ -77,7 +77,7 @@ Each phase followed an identical pattern:
 - UMP-006: Island edge case fallback (siege units no longer stranded)
 - Refactoring: Extract CanStopAtParentPlot() and CheckEmbarkationTransition() helpers
 
-**Impact:** 
+**Impact:**
 - Performance: 56% faster pathfinding for workers/ships
 - Correctness: Prevents crashes on recursive pathfinding
 - Edge cases: Fixes island/strait blocking issues
@@ -88,9 +88,9 @@ Each phase followed an identical pattern:
 
 ### Phase 1: Military AI Threat Detection (8ad7b9e23)
 
-**What:** Three threat assessment helper functions (130 lines)  
-**How:** Design-doc-driven implementation (not wholesale code restoration)  
-**Why:** Foundation for intelligent defense state calculation  
+**What:** Three threat assessment helper functions (130 lines)
+**How:** Design-doc-driven implementation (not wholesale code restoration)
+**Why:** Foundation for intelligent defense state calculation
 
 **Key Functions:**
 ```cpp
@@ -119,9 +119,9 @@ int GetAlliedThreatMultiplier()
 
 ### Phase 2: Defense State Integration (581c85c73)
 
-**What:** Threat helpers activated in UpdateDefenseState() (43 lines)  
-**How:** Integrate Phase 1 functions into existing defense calculation  
-**Why:** Threat detection now affects actual AI decisions  
+**What:** Threat helpers activated in UpdateDefenseState() (43 lines)
+**How:** Integrate Phase 1 functions into existing defense calculation
+**Why:** Threat detection now affects actual AI decisions
 
 **Integration Points:**
 - After land unit count assessment
@@ -139,9 +139,9 @@ int GetAlliedThreatMultiplier()
 
 ### Phase 3: Tactical Coordination (9d783ee7a)
 
-**What:** Retreat logic, attack coordination, strategic airlift (224 lines)  
-**How:** Selective re-implementation of tactical AI enhancements  
-**Why:** Complete the military AI system with execution-level improvements  
+**What:** Retreat logic, attack coordination, strategic airlift (224 lines)
+**How:** Selective re-implementation of tactical AI enhancements
+**Why:** Complete the military AI system with execution-level improvements
 
 **Key Enhancements:**
 
@@ -316,16 +316,16 @@ Example dependency: Phase 2 defense integration depends on Phase 1 threat helper
 
 The **selective re-implementation approach** demonstrated here proves that:
 
-✅ Upstream improvements CAN be preserved while adding enhancements  
-✅ Careful analysis and documentation enable informed decisions  
-✅ Focused, phased implementation is safer than wholesale restoration  
-✅ Build validation catches issues early  
-✅ Clear strategy documentation aids future maintenance  
+✅ Upstream improvements CAN be preserved while adding enhancements
+✅ Careful analysis and documentation enable informed decisions
+✅ Focused, phased implementation is safer than wholesale restoration
+✅ Build validation catches issues early
+✅ Clear strategy documentation aids future maintenance
 
 This repository successfully integrates ~650 lines of enhancements on top of 100+ upstream commits with **zero breaking changes** and **100% build success**.
 
 ---
 
-**Repository Status:** Production-ready (all phases complete, verified, documented)  
-**Last Updated:** 2026-01-12  
+**Repository Status:** Production-ready (all phases complete, verified, documented)
+**Last Updated:** 2026-01-12
 **Reviewed by:** Copilot AI Assistant

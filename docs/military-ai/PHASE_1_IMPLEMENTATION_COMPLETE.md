@@ -1,7 +1,7 @@
 # Military AI Phase 1: Enhanced Threat Assessment - Implementation Complete
 
-**Status:** ✅ **COMPLETE**  
-**Date:** January 12, 2026  
+**Status:** ✅ **COMPLETE**
+**Date:** January 12, 2026
 **Build:** Verified with clang-build (debug config)
 
 ---
@@ -21,7 +21,7 @@ int GetAlliedThreatMultiplier();
 ### CvMilitaryAI.cpp Implementation
 
 #### 1. CalculateProximityWeightedThreat(DomainTypes eDomain)
-**Lines:** 2223-2281  
+**Lines:** 2223-2281
 **Purpose:** Calculate threat with proximity and unit-type weighting
 
 **Algorithm:**
@@ -33,13 +33,13 @@ int GetAlliedThreatMultiplier();
 
 **Benefits:**
 - ✅ Detects imminent threats before siege damage occurs
-- ✅ Prioritizes ranged unit threats appropriately  
+- ✅ Prioritizes ranged unit threats appropriately
 - ✅ Accounts for strategic unit clustering near cities
 
 ---
 
 #### 2. AreEnemiesMovingTowardUs(DomainTypes eDomain)
-**Lines:** 2283-2315  
+**Lines:** 2283-2315
 **Purpose:** Predict if enemy armies are advancing (early warning system)
 
 **Algorithm:**
@@ -59,7 +59,7 @@ int GetAlliedThreatMultiplier();
 ---
 
 #### 3. GetAlliedThreatMultiplier()
-**Lines:** 2317-2341  
+**Lines:** 2317-2341
 **Purpose:** Check if allied players are at war and boost defensive priority
 
 **Algorithm:**

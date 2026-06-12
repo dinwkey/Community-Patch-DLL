@@ -7,8 +7,8 @@ A companion to [UNIT_MOVEMENT_PATHFINDING.md](UNIT_MOVEMENT_PATHFINDING.md), thi
 ## Issue Registry
 
 ### ID: UMP-001 — Sane Unit Movement Cost Implementation
-**Status:** ✅ IMPLEMENTED (VP, Community Patch)  
-**Priority:** HIGH  
+**Status:** ✅ IMPLEMENTED (VP, Community Patch)
+**Priority:** HIGH
 **Category:** Movement Cost System
 
 **Problem:**
@@ -37,8 +37,8 @@ Implement `MOD_BALANCE_SANE_UNIT_MOVEMENT_COST`:
 ---
 
 ### ID: UMP-002 — Selective ZOC Implementation
-**Status:** ✅ IMPLEMENTED (Community Patch)  
-**Priority:** HIGH  
+**Status:** ✅ IMPLEMENTED (Community Patch)
+**Priority:** HIGH
 **Category:** Zone of Control
 
 **Problem:**
@@ -71,8 +71,8 @@ Implement `MOVEFLAG_SELECTIVE_ZOC` and `plotsToIgnoreForZOC` container:
 ---
 
 ### ID: UMP-003 — Embarked Unit Movement Cost
-**Status:** ✅ IMPLEMENTED  
-**Priority:** HIGH  
+**Status:** ✅ IMPLEMENTED
+**Priority:** HIGH
 **Category:** Embarkation / Disembarkation
 
 **Problem:**
@@ -89,7 +89,7 @@ Implement unified cost hierarchy in `GetCostsForMove()`:
 
 ```cpp
 // Step 1: Check for free/cheap embarkation
-bool bFree = pTraits->IsEmbarkedToLandFlatCost() || 
+bool bFree = pTraits->IsEmbarkedToLandFlatCost() ||
              pUnit->isEmbarkFlatCost() ||
              (pToPlot->isCoastal() && kUnitTeam->isCityNoEmbarkCost());
 
@@ -142,8 +142,8 @@ Test: Embark Full
 ---
 
 ### ID: UMP-004 — Pathfinder Recursion (Danger Calculation)
-**Status:** ⚠️ PARTIALLY MITIGATED (Community Patch)  
-**Priority:** MEDIUM  
+**Status:** ⚠️ PARTIALLY MITIGATED (Community Patch)
+**Priority:** MEDIUM
 **Category:** A* Pathfinder Performance
 
 **Problem:**
@@ -213,8 +213,8 @@ bool CvAStar::FindPath(...)
 ---
 
 ### ID: UMP-005 — Heuristic Tightness for Slow Units
-**Status:** ⚠️ OPEN (Optimization Opportunity)  
-**Priority:** MEDIUM  
+**Status:** ⚠️ OPEN (Optimization Opportunity)
+**Priority:** MEDIUM
 **Category:** A* Pathfinder Optimization
 
 **Problem:**
@@ -233,13 +233,13 @@ This results in slower pathfinding for slow units.
 **Solution:**
 Compute unit-specific heuristic:
 ```cpp
-int CvPathFinder::PathHeuristic(int iNextX, int iNextY, int iDestX, int iDestY, 
+int CvPathFinder::PathHeuristic(int iNextX, int iNextY, int iDestX, int iDestY,
                                 const SPathFinderUserData& data, const CvAStar* finder)
 {
     // Get unit's base moves
     const UnitPathCacheData* pCache = (const UnitPathCacheData*)finder->GetScratchBuffer();
     int iBaseMoves = pCache ? pCache->baseMoves(pCache->isEmbarked()) : 4;
-    
+
     // Admissible heuristic: estimate cost assuming best-case movement
     return plotDistance(iNextX, iNextY, iDestX, iDestY) * PATH_BASE_COST * iBaseMoves;
 }
@@ -265,16 +265,16 @@ int ComputeAdmissibleHeuristic(const UnitPathCacheData* pCache, int iDistance)
 {
     if (!pCache)
         return iDistance * PATH_BASE_COST * 4;  // Default (fast unit)
-    
+
     // Use unit's actual base moves (embarked or not)
     int iBaseMoves = pCache->baseMoves(pCache->isEmbarked());
-    
+
     // Ensure admissibility: heuristic should never overestimate
     // Assume best case: no terrain costs, on roads
     // Actual: terrain costs 1+ MP, roads cost 0.5-2 MP
     // Conservative: assume 0.5 MP per tile (routes)
     iBaseMoves = std::max(iBaseMoves / 2, 1);  // At least 0.5 moves per tile
-    
+
     return iDistance * PATH_BASE_COST * iBaseMoves;
 }
 ```
@@ -282,8 +282,8 @@ int ComputeAdmissibleHeuristic(const UnitPathCacheData* pCache, int iDistance)
 ---
 
 ### ID: UMP-006 — Approximate Destination Edge Cases
-**Status:** ⚠️ PARTIALLY TESTED  
-**Priority:** MEDIUM  
+**Status:** ⚠️ PARTIALLY TESTED
+**Priority:** MEDIUM
 **Category:** A* Pathfinder
 
 **Problem:**
@@ -318,34 +318,34 @@ bool DestinationReached(int iToX, int iToY) const
 {
     if (HaveFlag(MOVEFLAG_APPROX_TARGET_RING2)) {
         int iDistance = plotDistance(iToX, iToY, GetDestX(), GetDestY());
-        
+
         if (iDistance < 1 || iDistance > 2)
             return false;  // Too far
-        
+
         // Requirement 1: Don't land on actual target (it's occupied)
         if (iDistance == 0)
             return false;
-        
+
         // Requirement 2: Check passability to target
         if (!CanEndTurnAtNode(GetNode(iToX, iToY)))
             return false;
-        
+
         // Requirement 3: Direct path to target (ignore mountains between)
         // This is the key: if iDistance == 1, automatically valid
         // If iDistance == 2, require common neighbor OR direct line-of-sight
         if (iDistance == 1)
             return true;  // Ring 1 always acceptable
-        
+
         // For ring 2: check common neighbor (current implementation)
         // OR check if unit can path to distance-1 tile
         if (CommonNeighborIsPassable(GetNode(iToX, iToY), GetNode(GetDestX(), GetDestY())))
             return true;
-        
+
         // Fallback: if no common neighbor, still allow if it's passable terrain
         // (siege unit might be able to make 2-tile approach via detour)
         if (GetNode(iToX, iToY)->m_kCostCacheData.bCanEnterTerrainPermanent)
             return true;
-        
+
         return false;
     }
     // ... other approximation modes ...
@@ -378,8 +378,8 @@ Test: Siege Ring2 with Strait
 ---
 
 ### ID: UMP-007 — Movement UI Display (Precise Movement Points)
-**Status:** ✅ IMPLEMENTED (Mod Feature)  
-**Priority:** LOW  
+**Status:** ✅ IMPLEMENTED (Mod Feature)
+**Priority:** LOW
 **Category:** UI / User Experience
 
 **Problem:**
@@ -404,8 +404,8 @@ Implement `MOD_UI_DISPLAY_PRECISE_MOVEMENT_POINTS`:
 ---
 
 ### ID: UMP-008 — Deep Water Embarkation Support
-**Status:** ✅ IMPLEMENTED (Mod Feature)  
-**Priority:** MEDIUM  
+**Status:** ✅ IMPLEMENTED (Mod Feature)
+**Priority:** MEDIUM
 **Category:** Embarkation / Naval Units
 
 **Problem:**
@@ -479,6 +479,6 @@ Test: Cargo Ships
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** January 2025  
+**Document Version:** 1.0
+**Last Updated:** January 2025
 **Maintenance:** Community Patch DLL developers

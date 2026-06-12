@@ -8,8 +8,8 @@ This guide provides step-by-step instructions for implementing fixes and improve
 
 ## Implementation: Net Gold Scoring Fix
 
-**Priority:** 1 (Critical)  
-**Time Estimate:** 3-4 hours  
+**Priority:** 1 (Critical)
+**Time Estimate:** 3-4 hours
 **Files Affected:** `CvBuilderTaskingAI.cpp`
 
 ### **Step 1: Locate Scoring Function**
@@ -122,8 +122,8 @@ python build_vp_clang.py --config debug
 
 ## Implementation: Route Planning Documentation
 
-**Priority:** 2 (Medium)  
-**Time Estimate:** 2-3 hours  
+**Priority:** 2 (Medium)
+**Time Estimate:** 2-3 hours
 **Files Affected:** `CvBuilderTaskingAI.cpp`, `CvDefines.h`, SQL database
 
 ### **Step 1: Add GameDefines Constants**
@@ -147,26 +147,26 @@ Open [CvBuilderTaskingAI.cpp](../../CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.
 ```cpp
 /*
  * ROUTE PLANNING SYSTEM
- * 
+ *
  * Routes are categorized and prioritized:
- * 
+ *
  * 1. MAIN ROUTES (Capital → All Other Cities)
  *    Priority: ROUTE_MAIN_PRIORITY (100)
  *    Purpose: Enable trade, connect empire, unlock city connections
  *    Recalc: Every ROUTE_RECALC_FREQUENCY turns
- *    
+ *
  * 2. SHORTCUT ROUTES (City Pair Optimization)
  *    Priority: ROUTE_SHORTCUT_PRIORITY (50)
  *    Condition: Cities within ROUTE_CITY_DISTANCE_SHORTCUT tiles (20)
  *    Purpose: Reduce travel time between nearby cities, enable trade
  *    Recalc: Every ROUTE_RECALC_FREQUENCY turns
- *    
+ *
  * 3. STRATEGIC ROUTES (To Key Resources)
  *    Priority: ROUTE_STRATEGIC_PRIORITY (75)
  *    Condition: Resource is Strategic (iron, oil, uranium, horses, etc.)
  *    Purpose: Enable strategic resource access, military supply lines
  *    Recalc: When new strategic resources discovered
- *    
+ *
  * 4. TRADE ROUTES (High-Gold City Pairs)
  *    Priority: ROUTE_PRIORITY_MULTIPLIER * base priority
  *    Condition: Trade route between cities exceeds gold threshold
@@ -208,7 +208,7 @@ if (iDistance <= GD_INT_GET(ROUTE_CITY_DISTANCE_SHORTCUT))
 }
 
 // Strategic routes: Key resources (ROUTE_STRATEGIC_PRIORITY)
-if (pPlot->getResourceType() != NO_RESOURCE && 
+if (pPlot->getResourceType() != NO_RESOURCE &&
     GC.getResourceInfo(pPlot->getResourceType())->isStrategic())
 {
     ConnectPointsForStrategy(pOriginCity, pPlot, eBuild, eRoute);
@@ -236,7 +236,7 @@ void CvBuilderTaskingAI::AddRoutePlots(CvPlot* pStartPlot, CvPlot* pTargetPlot, 
             iAdjustedValue = iValue * 75 / 100; // 75% of main route priority
             break;
     }
-    
+
     // ... rest of method
 }
 ```
@@ -258,8 +258,8 @@ python build_vp_clang.py --config debug
 
 ## Implementation: Tech Distance Heuristic Fix
 
-**Priority:** 3 (Medium-High)  
-**Time Estimate:** 4-6 hours  
+**Priority:** 3 (Medium-High)
+**Time Estimate:** 4-6 hours
 **Files Affected:** `CvBuilderTaskingAI.cpp`, `CvEconomicAI.cpp`
 
 ### **Step 1: Understand Current Implementation**
@@ -300,27 +300,27 @@ int CvEconomicAI::GetEstimatedTechResearchTurn(TechTypes eTech) const
 {
     CvPlayer* pPlayer = &GET_PLAYER(m_ePlayer);
     CvTeamTechs* pTeamTechs = GET_TEAM(pPlayer->getTeam()).GetTeamTechs();
-    
+
     // Already researched
     if (pTeamTechs->HasTech(eTech))
         return GC.getGame().getGameTurn();
-    
+
     // Estimate based on current science rate and tech cost
     CvTechEntry* pkTechInfo = GC.getTechInfo(eTech);
     if (!pkTechInfo)
         return GC.getGame().getGameTurn() + 1000; // default far future
-    
+
     int iScienceRate = pPlayer->GetTotalYield(YIELD_SCIENCE); // or similar
     if (iScienceRate <= 0)
         iScienceRate = 1; // avoid divide by zero
-    
+
     int iTechCost = pkTechInfo->GetResearchCost();
     int iRemainingCost = iTechCost; // minus current progress if available
-    
+
     int iTurnsToComplete = iRemainingCost / iScienceRate;
     if (iRemainingCost % iScienceRate != 0)
         iTurnsToComplete++; // ceil
-    
+
     // Cap at reasonable value to avoid absurdly distant estimates
     return GC.getGame().getGameTurn() + std::min(iTurnsToComplete, 200);
 }
@@ -334,27 +334,27 @@ Replace heuristic with EconomicAI call:
 int CvBuilderTaskingAI::GetRouteBuildTime(PlannedRoute plannedRoute, const CvUnit* pUnit = NULL) const
 {
     // OLD: int iRouteBuildDelay = /* hacky tree position based estimate */
-    
+
     // NEW: Use EconomicAI to estimate tech unlock time
     // (This assumes route requires new tech)
-    
+
     CvEconomicAI* pEconAI = m_pPlayer->GetEconomicAI();
     if (!pEconAI)
         return 50; // fallback
-    
+
     RouteTypes eRoute = plannedRoute.second.first;
     int iTechUnlockTurn = pEconAI->GetEstimatedTechResearchTurn(TechUnlockedByRoute(eRoute));
     int iCurrentTurn = GC.getGame().getGameTurn();
     int iRouteBuildDelay = std::max(0, iTechUnlockTurn - iCurrentTurn);
-    
+
     // Cap at reasonable values
     if (iRouteBuildDelay > 100)
         iRouteBuildDelay = 100; // very distant tech
-    
+
     // Adjust for current unit work rate
     if (pUnit)
         iRouteBuildDelay = iRouteBuildDelay * 100 / pUnit->workRate(false);
-    
+
     return iRouteBuildDelay;
 }
 ```
@@ -370,7 +370,7 @@ TechTypes CvBuilderTaskingAI::TechUnlockedByRoute(RouteTypes eRoute) const
     CvRouteInfo* pkRouteInfo = GC.getRouteInfo(eRoute);
     if (!pkRouteInfo)
         return NO_TECH;
-    
+
     // Typically TECH_WRITING for roads, TECH_RAILROAD for railroads
     return (TechTypes)pkRouteInfo->getTechPrereq();
 }
@@ -400,8 +400,8 @@ python build_vp_clang.py --config debug
 
 ## Implementation: City Strategy Documentation
 
-**Priority:** 4 (Low)  
-**Time Estimate:** 1-2 hours  
+**Priority:** 4 (Low)
+**Time Estimate:** 1-2 hours
 **Files Affected:** `CvCityStrategyAI.cpp`
 
 ### **Step 1: Add Comments to Strategy Checks**
@@ -428,13 +428,13 @@ Add a table comment before the three functions:
 ```cpp
 /*
  * WORKER PRODUCTION STATE MACHINE
- * 
+ *
  * State         | Trigger Condition           | Effect                    | Next State
  * --------------|-----------------------------|--------------------------|-----------
  * NEED          | workers < cities * 0.67     | Force worker production   | WANT
  * WANT          | workers >= cities * 0.67    | Prefer worker production  | ENOUGH
  * ENOUGH        | workers >= cities * 1.50    | Block worker production   | WANT
- * 
+ *
  * Special Case: If worker dies, state reverts to NEED for 10 turns (NO_WORKER_AFTER_DISBAND_DURATION)
  */
 ```
@@ -538,4 +538,3 @@ Enable builder AI logging:
 - [CvBuilderTaskingAI.cpp](../../CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp)
 - [CvCityStrategyAI.cpp](../../CvGameCoreDLL_Expansion2/CvCityStrategyAI.cpp)
 - [Build Instructions](../../DEVELOPMENT.md)
-

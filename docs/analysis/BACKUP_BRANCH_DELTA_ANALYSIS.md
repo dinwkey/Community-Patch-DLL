@@ -2,7 +2,7 @@
 
 > Historical note: This report compares earlier `feature/copilot` branch states. The maintained branch is now `custom/ai-gameplay-enhancements`; old branch names and "current branch" wording below are preserved as historical context.
 
-**Generated:** 2026-01-12  
+**Generated:** 2026-01-12
 **Purpose:** Identify what enhancements exist in `feature/copilot-backup` that are NOT in `feature/copilot` (current working branch)
 
 ---
@@ -43,7 +43,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 1. **Religion System Optimizations** (CvReligionClasses.cpp: +111/-103)
 
-**Type:** Performance refinements to existing code  
+**Type:** Performance refinements to existing code
 **Impact:** Low-risk optimizations
 
 **Key Changes in Backup:**
@@ -60,7 +60,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 2. **Diplomacy AI Enhancements** (CvDiplomacyAI.cpp: +47/-14, net +33)
 
-**Type:** New logic additions to diplomacy decision-making  
+**Type:** New logic additions to diplomacy decision-making
 **Impact:** Medium - affects AI behavior
 
 **Potential Areas (based on line count):**
@@ -78,7 +78,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 3. **Citizen Management** (CvCityCitizens.cpp: +36/-13, net +23)
 
-**Type:** New citizen assignment logic  
+**Type:** New citizen assignment logic
 **Impact:** Medium - affects city optimization
 
 **Assessment:**
@@ -90,7 +90,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 4. **Policy System Enhancements** (CvPolicyClasses.cpp: +28/-5, net +23)
 
-**Type:** Policy evaluation improvements  
+**Type:** Policy evaluation improvements
 **Impact:** Low-Medium
 
 **Assessment:**
@@ -102,7 +102,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 5. **Tech System** (CvTechClasses.cpp: +19/-2, net +17)
 
-**Type:** Tech evaluation refinements  
+**Type:** Tech evaluation refinements
 **Impact:** Low-Medium
 
 **Assessment:**
@@ -114,7 +114,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 6. **Globals Cleanup** (CvGlobals.cpp: +39/-211, net -172)
 
-**Type:** Code reduction/refactoring  
+**Type:** Code reduction/refactoring
 **Impact:** Neutral (cleanup)
 
 **Assessment:**
@@ -126,7 +126,7 @@ The backup branch contains **520+ commits** beyond the current working branch. M
 
 #### 7. **Test Framework** (TestExports.cpp/h: +100 new lines)
 
-**Type:** New testing infrastructure  
+**Type:** New testing infrastructure
 **Impact:** Development-only (not gameplay)
 
 **Assessment:**
@@ -383,9 +383,9 @@ Backup branch has **removed/modified** several binary assets:
 
 ### Strategic Assessment
 
-✅ **Current branch status:** Production-ready with all core features  
-🔧 **Backup branch value:** Source of optional optimizations and refinements  
-⚠️ **Risk level:** LOW - all proposed additions are incremental improvements  
+✅ **Current branch status:** Production-ready with all core features
+🔧 **Backup branch value:** Source of optional optimizations and refinements
+⚠️ **Risk level:** LOW - all proposed additions are incremental improvements
 🎯 **Recommendation:** Selectively cherry-pick optimizations after performance profiling
 
 ### Next Steps
@@ -397,7 +397,7 @@ Backup branch has **removed/modified** several binary assets:
 
 ---
 
-**Generated:** 2026-01-12  
-**Branch Comparison:** feature/copilot (current) vs feature/copilot-backup  
-**Analysis Method:** Git diff statistics + commit history review  
+**Generated:** 2026-01-12
+**Branch Comparison:** feature/copilot (current) vs feature/copilot-backup
+**Analysis Method:** Git diff statistics + commit history review
 **Conclusion:** Current branch is complete; backup contains optional refinements

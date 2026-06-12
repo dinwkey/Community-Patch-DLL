@@ -5,7 +5,7 @@
 This document analyzes selective enhancements to the Builder AI and Economic AI systems for community patch compatibility testing.
 
 **Scope:** CvBuilderTaskingAI.cpp/h, CvEconomicAI.cpp
-**Total Changes:** ~210 lines across 3 files  
+**Total Changes:** ~210 lines across 3 files
 **Approach:** Selective re-implementation (NOT wholesale restoration)
 **Status:** Analysis Complete - Ready for Implementation
 
@@ -14,8 +14,8 @@ This document analyzes selective enhancements to the Builder AI and Economic AI 
 ## 1. CvBuilderTaskingAI.cpp Changes
 
 ### Change 1: GetTurnsToBuild() - workRate Fix (Line ~1281)
-**Type:** Bug fix  
-**Severity:** Medium  
+**Type:** Bug fix
+**Severity:** Medium
 **Issue:** Calculation using `workRate(true)` instead of `workRate(false)`
 
 **Original (Upstream):**
@@ -37,9 +37,9 @@ int iBuildRate = pUnit ? pUnit->workRate(false) : 1;
 ---
 
 ### Change 2: CalculateStrategicLocationValue() - New Helper Method (~80 lines)
-**Type:** New enhancement  
-**Scope:** Lines 1618-1698 (after UpdateImprovementPlots)  
-**Complexity:** Medium  
+**Type:** New enhancement
+**Scope:** Lines 1618-1698 (after UpdateImprovementPlots)
+**Complexity:** Medium
 
 **Purpose:** Calculate strategic location bonus for route building (railroads/roads)
 
@@ -74,9 +74,9 @@ int iBuildRate = pUnit ? pUnit->workRate(false) : 1;
 ---
 
 ### Change 3: GetRouteDirectives() - Movement Speed Bonus (Line ~1797+)
-**Type:** Enhancement to railroad valuation  
-**Scope:** Lines 1797-1866 (in GetRouteDirectives)  
-**Complexity:** High  
+**Type:** Enhancement to railroad valuation
+**Scope:** Lines 1797-1866 (in GetRouteDirectives)
+**Complexity:** High
 **Lines Added:** ~70 lines
 
 **Purpose:** Weight railroad value by military situation and strategic importance
@@ -124,9 +124,9 @@ int iBuildRate = pUnit ? pUnit->workRate(false) : 1;
 ---
 
 ### Change 4: ScorePlotBuild() - Gold Maintenance Accounting (~37 lines)
-**Type:** Core fix  
-**Scope:** Lines 3853-3889  
-**Complexity:** Medium  
+**Type:** Core fix
+**Scope:** Lines 3853-3889
+**Complexity:** Medium
 
 **Purpose:** Subtract improvement maintenance from gold yield scoring
 
@@ -150,11 +150,11 @@ if (eYield == YIELD_GOLD && eImprovement != NO_IMPROVEMENT && pkImprovementInfo)
         int iMaintenanceTimes100 = iMaintenanceCost * 100;
         iAdjustedNewYieldTimes100 -= iMaintenanceTimes100;
         iAdjustedFutureYieldTimes100 -= iMaintenanceTimes100;
-        
+
         // Penalize negative improvements (50% weight)
         if (iAdjustedNewYieldTimes100 < 0)
             iAdjustedNewYieldTimes100 = (iAdjustedNewYieldTimes100 * 50) / 100;
-        
+
         if (iAdjustedFutureYieldTimes100 < 0)
             iAdjustedFutureYieldTimes100 = (iAdjustedFutureYieldTimes100 * 50) / 100;
     }
@@ -180,9 +180,9 @@ iYieldScore += (iAdjustedNewYieldTimes100 * iYieldModifier * iCityYieldModifier)
 ---
 
 ### Change 5: ScorePlotBuild() - Build Time ROI Adjustment (~17 lines)
-**Type:** Enhancement  
-**Scope:** Lines 4406-4420  
-**Complexity:** Low  
+**Type:** Enhancement
+**Scope:** Lines 4406-4420
+**Complexity:** Low
 
 **Purpose:** Weight improvement scores by build time (longer builds less valuable)
 
@@ -220,15 +220,15 @@ return make_pair(iFinalScore, iPotentialScore);
 ---
 
 ### Change 6: ShouldBuilderConsiderPlot() - Fallout Damage Logic (~35 lines)
-**Type:** Enhancement  
-**Scope:** Lines 2865-2900  
-**Complexity:** Medium  
+**Type:** Enhancement
+**Scope:** Lines 2865-2900
+**Complexity:** Medium
 
 **Purpose:** More intelligent fallout tile handling considering unit healing
 
 **Original (Upstream):**
 ```cpp
-if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage() && 
+if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage() &&
    (pUnit->GetCurrHitPoints() < (pUnit->GetMaxHitPoints() / 2)))
 {
     // Always bail and log
@@ -245,10 +245,10 @@ if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage())
     CvFeatureInfo* pkFeatureInfo = GC.getFeatureInfo(FEATURE_FALLOUT);
     if (pkFeatureInfo)
         iFalloutDamage = pkFeatureInfo->getTurnDamage();
-    
+
     int iHealRate = pUnit->healRate(pPlot);
     int iNetDamagePerTurn = iFalloutDamage - iHealRate;
-    
+
     // Only bail if net damage risk is real
     if (iNetDamagePerTurn > 0 && pUnit->GetCurrHitPoints() < (iNetDamagePerTurn * 3))
     {
@@ -277,9 +277,9 @@ if(pPlot->getFeatureType() == FEATURE_FALLOUT && !pUnit->ignoreFeatureDamage())
 ---
 
 ### Change 7: UpdateFutureYields() - Tech Distance Comments (~12 lines)
-**Type:** Documentation fix  
-**Scope:** Lines 2161-2173, 2363-2371  
-**Complexity:** Low  
+**Type:** Documentation fix
+**Scope:** Lines 2161-2173, 2363-2371
+**Complexity:** Low
 
 **Purpose:** Document tech distance heuristic limitations
 
@@ -312,8 +312,8 @@ int CalculateStrategicLocationValue(const PlotPair& plotPair);
 ## 3. CvEconomicAI.cpp Changes
 
 ### Change 1: BOM Marker Fix (Line 1)
-**Type:** Encoding/cleanup  
-**Severity:** Trivial  
+**Type:** Encoding/cleanup
+**Severity:** Trivial
 
 **Original:**
 ```
@@ -332,15 +332,15 @@ int CalculateStrategicLocationValue(const PlotPair& plotPair);
 ---
 
 ### Change 2: DisbandUnitsToFreeSpaceshipResources() - Order Removal (~13 lines)
-**Type:** Bug fix  
-**Scope:** Lines 2794-2809  
-**Complexity:** Medium  
+**Type:** Bug fix
+**Scope:** Lines 2794-2809
+**Complexity:** Medium
 
 **Purpose:** Properly handle building removal from city queue
 
 **Original (Upstream):**
 ```cpp
-pLoopCity->isBuildingInQueue(eBestBuilding) ? pLoopCity->clearOrderQueue() : 
+pLoopCity->isBuildingInQueue(eBestBuilding) ? pLoopCity->clearOrderQueue() :
     pLoopCity->GetCityBuildings()->DoSellBuilding(eBestBuilding);
 ```
 

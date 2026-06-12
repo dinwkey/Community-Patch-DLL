@@ -1,7 +1,7 @@
 # Policy & Ideology System — Actionable Issues & Fixes
 
-**Document Type:** Implementation Guide  
-**Priority Sequence:** Critical → High → Medium → Low  
+**Document Type:** Implementation Guide
+**Priority Sequence:** Critical → High → Medium → Low
 
 ---
 

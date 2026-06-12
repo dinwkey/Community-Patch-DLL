@@ -15,7 +15,7 @@ The build log shows errors in `CvAStar.cpp`, but these are **pre-existing issues
 ### 1. Our Modified File: CvBuilderTaskingAI.cpp
 **Status:** ✅ **COMPILED CLEANLY**
 ```
-==== C:\Users\Thomson\source\repos\Community-Patch-DLL\CvGameCoreDLL_Expansion2\CvBuilderTaskingAI.cpp ====   
+==== C:\Users\Thomson\source\repos\Community-Patch-DLL\CvGameCoreDLL_Expansion2\CvBuilderTaskingAI.cpp ====
 warning: unknown warning option '-Wno-enum-constexpr-conversion' [-Wunknown-warning-option]
 1 warning generated.
 ```
@@ -25,10 +25,10 @@ warning: unknown warning option '-Wno-enum-constexpr-conversion' [-Wunknown-warn
 ### 2. CvAStar.cpp: Pre-existing Issue
 **Status:** ❌ **2 Errors (unrelated to our changes)**
 ```
-C:\Users\Thomson\source\repos\Community-Patch-DLL\CvGameCoreDLL_Expansion2\CvAStar.cpp(348,31) : 
+C:\Users\Thomson\source\repos\Community-Patch-DLL\CvGameCoreDLL_Expansion2\CvAStar.cpp(348,31) :
 error: no matching member function for call to 'GetLog'
 
-C:\Users\Thomson\source\repos\Community-Patch-DLL\CvGameCoreDLL_Expansion2\CvAStar.cpp(1070,32) : 
+C:\Users\Thomson\source\repos\Community-Patch-DLL\CvGameCoreDLL_Expansion2\CvAStar.cpp(1070,32) :
 error: no matching member function for call to 'GetLog'
 ```
 - **Git Status:** Unchanged (not modified by us)

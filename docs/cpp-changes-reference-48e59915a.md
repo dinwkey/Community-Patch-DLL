@@ -2,8 +2,8 @@
 
 > Historical note: This is a commit-specific reference for an older pre-squash change. The maintained branch is now `custom/ai-gameplay-enhancements`; use this as provenance, not current commit topology.
 
-**Commit Hash**: `48e59915a`  
-**Date**: January 10, 2026  
+**Commit Hash**: `48e59915a`
+**Date**: January 10, 2026
 **Short Message**: Refactor AI systems (military, tactical, homeland) with memory optimization and documentation reorganization
 
 ## Summary
@@ -85,7 +85,7 @@ This commit completes the category reorganization of documentation and introduce
 ## Files Modified
 
 - **Total**: 646 files changed with 235,050 insertions and 435 deletions
-- **Primary focus**: 
+- **Primary focus**:
   - CvMilitaryAI.cpp (+726 lines)
   - CvTacticalAI.cpp (+295 lines)
   - CvTradeClasses.cpp (+227 lines)

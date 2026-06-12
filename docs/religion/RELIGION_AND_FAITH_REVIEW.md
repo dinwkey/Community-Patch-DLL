@@ -1,7 +1,7 @@
 # Religion & Faith System Review
 ## Community-Patch-DLL Civilization V
 
-**Date:** January 2026  
+**Date:** January 2026
 **Focus Areas:** Founding/Spreading Religion, Belief Effects, Inquisitors, Missionary Logic
 
 ---
@@ -190,19 +190,19 @@ Applied factors (in order):
 1. **Pantheon Beliefs** (`IsPantheonBelief()`)
    - Earliest available
    - Passive bonuses to faith and other yields
-   
+
 2. **Founder Beliefs** (`IsFounderBelief()`)
    - One per religion at founding
    - Often gameplay-altering abilities
-   
+
 3. **Follower Beliefs** (`IsFollowerBelief()`)
    - Passive bonuses based on followers
    - Multiple can be selected (up to 4 total)
-   
+
 4. **Enhancer Beliefs** (`IsEnhancerBelief()`)
    - Spread-related bonuses
    - Optimize missionary/prophet effectiveness
-   
+
 5. **Reformation Beliefs** (`IsReformationBelief()`)
    - Late-game beliefs added via enhancement
    - Special mechanics (e.g., martyr benefits)
@@ -281,7 +281,7 @@ Applied factors (in order):
      - No consideration for civ-specific features (e.g., Iroquois forests)
      - Unique improvements only checked for own civ
    - **Lines:** 7845 (Tradition bonus adds 15%), 7870-7890 (hardcoded 25%, 75%)
-   - **Recommendation:** 
+   - **Recommendation:**
      - Add data-driven likelihoods for feature removal
      - Consider all features, not just civ-specific ones
      - Use actual worker efficiency data
@@ -510,8 +510,8 @@ For each own city:
 Base factors:
 1. **Pressure Erosion Calculation**
    ```cpp
-   SimulateErodeOtherReligiousPressure(eReligion, 
-                                        GD_INT_GET(INQUISITION_EFFECTIVENESS), 
+   SimulateErodeOtherReligiousPressure(eReligion,
+                                        GD_INT_GET(INQUISITION_EFFECTIVENESS),
                                         true, true)
    // Community Patch: 100
    // Vox Populi: 50
@@ -637,7 +637,7 @@ Base factors:
 4. **No Support For Missionary Prevention** (PREVENTION WEAKNESS)
    - **Current:** Defensive scoring only prevents flip, doesn't deny enemy missionaries
    - **Issue:** Enemy sends 3 missionaries; even with inquisitor, takes multiple turns
-   - **Recommendation:** 
+   - **Recommendation:**
      - Add offensive-defensive hybrid: "prevent enemy missionary arrival"
      - Check incoming missionaries via `CvUnit::IsMoving()`
      - Score cities on "missionary path" higher
@@ -780,7 +780,7 @@ Comprehensive evaluation covering:
    - **Lines:** 7845-7890
    - **Values:** 25% default, 75% with resource, 15% boost for Tradition
    - **Issue:** Values don't match actual worker behavior
-   - **Missing:** 
+   - **Missing:**
      - Civ-specific feature preferences (Iroquois+Forest, etc.)
      - Tech tree progression impact
      - Strategic value assessment

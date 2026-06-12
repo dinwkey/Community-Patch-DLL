@@ -14,8 +14,8 @@ This document analyzes selective enhancements to core game system files for comm
 ## 1. CvCity.cpp Changes (~75 net lines)
 
 ### Change 1: Growth Processing Order Fix (~20 lines)
-**Type:** Logic enhancement  
-**Severity:** Medium  
+**Type:** Logic enhancement
+**Severity:** Medium
 **Issue:** Double growth possible when growth triggers early in turn
 
 **Change Details:**
@@ -63,8 +63,8 @@ if (!bGrowthProcessed && getPopulation() == iPopulationBeforeGrowth)
 ---
 
 ### Change 2: Food Turns Left Calculation (~15 lines)
-**Type:** Performance & accuracy  
-**Severity:** Low  
+**Type:** Performance & accuracy
+**Severity:** Low
 **Issue:** Redundant truncation correction
 
 **Change Details:**
@@ -91,8 +91,8 @@ int iTurnsLeft = (iFoodNeededToGrow + iDeltaPerTurn - 1) / iDeltaPerTurn;
 ---
 
 ### Change 3: Production Modifier Loop Optimization (~30 lines)
-**Type:** Performance  
-**Severity:** Low  
+**Type:** Performance
+**Severity:** Low
 **Issue:** Iterates through ALL buildings instead of just city's buildings
 
 **Change Details:**
@@ -112,14 +112,14 @@ int iTurnsLeft = (iFoodNeededToGrow + iDeltaPerTurn - 1) / iDeltaPerTurn;
 ---
 
 ### Change 4: Plot Selection Logic (~20 lines)
-**Type:** Logic change  
-**Severity:** Medium  
+**Type:** Logic change
+**Severity:** Medium
 **Issue:** Random selection vs deterministic best plot
 
 **Change Details:**
 ```cpp
 // OLD: Random selection from plot list
-uint uPickedIndex = GC.getGame().urandLimitExclusive(aiPlotList.size(), 
+uint uPickedIndex = GC.getGame().urandLimitExclusive(aiPlotList.size(),
     CvSeeder(getFoodTimes100()).mix(GET_PLAYER(m_eOwner).GetNumPlots()));
 return GC.getMap().plotByIndex(aiPlotList[uPickedIndex]);
 
@@ -141,8 +141,8 @@ return GC.getMap().plotByIndex(aiPlotList[0]);
 ---
 
 ### Change 5: Buyable Plot Evaluation (~40 lines)
-**Type:** Logic enhancement  
-**Severity:** Medium  
+**Type:** Logic enhancement
+**Severity:** Medium
 **Issue:** Plot selection criteria too simplistic
 
 **Changes:**
@@ -166,8 +166,8 @@ return GC.getMap().plotByIndex(aiPlotList[0]);
 ---
 
 ### Change 6: Documentation Improvements (~15 lines)
-**Type:** Documentation  
-**Severity:** None  
+**Type:** Documentation
+**Severity:** None
 **Changes:**
 - Added comments explaining food calculation precision
 - Documented starvation condition change from `== 0` to `<= 0`
@@ -181,7 +181,7 @@ return GC.getMap().plotByIndex(aiPlotList[0]);
 ## 2. CvPlayer.cpp Changes (~185 net lines)
 
 ### Change 1: Resource Cache Initialization (~2 lines)
-**Type:** Memory management  
+**Type:** Memory management
 **Code:**
 ```cpp
 m_paiNumResourceTotalCached.clear();
@@ -193,8 +193,8 @@ m_paiNumResourceTotalCachedNoImport.clear();
 ---
 
 ### Change 2: Resource Total Caching (~80 lines)
-**Type:** Performance optimization  
-**Severity:** Medium  
+**Type:** Performance optimization
+**Severity:** Medium
 **Issue:** `getNumResourceTotal()` called frequently, recalculates every time
 
 **Implementation:**
@@ -203,7 +203,7 @@ m_paiNumResourceTotalCachedNoImport.clear();
 - On cache miss, recalculate all resources in one pass
 - Cache all results for future queries
 
-**Performance Impact:** 
+**Performance Impact:**
 - Query: O(1) cache hit vs O(num_resources) recalc
 - Invalidated on resource changes (still cheap)
 
@@ -215,7 +215,7 @@ m_paiNumResourceTotalCachedNoImport.clear();
 ---
 
 ### Change 3: Resource Change Invalidation Calls (~12 lines)
-**Type:** Cache management  
+**Type:** Cache management
 **Functions Modified:**
 - `changeNumResourceTotal()`
 - `changeResourceExport()`
@@ -234,8 +234,8 @@ m_paiNumResourceTotalCachedNoImport.clear();
 ---
 
 ### Change 4: Ideology Unhappiness Scaling (~2 lines)
-**Type:** Game balance  
-**Severity:** High  
+**Type:** Game balance
+**Severity:** High
 **Change:**
 ```cpp
 // OLD: iUnhappiness *= 20;
@@ -256,8 +256,8 @@ m_paiNumResourceTotalCachedNoImport.clear();
 ---
 
 ### Change 5: Grace Period for Recent Cities (~8 lines)
-**Type:** Game balance  
-**Severity:** Medium  
+**Type:** Game balance
+**Severity:** Medium
 **Change:**
 ```cpp
 int iTurnsSinceAcquired = GC.getGame().getGameTurn() - pLoopCity->getGameTurnAcquired();
@@ -281,8 +281,8 @@ if (iTurnsSinceAcquired < 10)
 ---
 
 ### Change 6: City Flip Risk Notifications (~50 lines)
-**Type:** UI/Player feedback  
-**Severity:** Low  
+**Type:** UI/Player feedback
+**Severity:** Low
 **Change:**
 Adds graduated notification system:
 - 75% threshold: Warning notification
@@ -302,8 +302,8 @@ Adds graduated notification system:
 ---
 
 ### Change 7: Removed Diplomacy Gold Assertion (~49 lines)
-**Type:** Code removal  
-**Severity:** Low  
+**Type:** Code removal
+**Severity:** Low
 **Change:**
 Removes large assertion block checking `GetGoldPerTurnFromDiplomacy()` against manually-calculated sum
 
@@ -320,8 +320,8 @@ Removes large assertion block checking `GetGoldPerTurnFromDiplomacy()` against m
 ---
 
 ### Change 8: Memory Container Trimming (~12 lines)
-**Type:** Memory optimization  
-**Severity:** Low  
+**Type:** Memory optimization
+**Severity:** Low
 **Code:**
 ```cpp
 if (GC.getGame().getGameTurn() % 20 == 0)
@@ -348,7 +348,7 @@ if (GC.getGame().getGameTurn() % 20 == 0)
 ## 3. CvUnit.cpp Changes (~95 net lines)
 
 ### Change 1: Promotion Caching (~45 lines)
-**Type:** Performance optimization  
+**Type:** Performance optimization
 **Issue:** `canAcquirePromotionAny()` loops through all promotions every call (expensive)
 
 **Implementation:**
@@ -368,7 +368,7 @@ if (GC.getGame().getGameTurn() % 20 == 0)
 ---
 
 ### Change 2: Emergency Rebase Scoring (~65 lines)
-**Type:** Logic refactoring  
+**Type:** Logic refactoring
 **Issue:** Current code immediately rebases to first valid base, doesn't pick best
 
 **Changes:**
@@ -390,7 +390,7 @@ if (GC.getGame().getGameTurn() % 20 == 0)
 ---
 
 ### Change 3: canLoad() State Check Removal (~8 lines)
-**Type:** Logic fix  
+**Type:** Logic fix
 **Issue:** canLoad() checks embarkation state, but this makes result state-dependent
 
 **Change:**
@@ -413,7 +413,7 @@ if (isEmbarked())
 ---
 
 ### Change 4: Work Rate Modifier Documentation (~5 lines)
-**Type:** Documentation  
+**Type:** Documentation
 **Change:**
 ```cpp
 // Apply modifiers to all builders including trait-based ones
@@ -427,7 +427,7 @@ int Modifiers = GetWorkRateMod();
 ---
 
 ### Change 5: XP Award Notifications (~8 lines)
-**Type:** Logic improvement  
+**Type:** Logic improvement
 **Change:**
 ```cpp
 testPromotionReady();  // After XP changes
@@ -446,7 +446,7 @@ testPromotionReady();  // After XP changes
 ---
 
 ### Change 6: AoE Kill XP Award (~13 lines)
-**Type:** Logic addition  
+**Type:** Logic addition
 **Change:**
 Awards XP for splash damage kills:
 ```cpp
@@ -471,7 +471,7 @@ if (canAcquirePromotionAny())
 ---
 
 ### Change 7: Path Cache Memory Optimization (~18 lines)
-**Type:** Memory optimization  
+**Type:** Memory optimization
 **Issue:** Path cache deques grow unbounded in long games
 
 **Change:**
@@ -493,7 +493,7 @@ CvPathNodeArray().swap(m_kLastPath);  // Release memory
 ---
 
 ### Change 8: Documentation for XP Awards (~30 lines)
-**Type:** Documentation  
+**Type:** Documentation
 **Content:**
 Comprehensive comment explaining:
 - XP award rules and modifiers
@@ -512,8 +512,8 @@ Comprehensive comment explaining:
 ## 4. CvPlot.cpp Changes (~30 net lines)
 
 ### Change 1: Goody Hut Improvement Bug Fix (~4 lines)
-**Type:** Bug fix  
-**Severity:** Medium  
+**Type:** Bug fix
+**Severity:** Medium
 **Issue:** Goody hut rewards don't work properly
 
 **Change:**
@@ -534,7 +534,7 @@ Comprehensive comment explaining:
 ---
 
 ### Change 2: Improvement Ownership Order Refactoring (~30 lines)
-**Type:** Code organization  
+**Type:** Code organization
 **Issue:** Improvement ownership logic was scattered
 
 **Change:**
@@ -557,7 +557,7 @@ Move ownership setting code from early in function to after improvement is set:
 ## 5. CvGame.cpp Changes (~50 net lines)
 
 ### Change 1: Player Initialization - Closed Slots Removal (~70 lines removed)
-**Type:** Code simplification  
+**Type:** Code simplification
 **Issue:** Complex logic for handling closed civilization slots
 
 **Changes:**
@@ -579,7 +579,7 @@ Removes large block that:
 ---
 
 ### Change 2: Turn Deactivation Logic Simplification (~7 lines)
-**Type:** Code simplification  
+**Type:** Code simplification
 **Issue:** Complex deal-blocking logic for simultaneous turns
 
 **Change:**

@@ -1,8 +1,8 @@
 # Routes & Infrastructure: Issues and Improvements Review
 
-**Date:** January 11, 2026  
-**Scope:** Roads, railroads, routes, maintenance costs, route-based yields, and unit movement  
-**Primary Files:** 
+**Date:** January 11, 2026
+**Scope:** Roads, railroads, routes, maintenance costs, route-based yields, and unit movement
+**Primary Files:**
 - `CvGameCoreDLL_Expansion2/CvCityConnections.cpp`
 - `CvGameCoreDLL_Expansion2/CvTradeClasses.cpp`
 - `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp`
@@ -31,9 +31,9 @@ This review identifies **2 critical issues** and **4 process/design improvements
 
 ### Issue 1: Trade Route Creation Skips War/Path Checks ⚠️ CRITICAL
 
-**Severity:** CRITICAL  
-**Category:** Validation/Logic Flaw  
-**File:** `CvGameCoreDLL_Expansion2/CvTradeClasses.cpp`  
+**Severity:** CRITICAL
+**Category:** Validation/Logic Flaw
+**File:** `CvGameCoreDLL_Expansion2/CvTradeClasses.cpp`
 **Related:** `CvGameTrade::CreateTradeRoute`, `CvGameTrade::CanCreateTradeRoute`
 
 #### Problem
@@ -79,12 +79,12 @@ bool CvGameTrade::CreateTradeRoute(int iOriginPlayer, int iOriginCity, int iDest
     // Existing path check
     if (!HavePotentialTradePath(iOriginPlayer, iOriginCity, iDestPlayer, iDestCity))
         return false;
-    
+
     // NEW: Re-validate war/path status before creating
     // This provides defensive validation, especially important for multiplayer
     if (!IsValidTradeRoutePath(iOriginPlayer, iOriginCity, iDestPlayer, iDestCity))
         return false;
-    
+
     // ... rest of creation logic
 }
 ```
@@ -118,8 +118,8 @@ While single-player turn structure mitigates this issue, adding the check is a d
 
 ### Issue 2: Negative Trade Route Slot Counts ⚠️ CRITICAL
 
-**Severity:** CRITICAL  
-**Category:** Logic Error  
+**Severity:** CRITICAL
+**Category:** Logic Error
 **File:** `CvGameCoreDLL_Expansion2/CvTradeClasses.cpp` (likely `GetNumTradeRoutesPossible()`)
 
 #### Problem
@@ -151,14 +151,14 @@ Modifiers are applied without bounds checking. The code assumes modifiers will n
 int CvPlayerTrade::GetNumTradeRoutesPossible() const
 {
     int iNumRoutes = m_pPlayer->GetTradeRoutesBaseValue(); // e.g., 4
-    
+
     // Apply modifier
     int iModifier = ... // sum of all trait/policy modifiers
     iNumRoutes = iNumRoutes * (100 + iModifier) / 100;
-    
+
     // NEW: Clamp to non-negative
     iNumRoutes = max(0, iNumRoutes);
-    
+
     return iNumRoutes;
 }
 ```
@@ -185,15 +185,15 @@ iModifier = max(iModifier, -99); // never go to −100% or worse
 
 ### Issue 3: Route Maintenance Not Included in Builder Scoring
 
-**Severity:** HIGH  
-**Category:** AI Decision-Making  
+**Severity:** HIGH
+**Category:** AI Decision-Making
 **File:** `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp` (likely line ~3900 `ScorePlotBuild()`)
 
 #### Problem
 
 Builder AI scores improvements without subtracting maintenance costs from yields. However, the actual issue is more nuanced than simply "make routes unprofitable":
 
-**Economic routes (roads)** should be profitable: yield −3 GPT is bad.  
+**Economic routes (roads)** should be profitable: yield −3 GPT is bad.
 **Military/logistics routes (railroads)** have strategic value beyond gold: −1 GPT may be worth it if 2x faster movement helps military positioning.
 
 Current scoring ignores:
@@ -243,7 +243,7 @@ Modify `ScorePlotBuild()` to account for maintenance, strategic bonuses, and tre
 int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, RouteTypes eRoute, ...)
 {
     int iScore = 0;
-    
+
     // 1. Calculate net gold (yield minus maintenance)
     int iGoldYield = GetProposedYield(pPlot, eRoute, YIELD_GOLD);
     CvRouteInfo* pkRouteInfo = GC.getRouteInfo(eRoute);
@@ -253,7 +253,7 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, RouteTypes eRoute, ...)
         iMaintenance = pkRouteInfo->GetGoldMaintenance();
         iGoldYield -= iMaintenance;  // Net gold
     }
-    
+
     // 2. Add movement speed bonus for fast routes
     int iMovementBonus = 0;
     if (eRoute == ROUTE_RAILROAD)
@@ -261,22 +261,22 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, RouteTypes eRoute, ...)
         // Railroads are 2x faster than roads
         // Value this for military purposes even if gold is negative
         iMovementBonus = 500;  // Base strategic value
-        
+
         // Reduce if empire is wealthy (already have resources)
         if (m_pPlayer->GetTreasury()->GetGoldPerTurn() > 50)
             iMovementBonus = 200;  // Still valuable but not desperate
     }
-    
+
     // 3. Check if we can afford negative-gold routes
     bool bCanAffordNegative = (m_pPlayer->GetTreasury()->GetGoldPerTurn() > 25);
-    
+
     // 4. Make decision
     if (iGoldYield < 0 && !bCanAffordNegative && iMovementBonus == 0)
     {
         // Cannot afford this route and no strategic value
         return -1;  // Don't build
     }
-    
+
     // 5. Score: weight gold lower for military routes
     if (eRoute == ROUTE_RAILROAD && m_pPlayer->GetDiplomacyAI()->GetMilitaryPressure() > threshold)
     {
@@ -288,7 +288,7 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, RouteTypes eRoute, ...)
         // Peace: prioritize gold
         iScore += (iGoldYield * 10) + iMovementBonus;  // Gold matters more
     }
-    
+
     return iScore;
 }
 ```
@@ -327,8 +327,8 @@ int CvBuilderTaskingAI::ScorePlotBuild(CvPlot* pPlot, RouteTypes eRoute, ...)
 
 ### Issue 4: Tech-Based Route Movement Improvements Underdocumented
 
-**Severity:** MEDIUM  
-**Category:** Documentation & Modding Clarity  
+**Severity:** MEDIUM
+**Category:** Documentation & Modding Clarity
 **File:** `(2) Vox Populi/Database Changes/WorldMap/Improvements/RouteChanges.sql`
 
 #### Problem
@@ -428,8 +428,8 @@ Explains:
 
 ### Issue 5: Route Planning Strategy Undocumented
 
-**Severity:** MEDIUM  
-**Category:** AI Design & Documentation  
+**Severity:** MEDIUM
+**Category:** AI Design & Documentation
 **File:** `CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp` (lines ~200-350)
 
 #### Problem
@@ -474,33 +474,33 @@ Route planning uses inline heuristics, not data-driven priorities. Thresholds ar
 ```cpp
 /*
  * CvBuilderTaskingAI::UpdateRoutePlots() - Route Priority System
- * 
+ *
  * Routes are scored and prioritized in order:
- * 
+ *
  * 1. MAIN ROUTES (Priority 100)
  *    - Capital city to ALL other founded cities
  *    - Re-evaluated every turn
  *    - Highest urgency; always built if path available
  *    - Effect: ensures rapid commodity distribution from capital
- * 
+ *
  * 2. SHORTCUT ROUTES (Priority 50)
  *    - City pairs within ROUTE_CITY_DISTANCE_SHORTCUT tiles
  *    - Re-evaluated every ROUTE_RECALC_FREQUENCY turns
  *    - Lowers pathfinding cost between frequently-used city pairs
  *    - Effect: military mobilization, trade optimization
- * 
+ *
  * 3. STRATEGIC ROUTES (Priority 75)
  *    - Routes to strategic resources (Iron, Oil, Aluminum, Uranium)
  *    - Routes to key tiles for military/cultural victory
  *    - Re-evaluated every ROUTE_RECALC_FREQUENCY turns
  *    - Effect: ensures access to strategic resources early
- * 
+ *
  * 4. TRADE ROUTES (Priority 30)
  *    - Routes between high-gold city pairs
  *    - Evaluated if gold per turn drops below threshold
  *    - Lower priority than commodity distribution
  *    - Effect: commerce optimization in mid-late game
- * 
+ *
  * Recalculation: Plans are cached and only recalculated every
  * ROUTE_RECALC_FREQUENCY turns or after war/peace changes.
  */
@@ -546,8 +546,8 @@ Explains:
 
 ### Issue 6: Movement Cost Scaling Not Optimized for Unit Types
 
-**Severity:** MEDIUM  
-**Category:** Performance & Gameplay Feel  
+**Severity:** MEDIUM
+**Category:** Performance & Gameplay Feel
 **File:** `CvGameCoreDLL_Expansion2/CvAStar.cpp`, `CvGameCoreDLL_Expansion2/CvCityConnections.cpp`
 
 #### Problem
@@ -603,16 +603,16 @@ int CvAStar::GetMovementCost(CvPlot* pFromPlot, CvPlot* pToPlot, CvUnit* pUnit)
 {
     RouteTypes eRoute = pToPlot->getRouteType();
     int iBaseCost = GC.getRouteInfo(eRoute).getMovement();
-    
+
     if (eRoute != NO_ROUTE && pUnit)
     {
         int iModifier = GetRouteMovementModifier(eRoute, pUnit->getDomainType());
         if (iModifier == -1)
             return IMPOSSIBLE_MOVE; // Unit cannot use this route
-        
+
         iBaseCost = iBaseCost * iModifier / 100;
     }
-    
+
     return iBaseCost;
 }
 ```
@@ -691,6 +691,5 @@ This is a balance/design decision, not a bug, but worth reviewing.
 
 ---
 
-**End of Review**  
+**End of Review**
 **Next Steps:** See "Summary of Recommendations" for prioritized action plan.
-

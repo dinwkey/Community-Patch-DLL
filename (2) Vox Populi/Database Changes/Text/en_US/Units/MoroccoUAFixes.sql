@@ -4,8 +4,8 @@
 -- ============================================
 
 INSERT OR IGNORE INTO Locale_en_US (Language, Tag, Text)
-VALUES 
-('en_US', 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED', 
+VALUES
+('en_US', 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED',
     'Cannot plunder trade route of allied nation.'),
 ('en_US', 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_VASSAL',
     'Cannot plunder trade route of vassal or overlord.'),

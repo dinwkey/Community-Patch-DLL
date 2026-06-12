@@ -2,7 +2,7 @@
 
 **Purpose:** Comprehensive analysis of AI behavior modules, flavor systems, handicap mechanics, and strategic weighting in Civ5 VP/CP modded core.
 
-**Last Updated:** January 2026  
+**Last Updated:** January 2026
 **Status:** Review & Issues Identification
 
 **Related:** [AI_DEEP_REASONING.md](AI_DEEP_REASONING.md) — Architecture guide for extended memory, IPC, and LLM integration
@@ -47,7 +47,7 @@ The AI system in CvGameCoreDLL_Expansion2 is composed of multiple interconnected
 ### Known Issues & Improvements
 
 #### Issue 1.1: Flavor Randomization Affecting Consistency
-**File:** [CvDiplomacyAI.cpp](CvDiplomacyAI.cpp#L1913)  
+**File:** [CvDiplomacyAI.cpp](CvDiplomacyAI.cpp#L1913)
 **Code:**
 ```cpp
 int CvDiplomacyAI::RandomizePersonalityFlavor(int iOriginalValue, const CvSeeder& seed)
@@ -96,9 +96,9 @@ void CvPlayerTechs::AddFlavorAsStrategies(int iPropagatePercent)
 {
     int iGameProgressFactor = /* progress 0-1000 */;
     // Blend current needs (responsive) with personality (long-term)
-    int iFlavorValue = ((iCurrentFlavorValue * (1000 - iGameProgressFactor)) 
+    int iFlavorValue = ((iCurrentFlavorValue * (1000 - iGameProgressFactor))
                        + (iPersonalityFlavorValue * iGameProgressFactor)) / 1000;
-    
+
     // Minimum floor to prevent zeroing
     if (iFlavorValue < 10) {
         int flavorDivisor = (iGameProgressFactor > 500) ? 8 : 4;
@@ -207,8 +207,8 @@ switch (eDisputeLevel) {
 **Pattern (examples from code):**
 ```cpp
 // Land Dispute
-DifficultyModifier = GET_PLAYER(ePlayer).isHuman(ISHUMAN_HANDICAP) 
-    ? GET_PLAYER(ePlayer).getHandicapInfo().getLandDisputePercent() 
+DifficultyModifier = GET_PLAYER(ePlayer).isHuman(ISHUMAN_HANDICAP)
+    ? GET_PLAYER(ePlayer).getHandicapInfo().getLandDisputePercent()
     : GC.getGame().getHandicapInfo().getLandDisputePercent();
 
 // Tech Block
@@ -216,7 +216,7 @@ DifficultyModifier = GET_PLAYER(ePlayer).isHuman(ISHUMAN_HANDICAP)
     ? GET_PLAYER(ePlayer).getHandicapInfo().getTechBlockPercent()
     : GC.getGame().getHandicapInfo().getTechBlockPercent();
 
-// Victory Dispute  
+// Victory Dispute
 DifficultyModifier = max(GET_PLAYER(ePlayer).getHandicapInfo().getVictoryDisputePercent(),
                          GET_PLAYER(ePlayer).getHandicapInfo().getVictoryBlockPercent());
 ```

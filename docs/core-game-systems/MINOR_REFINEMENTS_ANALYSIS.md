@@ -5,7 +5,7 @@ Collection of small, focused improvements across multiple AI and core systems. T
 ---
 
 ## 1. CvUnitMovement.cpp - Barbarian ZOC Check (13 lines)
-**File:** CvGameCoreDLL_Expansion2/CvUnitMovement.cpp  
+**File:** CvGameCoreDLL_Expansion2/CvUnitMovement.cpp
 **Change:** +1 line logic, -0
 
 ### Issue
@@ -29,11 +29,11 @@ if (eLoopUnitTeam == BARBARIAN_TEAM || kUnitTeam.isAtWar(eLoopUnitTeam) || pLoop
 ---
 
 ## 2. CvWonderProductionAI.cpp - Production Estimation & Wonder Weight Tuning (26 lines)
-**File:** CvGameCoreDLL_Expansion2/CvWonderProductionAI.cpp  
+**File:** CvGameCoreDLL_Expansion2/CvWonderProductionAI.cpp
 **Changes:** 3 distinct improvements
 
 ### Improvement 2A: Better Production Estimation
-**Location:** Line ~145  
+**Location:** Line ~145
 **Change:** Use yield rate with modifiers instead of raw production
 
 **Before:**
@@ -54,7 +54,7 @@ int iEstimatedProductionPerTurn = pLoopCity->getYieldRateTimes100(YIELD_PRODUCTI
 - **Risk:** Very low (uses standard API)
 
 ### Improvement 2B: Wonder Weight Scaling Tuning
-**Location:** Line ~162  
+**Location:** Line ~162
 **Change:** Reduced multiplier for already-started wonders from 25x to 5x
 
 **Before:**
@@ -79,18 +79,18 @@ int iTempWeight = bAlreadyStarted ? m_WonderAIWeights.GetWeight(iBldgLoop) * 5 :
 ---
 
 ## 3. CvBuildingProductionAI.cpp - Wonder Sanity Check & Competition Penalty Capping (36 lines)
-**File:** CvGameCoreDLL_Expansion2/CvBuildingProductionAI.cpp  
+**File:** CvGameCoreDLL_Expansion2/CvBuildingProductionAI.cpp
 **Changes:** 3 distinct improvements
 
 ### Improvement 3A: Wonder Building in Small Cities
-**Location:** Line ~176  
+**Location:** Line ~176
 **Change:** Restrict wonders to larger cities, capital cities only
 
 **Before:**
 ```cpp
 if (m_pCity->getPopulation() <= 6 && !m_pCity->isCapital())
 {
-    if(isWorldWonderClass(kBuildingClassInfo) || isTeamWonderClass(kBuildingClassInfo) || 
+    if(isWorldWonderClass(kBuildingClassInfo) || isTeamWonderClass(kBuildingClassInfo) ||
        isNationalWonderClass(kBuildingClassInfo) || isLimitedWonderClass(kBuildingClassInfo))
     {
         return SR_STRATEGY;
@@ -123,7 +123,7 @@ if (m_pCity->getPopulation() <= 4 && !m_pCity->isCapital())
 - **Risk:** Low (makes AI more flexible, not restrictive)
 
 ### Improvement 3B: Competition Penalty Capping
-**Location:** Line ~287-297  
+**Location:** Line ~287-297
 **Change:** Cap wonder competition penalty to prevent excessive negative values
 
 **Before:**
@@ -159,7 +159,7 @@ iBonus -= min(500, iCompetitionPenalty);
 ---
 
 ## 4. CvDealClasses.cpp - Comment Cleanup (12 lines)
-**File:** CvGameCoreDLL_Expansion2/CvDealClasses.cpp  
+**File:** CvGameCoreDLL_Expansion2/CvDealClasses.cpp
 **Change:** -1 line
 
 **Before:**

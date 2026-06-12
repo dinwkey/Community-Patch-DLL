@@ -80,7 +80,7 @@ struct PendingTransit
 	int iTurnQueued;         // Turn unit requested escort
 	bool bHighPriority;      // Settler/GP = true, combat unit = false
 
-	PendingTransit() : iUnitID(-1), iOriginPlotIndex(-1), iDestPlotIndex(-1), 
+	PendingTransit() : iUnitID(-1), iOriginPlotIndex(-1), iDestPlotIndex(-1),
 	                   eRisk(TRANSIT_RISK_UNKNOWN), iTurnQueued(-1), bHighPriority(false) {}
 };
 

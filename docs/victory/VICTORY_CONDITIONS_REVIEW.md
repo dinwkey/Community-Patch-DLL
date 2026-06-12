@@ -1,7 +1,7 @@
 # Victory Conditions & Scoring Review — Community Patch DLL (Vox Populi)
 
-**Date:** January 9, 2026  
-**Scope:** Domination, Science, Culture, Diplomatic, and Score victory conditions  
+**Date:** January 9, 2026
+**Scope:** Domination, Science, Culture, Diplomatic, and Score victory conditions
 **Primary Files Analyzed:**
 - `CvDiplomacyAI.cpp` (victory progress calculation, lines 2042-9744)
 - `CvGame.h/cpp` (victory state management)
@@ -69,7 +69,7 @@ AI civs maintain **primary and secondary victory pursuits** selected via flavor-
 
 ### 3.1 Domination Victory
 
-**Purpose:** Control all original capitals + eliminate/vassal other civs  
+**Purpose:** Control all original capitals + eliminate/vassal other civs
 **Checked by:** `GetDominationVictoryProgress()` (CvDiplomacyAI.cpp:3090-3127)
 
 #### Progress Formula
@@ -107,7 +107,7 @@ Checks:
 
 ### 3.2 Diplomatic Victory
 
-**Purpose:** Control UN votes + pass Diplomatic Victory resolution  
+**Purpose:** Control UN votes + pass Diplomatic Victory resolution
 **Checked by:** `GetDiplomaticVictoryProgress()` (CvDiplomacyAI.cpp:3132-3173)
 
 #### Progress Formula
@@ -149,7 +149,7 @@ pLeague != nullptr                              // Active league exists
 
 ### 3.3 Science Victory
 
-**Purpose:** Complete spaceship projects (with Apollo Program prerequisite)  
+**Purpose:** Complete spaceship projects (with Apollo Program prerequisite)
 **Checked by:** `GetScienceVictoryProgress()` (CvDiplomacyAI.cpp:3175-3206)
 
 #### Progress Formula
@@ -191,7 +191,7 @@ GC.getGame().isVictoryValid(VICTORY_SPACE_RACE)       // Victory enabled
 
 ### 3.4 Culture Victory
 
-**Purpose:** Achieve influential or exotic tourism on all other major civs  
+**Purpose:** Achieve influential or exotic tourism on all other major civs
 **Checked by:** `GetCultureVictoryProgress()` (CvDiplomacyAI.cpp:3209-3235)
 
 #### Progress Formula (Standard)
@@ -233,7 +233,7 @@ GC.getGame().isVictoryValid(VICTORY_CULTURAL)          // Victory enabled
 
 ### 3.5 Score Victory
 
-**Purpose:** Accumulate the highest score by game end (default: turn limit)  
+**Purpose:** Accumulate the highest score by game end (default: turn limit)
 **Checked by:** `GetScoreVictoryProgress()` (CvDiplomacyAI.cpp:3052-3087)
 
 #### Score Composition (CvPlayer.cpp:11092-11175+)
@@ -445,7 +445,7 @@ The formula caps progress at `min(iScienceProgress, 78 + iSpaceshipProgress)`, m
 
 **Code Reference:** CvDiplomacyAI.cpp:3203-3206
 ```cpp
-int iScienceProgress = (GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->GetNumTechsKnown() * 100) 
+int iScienceProgress = (GET_TEAM(m_pPlayer->getTeam()).GetTeamTechs()->GetNumTechsKnown() * 100)
                        / max(1, GC.getNumTechInfos() - 1);
 int iSpaceshipProgress = (21 * iProjectsCompleted) / max(1, iProjectsRequired);
 int iProgress = min(iScienceProgress, 78 + iSpaceshipProgress);
@@ -499,7 +499,7 @@ for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 {
     PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
     CvPlayer& kPlayer = GET_PLAYER(eLoopPlayer);
-    
+
     if (eLoopPlayer != GetID() && kPlayer.isAlive() && kPlayer.isMajorCiv())
     {
         // Calculate influence on this player
@@ -674,7 +674,7 @@ else if (IsCloseToCultureVictory())  // Checked every turn
   ```cpp
   if (m_iTurnsSincePursuitChange < 10)
       return; // Don't recalculate yet
-  
+
   int iBestProgress = GetCurrentVictoryProgress();
   for (all victories):
       if (GetProgress(eVictory) > iBestProgress + 15)  // 15-point threshold
@@ -892,7 +892,7 @@ The system is **playable and balanced** for most scenarios, but these improvemen
 
 ---
 
-**Document Version:** 1.0  
-**Analysis Date:** January 9, 2026  
-**Analyzed By:** GitHub Copilot (Claude Haiku 4.5)  
+**Document Version:** 1.0
+**Analysis Date:** January 9, 2026
+**Analyzed By:** GitHub Copilot (Claude Haiku 4.5)
 **Status:** Complete

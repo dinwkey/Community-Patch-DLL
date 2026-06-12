@@ -2465,19 +2465,17 @@ bool CvGameTrade::RecalculateTradeRoutePath(int iTradeRouteIndex)
 	if (iNewPathDanger >= iOldPathDanger * 70 / 100)
 		return false;
 
-	// Replace old path with new path
-	kConnection.m_aPlotList = newPlotList;
-	kConnection.m_iCurrentPathDanger = iNewPathDanger;
-	kConnection.m_iSpeedFactor = (100 * SPath::getNormalizedDistanceBase() * newPath.length()) / max(1, newPath.iNormalizedDistanceRaw);
-
-	// Preserve trade unit location when possible to avoid teleporting
+	// Preserve trade unit location when possible to avoid teleporting.
+	// Validate before touching the live route so a failed reroute leaves it unchanged.
+	int iNewTradeUnitLocationIndex = 0;
+	bool bNewTradeUnitMovingForward = true;
 	CvUnit* pTradeUnit = GetTradeUnitForRoute(iTradeRouteIndex);
-	if (pTradeUnit != NULL && !kConnection.m_aPlotList.empty())
+	if (pTradeUnit != NULL && !newPlotList.empty())
 	{
 		int iMatchIndex = -1;
-		for (size_t i = 0; i < kConnection.m_aPlotList.size(); i++)
+		for (size_t i = 0; i < newPlotList.size(); i++)
 		{
-			if (kConnection.m_aPlotList[i].m_iX == pTradeUnit->getX() && kConnection.m_aPlotList[i].m_iY == pTradeUnit->getY())
+			if (newPlotList[i].m_iX == pTradeUnit->getX() && newPlotList[i].m_iY == pTradeUnit->getY())
 			{
 				iMatchIndex = (int)i;
 				break;
@@ -2486,20 +2484,21 @@ bool CvGameTrade::RecalculateTradeRoutePath(int iTradeRouteIndex)
 		if (iMatchIndex < 0)
 			return false; // Avoid reroute if current unit position isn't on the new path
 
-		kConnection.m_iTradeUnitLocationIndex = iMatchIndex;
-		if (kConnection.m_iTradeUnitLocationIndex <= 0)
-			kConnection.m_bTradeUnitMovingForward = true;
-		else if (kConnection.m_iTradeUnitLocationIndex >= (int)kConnection.m_aPlotList.size() - 1)
-			kConnection.m_bTradeUnitMovingForward = false;
+		iNewTradeUnitLocationIndex = iMatchIndex;
+		if (iNewTradeUnitLocationIndex <= 0)
+			bNewTradeUnitMovingForward = true;
+		else if (iNewTradeUnitLocationIndex >= (int)newPlotList.size() - 1)
+			bNewTradeUnitMovingForward = false;
 		else
-			kConnection.m_bTradeUnitMovingForward = true;
+			bNewTradeUnitMovingForward = true;
 	}
-	else
-	{
-		// Reset trade unit location to start of new path
-		kConnection.m_iTradeUnitLocationIndex = 0;
-		kConnection.m_bTradeUnitMovingForward = true;
-	}
+
+	// Replace old path with new path only after all validation succeeds.
+	kConnection.m_aPlotList = newPlotList;
+	kConnection.m_iCurrentPathDanger = iNewPathDanger;
+	kConnection.m_iSpeedFactor = (100 * SPath::getNormalizedDistanceBase() * newPath.length()) / max(1, newPath.iNormalizedDistanceRaw);
+	kConnection.m_iTradeUnitLocationIndex = iNewTradeUnitLocationIndex;
+	kConnection.m_bTradeUnitMovingForward = bNewTradeUnitMovingForward;
 
 	return true;
 }
