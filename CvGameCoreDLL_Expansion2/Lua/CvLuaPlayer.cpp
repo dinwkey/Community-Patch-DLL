@@ -11178,17 +11178,17 @@ int CvLuaPlayer::lGetReasonActionDisabled(lua_State* L)
 					{
 						continue;
 					}
-					
+
 					TeamTypes eMoroccoTeam = pkPlayer->getTeam();
 					TeamTypes eOwnerTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
-					
+
 					// Check defensive pact
 					if (GET_TEAM(eMoroccoTeam).IsHasDefensivePact(eOwnerTeam))
 					{
 						lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED");
 						return 1;
 					}
-					
+
 					// Check vassal
 					if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
 						GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))

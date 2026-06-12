@@ -1,8 +1,8 @@
 # Game Systems Phase 2: Religion, Diplomacy, & Tech Improvements
 
-**Analysis Date:** 2026-01-12  
-**Strategy:** Selective re-implementation (not wholesale restoration)  
-**Total Impact:** ~247 Religion + 67 Diplomacy + 57 Tech + 6 Policy = 377 lines  
+**Analysis Date:** 2026-01-12
+**Strategy:** Selective re-implementation (not wholesale restoration)
+**Total Impact:** ~247 Religion + 67 Diplomacy + 57 Tech + 6 Policy = 377 lines
 **Risk Level:** MEDIUM (mostly optimizations + selective AI logic)
 
 ---
@@ -21,13 +21,13 @@ Phase 2 contains **three distinct improvement areas**:
 
 ## Phase 2A: Religion System Optimizations (247 lines)
 
-**Risk:** LOW (optimizations, no behavior changes)  
-**Files:** CvReligionClasses.cpp  
+**Risk:** LOW (optimizations, no behavior changes)
+**Files:** CvReligionClasses.cpp
 **Pattern:** Loop count caching + early exit + variable reuse
 
 ### Change 2A.1: Pantheon/Belief Scoring - Building Class Happiness
 
-**Location:** `ScoreBeliefAtCity()` (~line 8710)  
+**Location:** `ScoreBeliefAtCity()` (~line 8710)
 **Type:** Loop optimization + early exit + variable caching
 
 ```cpp
@@ -76,7 +76,7 @@ for(int jJ = 0; jJ < iNumBuildingClasses; jJ++)
 
 ### Change 2A.2: Pantheon Belief Scoring - Specialist Loop
 
-**Location:** Same function, specialist yield section  
+**Location:** Same function, specialist yield section
 **Type:** Loop optimization + variable caching
 
 ```cpp
@@ -87,14 +87,14 @@ for (jJ = 0; jJ < iNumSpecialists; jJ++)
     int iSpecialistYieldChangeValue = pEntry->GetSpecialistYieldChange((SpecialistTypes)jJ, iI);
     if (iSpecialistYieldChangeValue <= 0)
         continue;  // Skip if value is 0 or negative
-    
+
     // Reuse iSpecialistYieldChangeValue throughout instead of recalculating
 }
 ```
 
 ### Change 2A.3: Pantheon Belief Scoring - Luxury Loop
 
-**Location:** Same function, capital-only luxury section  
+**Location:** Same function, capital-only luxury section
 **Type:** Loop count caching
 
 ```cpp
@@ -108,7 +108,7 @@ for (int iResourceLoop = 0; iResourceLoop < iNumResourcesForLux; iResourceLoop++
 
 ### Change 2A.4: Building Class Yield Change Loop
 
-**Location:** Same function, yield change evaluation  
+**Location:** Same function, yield change evaluation
 **Type:** Similar pattern (cache count, early exit, variable reuse)
 
 ```cpp
@@ -118,14 +118,14 @@ for (jJ = 0; jJ < iNumBuildingClassesYield; jJ++)
     int iBuildingClassYieldChangeValue = pEntry->GetBuildingClassYieldChange(jJ, iI);
     if (iBuildingClassYieldChangeValue <= 0)
         continue;
-    
+
     // ... use iBuildingClassYieldChangeValue instead of recalculating ...
 }
 ```
 
 ### Change 2A.5: ScoreBeliefAtCity() - Similar Optimizations
 
-**Location:** Another belief scoring function  
+**Location:** Another belief scoring function
 **Type:** Same patterns applied to another function
 
 - Cache `GC.getNumResourceInfos()` in luxury evaluation
@@ -149,13 +149,13 @@ for (jJ = 0; jJ < iNumBuildingClassesYield; jJ++)
 
 ## Phase 2B: Diplomacy AI Improvements (67 lines)
 
-**Risk:** MEDIUM (adds war logic, requires testing)  
-**Files:** CvDiplomacyAI.cpp  
+**Risk:** MEDIUM (adds war logic, requires testing)
+**Files:** CvDiplomacyAI.cpp
 **Changes:** 2 distinct improvements
 
 ### Change 2B.1: Score Victory Detection
 
-**Location:** `GetScoreVictoryProgress()` function  
+**Location:** `GetScoreVictoryProgress()` function
 **Type:** Bug fix + feature addition
 
 **OLD:**
@@ -166,7 +166,7 @@ int CvDiplomacyAI::GetScoreVictoryProgress() const
 {
     if (!m_pPlayer->isAlive() || GC.getGame().getWinner() != NO_TEAM)
         return 0;
-    
+
     // ... calculate progress without checking if victory is valid ...
 }
 ```
@@ -183,7 +183,7 @@ int CvDiplomacyAI::GetScoreVictoryProgress() const
     VictoryTypes eVictoryType = (VictoryTypes)GC.getInfoTypeForString("VICTORY_SCORE");
     if (eVictoryType == NO_VICTORY || !GC.getGame().isVictoryValid(eVictoryType))
         return 0;
-    
+
     // ... calculate progress ...
 }
 ```
@@ -196,7 +196,7 @@ int CvDiplomacyAI::GetScoreVictoryProgress() const
 
 ### Change 2B.2: Defensive Pact War Decision Logic
 
-**Location:** `DoMakeWarOnPlayer()`, war declaration section  
+**Location:** `DoMakeWarOnPlayer()`, war declaration section
 **Type:** New AI decision logic
 
 **What it does:**
@@ -251,7 +251,7 @@ if (iAlliedAgainstUs > 0)
 
 ### Change 2B.3: Deal Renewal Flag
 
-**Location:** `DoSendStatementToPlayer()`, deal sending section  
+**Location:** `DoSendStatementToPlayer()`, deal sending section
 **Type:** Bug fix
 
 ```cpp
@@ -280,12 +280,12 @@ pDeal->m_bCheckedForRenewal = true;
 
 ## Phase 2C: Tech & Policy Improvements (63 lines)
 
-**Risk:** LOW (mostly caching + early exits)  
+**Risk:** LOW (mostly caching + early exits)
 **Files:** CvTechClasses.cpp, CvPolicyAI.cpp
 
 ### Change 2C.1: Tech System Loop Optimizations
 
-**Location:** Various tech calculation functions  
+**Location:** Various tech calculation functions
 **Type:** Loop caching, early exits, variable reuse
 
 **Pattern:**
@@ -301,7 +301,7 @@ for (int iEra = 0; iEra < iNumEras; iEra++)
         int iYieldValue = GetYieldChange(iTech);
         if (iYieldValue == 0)
             continue;  // Early exit
-        
+
         // ... use iYieldValue instead of recalculating ...
     }
 }
@@ -314,7 +314,7 @@ for (int iEra = 0; iEra < iNumEras; iEra++)
 
 ### Change 2C.2: Policy AI Improvements
 
-**Location:** CvPolicyAI.cpp  
+**Location:** CvPolicyAI.cpp
 **Type:** Minor balance + caching
 
 - Cache policy/building class counts

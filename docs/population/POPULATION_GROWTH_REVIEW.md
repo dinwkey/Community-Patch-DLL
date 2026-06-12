@@ -1,6 +1,6 @@
 # Population & Growth Review
 
-**Date:** January 11, 2026  
+**Date:** January 11, 2026
 **Scope:** Food, housing, growth rate, citizen assignment, yields per citizen
 
 ---
@@ -37,5 +37,5 @@ The "unlock only one city per turn" branch in `CvCityCitizens::DoTurn()` checks 
 ---
 
 ### Next Steps
-1. Fix the `unlockedGrowthAnywhereThisTurn()` condition in `CvCityCitizens.cpp#L368-L377` so that the city can exit the forced avoid state once per turn as intended.  
+1. Fix the `unlockedGrowthAnywhereThisTurn()` condition in `CvCityCitizens.cpp#L368-L377` so that the city can exit the forced avoid state once per turn as intended.
 2. Consider adding a housing cap and per‑pop yield visibility, then re‑run the population review after those hooks land.

@@ -276,6 +276,6 @@ For questions or corrections:
 
 ---
 
-**Documentation Index Version:** 1.0  
-**Last Updated:** January 2025  
+**Documentation Index Version:** 1.0
+**Last Updated:** January 2025
 **Scope:** Community Patch DLL Unit Movement & Pathfinding System

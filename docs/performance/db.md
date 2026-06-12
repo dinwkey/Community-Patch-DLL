@@ -12,7 +12,7 @@ The SQLite implementation in CIV5 supports two types of query parametrization:
   ```lua
   local sql = "SELECT ? as A, ? as B, ? as C, ? as D"
   for row in DB.Query(sql, "A", "B", "C") do
-  	print(row.A, row.B, row.C, row.D) -- A B C nil
+	print(row.A, row.B, row.C, row.D) -- A B C nil
   end
   ```
 
@@ -28,7 +28,7 @@ The SQLite implementation in CIV5 supports two types of query parametrization:
   ```lua
   local sql = "SELECT :a as A, :b as B, :a as A2, :c as C"
   for row in DB.Query(sql, "A", "B", "C") do
-  		print(row.A, row.B, row.A2, row.C) -- A B A C
+		print(row.A, row.B, row.A2, row.C) -- A B A C
   end
   ```
 - In this example:
@@ -80,7 +80,7 @@ Use `DB.CreateQuery(sql)` to precompile SQL statements for reuse.
 | `DB.Query(sql)`       | Medium      | Good for ad-hoc or infrequent queries         |
 | `DB.CreateQuery(sql)` | Fast        | Best for repeated or parameterized queries    |
 
-**Recommendation:**  
+**Recommendation:**
 Use `DB.CreateQuery` when performance matters, especially inside loops or UI update logic.
 
 **Test**

@@ -1,7 +1,7 @@
 # Route Strategic Weighting Analysis: Option A vs Option B
 
-**Date:** January 11, 2026  
-**Context:** Enhancement decision for Issue 3 (railroad strategic value)  
+**Date:** January 11, 2026
+**Context:** Enhancement decision for Issue 3 (railroad strategic value)
 **Status:** Analysis for future reference
 
 ## Overview
@@ -107,7 +107,7 @@ Modify initial route values based on strategic importance:
 ```cpp
 // Pseudocode
 int iStrategicBonus = EvaluateRouteStrategy(
-    pOriginCity, pTargetCity, 
+    pOriginCity, pTargetCity,
     eRoute,  // ROAD or RAILROAD
     m_pPlayer
 );
@@ -282,7 +282,7 @@ int EvaluateRouteStrategy(
 
 ## Decision History
 
-**Date:** January 11, 2026  
+**Date:** January 11, 2026
 **Situation:** Issue 3 implemented with uniform movement bonus
 **Question:** Should movement bonus consider strategic location?
 **Analysis:** Two approaches identified with different tradeoffs
@@ -312,4 +312,3 @@ When planning Option B, reference:
 - `m_plannedRouteAdditiveValues` storage
 - Strategic bonus patterns in existing code
 - City threat detection system
-

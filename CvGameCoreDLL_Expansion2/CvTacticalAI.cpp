@@ -1070,7 +1070,7 @@ void CvTacticalAI::FindTacticalTargets()
 					newTarget.SetAuxIntData(bImminentAttack ? 60 : 80);
 					m_AllTargets.push_back(newTarget);
 				}
-				
+
 				// Or forts/defensive improvements with high defense modifier (for pillaging!)
 				// This catches forts and similar defensive structures that don't deal damage
 				ImprovementTypes eRevealedImprovement = pLoopPlot->getRevealedImprovementType(m_pPlayer->getTeam());
@@ -1634,13 +1634,13 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 {
 	if(vUnits.empty())
 		return false;
-	
+
 	const int RETREAT_DAMAGE_THRESHOLD = 20; // Retreat if losing > 20% of army
 	const int iRetreatDamageThreshold = m_bImminentAttack ? 15 : RETREAT_DAMAGE_THRESHOLD;
-	
+
 	int iTotalHealth = 0;
 	int iTotalMaxHealth = 0;
-	
+
 	for(size_t i = 0; i < vUnits.size(); i++)
 	{
 		const CvUnit* pUnit = vUnits[i];
@@ -1648,12 +1648,12 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 		iTotalHealth += pUnit->GetCurrHitPoints();
 		iTotalMaxHealth += pUnit->GetMaxHitPoints();
 	}
-	
+
 	if(iTotalMaxHealth == 0)
 		return false;
-	
+
 	int iHealthPercent = (iTotalHealth * 100) / iTotalMaxHealth;
-	
+
 	// If army has lost > 20% health and no allies nearby, retreat (Issue 4.2)
 	if(iHealthPercent < (100 - iRetreatDamageThreshold))
 	{
@@ -1665,13 +1665,13 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 			if(!pUnit) continue;
 			iAlliedSupport += FindNearbyAlliedUnits(const_cast<CvUnit*>(pUnit), 5, pUnit->getDomainType());
 		}
-		
+
 		if(iAlliedSupport == 0)
 		{
 			return true; // Retreat
 		}
 	}
-	
+
 	return false;
 }
 
@@ -1679,16 +1679,16 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain)
 {
 	if(!pUnit) return 0;
-	
+
 	int iAlliedCount = 0;
 	CvPlot* pPlot = pUnit->plot();
 	if(!pPlot) return 0;
-	
+
 	TeamTypes eTeam = pUnit->getTeam();
-	
+
 	int iPlotX = pPlot->getX();
 	int iPlotY = pPlot->getY();
-	
+
 	// Search nearby plots for allied units (Issue 4.2: army coordination)
 	for(int iDX = -iMaxDistance; iDX <= iMaxDistance; iDX++)
 	{
@@ -1696,10 +1696,10 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
 		{
 			CvPlot* pLoopPlot = plotXYWithRangeCheck(iPlotX, iPlotY, iDX, iDY, iMaxDistance);
 			if(!pLoopPlot) continue;
-			
+
 			if(plotDistance(iPlotX, iPlotY, pLoopPlot->getX(), pLoopPlot->getY()) > iMaxDistance)
 				continue;
-			
+
 			for(int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 			{
 				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -1734,16 +1734,16 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
 
 				if(!bAllied)
 					continue;
-				
+
 				// Count units that can fight (not civilians)
 				if(!pLoopUnit->IsCombatUnit())
 					continue;
-				
+
 				iAlliedCount++;
 			}
 		}
 	}
-	
+
 	return iAlliedCount;
 }
 
@@ -1752,23 +1752,23 @@ bool CvTacticalAI::FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const v
 {
 	if(!pTargetPlot || vAlliedUnits.empty())
 		return false;
-	
+
 	const int COORDINATION_RANGE = 6; // Units within 6 tiles can coordinate
-	
+
 	// Count friendly units that can reach target
 	int iFriendlyNearby = 0;
 	for(size_t i = 0; i < vAlliedUnits.size(); i++)
 	{
 		const CvUnit* pUnit = vAlliedUnits[i];
 		if(!pUnit) continue;
-		
+
 		int iDistance = plotDistance(pUnit->getX(), pUnit->getY(), pTargetPlot->getX(), pTargetPlot->getY());
 		if(iDistance <= COORDINATION_RANGE && pUnit->canMoveInto(*pTargetPlot))
 		{
 			iFriendlyNearby++;
 		}
 	}
-	
+
 	// If multiple units can coordinate, proceed with attack (Issue 4.2: multi-unit planning)
 	return (iFriendlyNearby >= 2);
 }
@@ -1851,9 +1851,9 @@ void CvTacticalAI::ProcessDominanceZones()
 			{
 				CvString strLogString;
 				CvCity* pZoneCity = pZone->GetZoneCity();
-				strLogString.Format("Zone %d, %s, city of %s, posture %s, %d targets",  
+				strLogString.Format("Zone %d, %s, city of %s, posture %s, %d targets",
 					pZone ? pZone->GetZoneID() : -1, pZone->IsWater() ? "water" : "land",
-					pZoneCity ? pZoneCity->getNameNoSpace().c_str() : "none", 
+					pZoneCity ? pZoneCity->getNameNoSpace().c_str() : "none",
 					postureNames[eZonePosture], iTargets);
 				LogTacticalMessage(strLogString);
 			}
@@ -1946,7 +1946,7 @@ void CvTacticalAI::AssignGlobalMidPrioMoves()
 	PlotPillageMoves(AI_TACTICAL_TARGET_IMPROVEMENT_RESOURCE, false);
 	PlotPillageMoves(AI_TACTICAL_TARGET_IMPROVEMENT, false);
 	PlotBlockadeMoves();
-	
+
 	// Counter-blockade: actively hunt enemy naval units blockading our cities
 	// This is critical because blockaded cities can't heal
 	PlotCounterBlockadeMoves();
@@ -2111,7 +2111,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					if (GC.getLogging() && GC.getAILogging() && pZone)
 					{
 						CvString strLogString;
-						strLogString.Format("Zone %d, too early for attacking %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, heal/turn %d", 
+						strLogString.Format("Zone %d, too early for attacking %s, required damage %d, expected dmg/turn %d, max siege turns %d, city %s, heal/turn %d",
 							pZone ? pZone->GetZoneID() : -1, pCity->getNameNoSpace().c_str(), iRequiredDamage, iExpectedDamagePerTurn,
 							iMaxSiegeTurns, bCityBlockaded ? "blockaded" : "not blockaded", iCityHealingPerTurn);
 						LogTacticalMessage(strLogString);
@@ -2125,7 +2125,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				int iRangedDamageThisTurn = 0;
 				int iNavalMeleeCount = 0;
 				int iLandMeleeCount = 0;
-				
+
 				// Track melee units that can reach the city and their expected damage
 				for (unsigned int iI = 0; iI < m_CurrentMoveUnits.size(); iI++)
 				{
@@ -2164,7 +2164,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				bool bIslandCity = (iLandApproaches == 0);
 				bool bNavalDominatedCity = (iWaterApproaches > iLandApproaches * 2); // Water approaches are dominant
 				bool bPreferNavalCapture = pCity->isCoastal() && (bIslandCity || bNavalDominatedCity);
-				
+
 				// Naval-only siege bonus: if city is primarily naval-accessible and we have naval melee,
 				// boost the expected damage to encourage the siege
 				if ((bIslandCity || bNavalDominatedCity) && iNavalMeleeCount > 0 && pCity->isCoastal())
@@ -2188,12 +2188,12 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 				// City HP after ranged attacks this turn
 				int iCityHPAfterRanged = max(1, iRequiredDamage - iRangedDamageThisTurn);
 				bool bCaptureOpportunityThisTurn = (iTotalMeleeDamage >= iCityHPAfterRanged) && (iMeleeCount > 0);
-				
+
 				// If city is very low (<= 25% HP) or in danger of falling, also consider it a capture opportunity
 				int iCityMaxHP = pCity->GetMaxHitPoints();
 				int iCityCurrentHP = iCityMaxHP - pCity->getDamage();
 				bool bCityNearDeath = (iCityCurrentHP <= iCityMaxHP / 4) || pCity->isInDangerOfFalling();
-				
+
 				if (bCityNearDeath && iMeleeCount > 0)
 					bCaptureOpportunityThisTurn = true;
 
@@ -2287,7 +2287,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 						for (size_t iPlot = 0; iPlot < vBlockadePlots.size(); iPlot++)
 						{
 							CvPlot* pBlockadePlot = vBlockadePlots[iPlot];
-							
+
 							// Find a suitable unit that can move to this plot
 							for (unsigned int iUnit = 0; iUnit < m_CurrentMoveUnits.size(); iUnit++)
 							{
@@ -2313,9 +2313,9 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 									continue;
 
 								// Move the unit to establish blockade
-								pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pBlockadePlot->getX(), pBlockadePlot->getY(), 
+								pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pBlockadePlot->getX(), pBlockadePlot->getY(),
 									CvUnit::MOVEFLAG_IGNORE_DANGER, false, false, MISSIONAI_TACTMOVE);
-								
+
 								if (pUnit->plot() == pBlockadePlot)
 								{
 									pUnit->SetTurnProcessed(true);
@@ -2343,7 +2343,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 								if (GC.getLogging() && GC.getAILogging())
 								{
 									CvString strLogString;
-									strLogString.Format("Successfully established blockade of %s with %d units", 
+									strLogString.Format("Successfully established blockade of %s with %d units",
 										pCity->getNameNoSpace().c_str(), iBlockadesMade);
 									LogTacticalMessage(strLogString);
 								}
@@ -2374,7 +2374,7 @@ void CvTacticalAI::ExecuteCaptureCityMoves()
 					aggLevel = (iMeleeCount <= 1) ? AL_LOW : AL_MEDIUM;
 				else if (iMeleeCount > 2)
 					aggLevel = AL_HIGH;
-				
+
 				ExecuteAttackWithUnits(pPlot, aggLevel);
 
 				if (pPlot->getOwner() != m_pPlayer->GetID() && bLikelyNavalCaptureNextTurn)
@@ -2584,7 +2584,7 @@ void CvTacticalAI::PlotPlunderTradeUnitMoves(DomainTypes eDomain)
 	{
 		// Consider desperate if we have less than 50 gold (economic desperation)
 		int iGold = m_pPlayer->GetTreasury()->GetGold();
-		
+
 		// Low gold: less than 50
 		if (iGold < 50)
 		{
@@ -2722,11 +2722,11 @@ void CvTacticalAI::PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediat
 		{
 			//be careful when sending out single units ...
 			CvTacticalDominanceZone* pZone = GetTacticalAnalysisMap()->GetZoneByPlot(pPlot);
-			
+
 			CvUnit* pUnit = (m_CurrentMoveUnits.size() > 0) ? m_pPlayer->getUnit(m_CurrentMoveUnits.begin()->GetID()) : 0;
 			if (!pUnit)
 				continue;
-			
+
 			// In enemy-dominated zones, only send units that can handle the danger:
 			// - ZOC-ignoring units (can slip past defenders)
 			// - Fast units with move-after-attack (can escape)
@@ -2736,14 +2736,14 @@ void CvTacticalAI::PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediat
 				bCanOperateInEnemyZone = true;
 			else if (pUnit->canMoveAfterAttacking() && pUnit->baseMoves(false) >= 4)
 				bCanOperateInEnemyZone = true;
-			else if (pUnit->AI_getUnitAIType() == UNITAI_EXPLORE || 
+			else if (pUnit->AI_getUnitAIType() == UNITAI_EXPLORE ||
 					 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE)
 				bCanOperateInEnemyZone = true;
-			
+
 			// Block regular units from entering enemy zones, but allow special units
 			if (pZone && pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY && !bCanOperateInEnemyZone)
 				continue;
-			
+
 			// Even special units should avoid if there's no zone (unexplored)
 			if (!pZone && !bCanOperateInEnemyZone)
 				continue;
@@ -2758,7 +2758,7 @@ void CvTacticalAI::PlotPillageMoves(AITacticalTargetType eTarget, bool bImmediat
 					if (bCanOperateInEnemyZone && pZone && pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY)
 					{
 						strLogString.Format("Sending %s %s into ENEMY ZONE for pillage (%s%s%s), X: %d, Y: %d",
-							pUnit->getUnitInfo().GetDescription(), 
+							pUnit->getUnitInfo().GetDescription(),
 							pUnit->getName().GetCString(),
 							pUnit->IsIgnoreZOC() ? "ZOC-ignore " : "",
 							pUnit->canMoveAfterAttacking() ? "move-after-attack " : "",
@@ -2806,14 +2806,14 @@ void CvTacticalAI::PlotCounterBlockadeMoves()
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_BLOCKADE);
 	const int iNavalBlockadeRange = range(GD_INT_GET(NAVAL_PLOT_BLOCKADE_RANGE), 0, 3);
-	
+
 	// Find all our blockaded cities
 	int iCityLoop = 0;
 	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
 	{
 		if (!pCity->GetCityCitizens()->AnyPlotBlockaded())
 			continue;
-			
+
 		// Higher urgency if city is damaged (can't heal while blockaded)
 		bool bCityDamaged = pCity->getDamage() > 0;
 		bool bCityUnderSiege = pCity->isUnderSiege();
@@ -2968,14 +2968,14 @@ void CvTacticalAI::PlotCounterBlockadeMoves()
 void CvTacticalAI::PlotCoastalDefenseMoves()
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_ESCORT);
-	
+
 	// Find coastal cities that need naval defense
 	int iCityLoop = 0;
 	for (CvCity* pCity = m_pPlayer->firstCity(&iCityLoop); pCity != NULL; pCity = m_pPlayer->nextCity(&iCityLoop))
 	{
 		if (!pCity->isCoastal())
 			continue;
-		
+
 		// Check the water zone for this city
 		CvTacticalDominanceZone* pWaterZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
 		if (!pWaterZone)
@@ -2990,36 +2990,36 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 		// A locally blockaded city still needs help even if the zone remains net-friendly.
 		if (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_FRIENDLY && !bBlockaded)
 			continue;
-		
+
 		// Skip if no naval threat
 		if (!bEnemyNavalPresence && !bEnemyDominated && !bBlockaded)
 			continue;
-		
+
 		// Find water plots adjacent to the city that need defense
 		CvPlot* pCityPlot = pCity->plot();
 		vector<CvPlot*> vDefensePositions;
-		
+
 		for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
 		{
 			CvPlot* pAdj = plotDirection(pCityPlot->getX(), pCityPlot->getY(), (DirectionTypes)iDir);
 			if (!pAdj || !pAdj->isWater())
 				continue;
-			
+
 			// Skip if there's already a friendly naval unit here
 			CvUnit* pDefender = pAdj->getBestDefender(m_pPlayer->GetID());
 			if (pDefender && pDefender->getDomainType() == DOMAIN_SEA)
 				continue;
-			
+
 			// Skip if there's an enemy here (counter-blockade handles that)
 			if (pAdj->isEnemyUnit(m_pPlayer->GetID(), true, true))
 				continue;
-			
+
 			vDefensePositions.push_back(pAdj);
 		}
-		
+
 		if (vDefensePositions.empty())
 			continue;
-		
+
 		// Find naval units to position at these defensive spots
 		// Higher search range for more threatened cities
 		int iSearchRange = 3;
@@ -3027,7 +3027,7 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			iSearchRange = 5;
 		else if (bEnemyDominated)
 			iSearchRange = 4;
-		
+
 		// Look for available naval units.
 		// Iterate over a snapshot because UnitProcessed() removes IDs from m_CurrentTurnUnits.
 		std::vector<int> vCandidateUnits(m_CurrentTurnUnits.begin(), m_CurrentTurnUnits.end());
@@ -3036,15 +3036,15 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			CvUnit* pUnit = m_pPlayer->getUnit(vCandidateUnits[iUnit]);
 			if (!pUnit || !pUnit->canUseForTacticalAI())
 				continue;
-			
+
 			// Only naval combat units
 			if (pUnit->getDomainType() != DOMAIN_SEA || !pUnit->IsCombatUnit())
 				continue;
-			
+
 			// Don't use carriers or submarines for patrol
 			if (pUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA || pUnit->getInvisibleType() != NO_INVISIBLE)
 				continue;
-			
+
 			// Don't pull from armies
 			if (pUnit->getArmyID() != -1)
 				continue;
@@ -3052,33 +3052,33 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 			CvPlot* pUnitPlot = pUnit->plot();
 			if (!pUnitPlot)
 				continue;
-			
+
 			// Check if unit is close enough
 			if (plotDistance(*pUnitPlot, *pCityPlot) > iSearchRange * 2)
 				continue;
-			
+
 			// Don't use heavily damaged units
 			if (pUnit->shouldHeal(false))
 				continue;
-			
+
 			// Find best defense position this unit can reach
 			CvPlot* pBestPlot = NULL;
 			int iBestScore = INT_MIN;
-			
+
 			// COMBINED ARMS DEFENSE: Check what city/garrison can attack for coordination
 			CvUnit* pCityTarget = NULL;
 			if (pCity->canRangeStrike() && !pCity->isMadeAttack())
 				pCityTarget = pCity->getBestRangedStrikeTarget();
-			
+
 			for (size_t i = 0; i < vDefensePositions.size(); i++)
 			{
 				CvPlot* pDefPlot = vDefensePositions[i];
-				
+
 				// Can we reach it?
 				int iTurns = pUnit->TurnsToReachTarget(pDefPlot, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF, iSearchRange);
 				if (iTurns == MAX_INT)
 					continue;
-				
+
 				// Score: closer is better, prefer positions that block likely attack vectors
 				int iScore = 100 - iTurns * 20;
 				iScore -= GetRecentPlotPenaltyForUnit(pUnit, pDefPlot, false);
@@ -3106,7 +3106,7 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 				iScore -= iRangedThreats * 10;
 				if (vAttackers.empty())
 					iScore += 10;
-				
+
 				// Bonus for positions that face enemy territory
 				for (int iDir2 = 0; iDir2 < NUM_DIRECTION_TYPES; iDir2++)
 				{
@@ -3119,7 +3119,7 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 							iScore += 15; // Face enemy territory
 					}
 				}
-				
+
 				// COORDINATED FIRE: If ranged, prefer positions where we could attack targets
 				// from the destination plot, not just from the unit's current location.
 				if (pUnit->IsCanAttackRanged())
@@ -3135,14 +3135,14 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 
 							if (!pUnit->canEverRangeStrikeAt(pTargetPlot->getX(), pTargetPlot->getY(), pDefPlot, false))
 								continue;
-							
+
 							CvUnit* pEnemy = pTargetPlot->getBestDefender(NO_PLAYER, m_pPlayer->GetID(), NULL, true);
 							if (pEnemy)
 							{
 								// Bonus if we can attack a target the city is NOT attacking
 								if (pCityTarget != pEnemy)
 									iScore += 15;
-								
+
 								// Bonus if combined fire with city could kill
 								if (pCityTarget == pEnemy)
 								{
@@ -3156,20 +3156,20 @@ void CvTacticalAI::PlotCoastalDefenseMoves()
 						}
 					}
 				}
-				
+
 				// Prefer ranged units slightly back, melee up front
 				if (pUnit->IsCanAttackRanged() && iTurns == 0)
 					iScore -= 10; // Ranged don't need to be right next to city
 				else if (!pUnit->IsCanAttackRanged() && iTurns == 0)
 					iScore += 20; // Melee should be up front
-				
+
 				if (iScore > iBestScore)
 				{
 					iBestScore = iScore;
 					pBestPlot = pDefPlot;
 				}
 			}
-			
+
 			if (pBestPlot)
 			{
 				int iMoveResult = ExecuteMoveToPlot(pUnit, pBestPlot, false, CvUnit::MOVEFLAG_IGNORE_STACKING_SELF);
@@ -3873,7 +3873,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		bool bMemorySiege = false;
 		bool bMemoryBuildup = false;
 		CvDiplomacyAI* pDiploAI = m_pPlayer->GetDiplomacyAI();
-		
+
 		// Check for aggressive posture and memory signals from nearby players
 		// Memory signals are scoped per-city: only apply if the threatening player has forces
 		// geographically relevant to THIS city (within ~15 tiles)
@@ -3882,11 +3882,11 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			PlayerTypes eOther = (PlayerTypes)iPlayer;
 			if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive() || GET_PLAYER(eOther).isMinorCiv())
 				continue;
-			
+
 			// Only consider nearby civs for city-level garrison decisions
 			if (GET_PLAYER(eOther).GetProximityToPlayer(m_pPlayer->GetID()) < PLAYER_PROXIMITY_CLOSE)
 				continue;
-			
+
 			if (pDiploAI->GetMilitaryAggressivePosture(eOther) >= AGGRESSIVE_POSTURE_MEDIUM)
 				bAggressiveNeighbor = true;
 
@@ -3905,7 +3905,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			if (bAggressiveNeighbor && bMemoryImminent && bMemorySiege && bMemoryBuildup)
 				break;
 		}
-		
+
 		// Count enemy units in wider area (proactive detection)
 		int iNearbyEnemyUnits = 0;
 		for (int i = RING3_PLOTS; i < RING5_PLOTS; i++)
@@ -3919,7 +3919,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			}
 		}
 		bool bEnemyBuildupNearby = (iNearbyEnemyUnits >= 3);
-		
+
 		// COASTAL THREAT: Check for naval threats to coastal cities
 		bool bCoastalThreat = false;
 		int iNearbyEnemyNaval = 0;
@@ -3935,7 +3935,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				else if (pWaterZone->GetEnemyNavalUnitCount() > pWaterZone->GetFriendlyNavalUnitCount())
 					bCoastalThreat = true;
 			}
-			
+
 			// Also count enemy naval units in wider rings (proactive detection)
 			for (int i = RING2_PLOTS; i < RING5_PLOTS; i++)
 			{
@@ -3949,7 +3949,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 			}
 			if (iNearbyEnemyNaval >= 2)
 				bCoastalThreat = true;
-			
+
 			// Blockaded = definitely under coastal threat
 			if (pCity->GetCityCitizens()->AnyPlotBlockaded())
 				bCoastalThreat = true;
@@ -4105,16 +4105,16 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 				// Melee garrisons CAN attack from inside the city (adjacent enemies only)
 				// They take damage but stay garrisoned if they kill or don't kill
 				// This is valuable for finishing off wounded enemies!
-				
+
 				// IMPORTANT: Consider total risk = combat damage + incoming ranged/siege damage
 				// If attacking would leave us too weak to survive bombardment, don't attack
 				int iSafeHPThreshold = iEstimatedRangedDamage + 20; // buffer for survival
 				bool bCanSafelyAttack = (pGarrison->GetCurrHitPoints() > iSafeHPThreshold);
-				
+
 				// Leaving the city is risky - it becomes vulnerable
 				// Only leave if: few enemies, not in danger, not last city, and good opportunity
 				bAllowLeaveCity = (iWoundedEnemyCount > 0 && iEnemyCount < 2 && !bCityInDanger && m_pPlayer->getNumCities() > 1 && !bMustHoldStrategicCity);
-				
+
 				if (bCityInDanger && m_pPlayer->getNumCities() > 1 && !bMustHoldStrategicCity)
 				{
 					// City is falling - consider escaping to preserve the unit
@@ -4129,7 +4129,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 						bool bAttacked = false;
 						if (!bImminentAttack)
 							bAttacked = TacticalAIHelpers::PerformOpportunityAttack(pGarrison, false);
-						
+
 						// If we didn't attack or still have moves, escape
 						if (pGarrison->canMove())
 						{
@@ -4187,7 +4187,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 
 		//prefer ranged land units as garrisons ...
 		bool bWantGarrison = (pGarrison == NULL || !pGarrison->isNativeDomain(pPlot) || !pGarrison->IsCanAttackRanged() || pGarrison->GetRange() < 2);
-		
+
 		// PROACTIVE: Also want garrison if we detect emerging threat even if current garrison is OK
 		if (!bWantGarrison && bProactiveThreat && pGarrison == NULL)
 			bWantGarrison = true;
@@ -4195,7 +4195,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 		// Capital at war ALWAYS wants a ranged garrison — a melee garrison can't counter enemy siege
 		if (!bWantGarrison && bIsCapitalAtWar)
 			bWantGarrison = true;
-		
+
 		if ( bWantGarrison && (pCity->NeedsGarrison() || bProactiveThreat || bIsCapitalAtWar) )
 		{
 			// Use longer search range for cities with detected threat
@@ -4212,17 +4212,17 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 					iSearchRange = max(iNumTurnsAway, 3); // Aggressive posture - moderate urgency
 				else if (bHighThreat)
 					iSearchRange = max(iNumTurnsAway, 3); // High threat level - moderate urgency
-				
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
 					strLogString.Format("Proactive garrison for %s: threat=%d, aggressive=%d, buildup=%d, coastal=%d (naval=%d), search=%d turns",
-						pCity->getName().GetCString(), iThreatLevel, bAggressiveNeighbor ? 1 : 0, 
+						pCity->getName().GetCString(), iThreatLevel, bAggressiveNeighbor ? 1 : 0,
 						iNearbyEnemyUnits, bCoastalThreat ? 1 : 0, iNearbyEnemyNaval, iSearchRange);
 					LogTacticalMessage(strLogString);
 				}
 			}
-			
+
 			// Grab units that make sense for this move type
 			CvUnit* pUnit = FindUnitForThisMove(AI_TACTICAL_GARRISON, pPlot, iSearchRange);
 			bool bNeedEmergencyParadrop = false;
@@ -4251,7 +4251,7 @@ void CvTacticalAI::PlotGarrisonMoves(int iNumTurnsAway)
 					if (GC.getLogging() && GC.getAILogging())
 					{
 						CvString strLogString;
-						strLogString.Format("Unit %d, moving to garrison, X: %d, Y: %d, Priority: %d, Turns Away: %d", 
+						strLogString.Format("Unit %d, moving to garrison, X: %d, Y: %d, Priority: %d, Turns Away: %d",
 							pUnit->GetID(), pTarget->GetTargetX(), pTarget->GetTargetY(), pTarget->GetAuxIntData(), iTurnsLeft);
 						LogTacticalMessage(strLogString);
 					}
@@ -4399,7 +4399,7 @@ void CvTacticalAI::PlotAirPatrolMoves()
 {
 	ClearCurrentMoveUnits(AI_TACTICAL_AIRPATROL);
 	std::vector<CvPlot*> checkedPlotList;
-	
+
 	// COMBINED ARMS AIR DEFENSE: Track cities under threat for priority interception
 	std::vector<CvCity*> vThreatenedCities;
 	int iCityLoop = 0;
@@ -4414,7 +4414,7 @@ void CvTacticalAI::PlotAirPatrolMoves()
 			if (iEnemyAir > 0)
 				bThreatened = true;
 		}
-		
+
 		if (bThreatened)
 			vThreatenedCities.push_back(pCity);
 	}
@@ -4436,7 +4436,7 @@ void CvTacticalAI::PlotAirPatrolMoves()
 				// To at least intercept once if only one bomber found.
 				if (iNumNearbyBombers == 1)
 					iNumNearbyBombers++;
-				
+
 				// CITY DEFENSE COORDINATION: Boost interception priority for fighters at threatened cities
 				// This ensures air cover prioritizes protecting cities under siege
 				bool bProtectingThreatenedCity = false;
@@ -4448,7 +4448,7 @@ void CvTacticalAI::PlotAirPatrolMoves()
 						plotDistance(*pUnitPlot, *pThreatCity->plot()) <= pUnit->GetAirInterceptRange())
 					{
 						bProtectingThreatenedCity = true;
-						
+
 						// Extra interceptors wanted for threatened cities
 						if (pThreatCity->isUnderSiege())
 							iNumNearbyBombers += 3; // More air cover for cities under siege
@@ -4462,11 +4462,11 @@ void CvTacticalAI::PlotAirPatrolMoves()
 
 				// TODO: we should not just use any interceptor but the best one (depending on promotions etc)
 				int maxInterceptorsWanted = (iNumNearbyBombers / 2) + (iNumNearbyFighters / 4);
-				
+
 				// Minimum interceptors for locations protecting threatened cities
 				if (bProtectingThreatenedCity && maxInterceptorsWanted < 2)
 					maxInterceptorsWanted = 2;
-				
+
 				if (iNumPlotNumAlreadySet < maxInterceptorsWanted)
 				{
 					checkedPlotList.push_back(pUnitPlot);
@@ -4506,12 +4506,12 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 	{
 		if (!pCity->isCoastal())
 			return;
-		
+
 		// Check for naval threats
 		bool bEnemyNavalPresence = (pZone->GetEnemyNavalUnitCount() > 0);
 		bool bEnemyDominated = (pZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY);
 		bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
-		
+
 		// PROACTIVE: Also check for aggressive naval neighbors
 		bool bNavalThreatDetected = false;
 		for (int iPlayer = 0; iPlayer < MAX_CIV_PLAYERS && !bNavalThreatDetected; iPlayer++)
@@ -4519,17 +4519,17 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 			PlayerTypes eOther = (PlayerTypes)iPlayer;
 			if (eOther == m_pPlayer->GetID() || !GET_PLAYER(eOther).isAlive())
 				continue;
-			
+
 			// At war with them?
 			if (!m_pPlayer->IsAtWarWith(eOther))
 				continue;
-			
+
 			// Do they have naval strength nearby?
 			CvTacticalDominanceZone* pEnemyZone = GetTacticalAnalysisMap()->GetZoneByCity(pCity, true);
 			if (pEnemyZone && pEnemyZone->GetEnemyNavalStrength() > pEnemyZone->GetFriendlyNavalStrength())
 				bNavalThreatDetected = true;
 		}
-		
+
 		// Count enemy naval units in wider area (proactive detection) - range 3-5 tiles out
 		int iNearbyEnemyNaval = 0;
 		CvPlot* pCityPlot = pCity->plot();
@@ -4544,7 +4544,7 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 			}
 		}
 		bool bEnemyNavalBuildupNearby = (iNearbyEnemyNaval >= 2);
-		
+
 		// Buy naval defenders if threatened
 		if ((bEnemyNavalPresence || bEnemyDominated || bBlockaded || bNavalThreatDetected || bEnemyNavalBuildupNearby) && bWantUnits)
 		{
@@ -4554,7 +4554,7 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 				if (bBlockaded || pZone->GetFriendlyNavalUnitCount() < pZone->GetEnemyNavalUnitCount() + 1)
 				{
 					m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
-					
+
 					if (GC.getLogging() && GC.getAILogging())
 					{
 						CvString strLogString;
@@ -4593,7 +4593,7 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 			}
 		}
 	}
-	
+
 	// ALSO check if this land zone city needs naval defense (coastal city with naval threat)
 	if (pCity->isCoastal() && bWantUnits && !MOD_BALANCE_UNIT_INVESTMENTS)
 	{
@@ -4603,11 +4603,11 @@ void CvTacticalAI::PlotEmergencyPurchases(CvTacticalDominanceZone* pZone)
 			bool bNavalThreat = (pWaterZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY) ||
 				(pWaterZone->GetEnemyNavalUnitCount() > pWaterZone->GetFriendlyNavalUnitCount());
 			bool bBlockaded = pCity->GetCityCitizens()->AnyPlotBlockaded();
-			
+
 			if ((bNavalThreat || bBlockaded) && (bBlockaded || pWaterZone->GetFriendlyNavalUnitCount() < 2))
 			{
 				m_pPlayer->GetMilitaryAI()->BuyEmergencyUnit(UNITAI_ATTACK_SEA, pCity);
-				
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
@@ -4829,7 +4829,7 @@ void CvTacticalAI::PlotReinforcementMoves(CvTacticalDominanceZone* pTargetZone)
 		if (pZoneCity->isBorderCity() || m_pPlayer->GetMilitaryAI()->IsExposedToEnemy(pZoneCity, NO_PLAYER))
 			bPreposition = true;
 	}
-	
+
 	//don't try to reinforce neutral zones if there are no enemies
 	if (pZoneCity->getTeam() != m_pPlayer->getTeam() && pTargetZone->GetTotalEnemyUnitCount()==0)
 		return;
@@ -4848,7 +4848,7 @@ void CvTacticalAI::PlotReinforcementMoves(CvTacticalDominanceZone* pTargetZone)
 	if (!pTargetZone->HasNeighborZone(m_pPlayer->GetID()) && pTargetZone->GetOverallDominanceFlag() == TACTICAL_DOMINANCE_ENEMY)
 		return;
 
-	// we want units which are somewhat close (so we don't deplete other combat zones) 
+	// we want units which are somewhat close (so we don't deplete other combat zones)
 	// do not set a player - that way we can traverse unrevealed plots and foreign territory
 	SPathFinderUserData data(NO_PLAYER, PT_ARMY_MIXED, NO_PLAYER, GetRecruitRange());
 	CvPlot* pTargetPlot = pZoneCity->plot();
@@ -5053,7 +5053,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 	while (pExtraEscort)
 	{
 		vExtraEscorts.push_back(pExtraEscort);
-		pExtraEscort = pThisArmy->GetNextUnit(pExtraEscort); 
+		pExtraEscort = pThisArmy->GetNextUnit(pExtraEscort);
 	}
 
 	// No civilian? that's a problem
@@ -5063,7 +5063,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 	}
 
 	// ESCORT AND CIVILIAN MEETING UP
-	if(pThisArmy->GetArmyAIState() == ARMYAISTATE_WAITING_FOR_UNITS_TO_REINFORCE || 
+	if(pThisArmy->GetArmyAIState() == ARMYAISTATE_WAITING_FOR_UNITS_TO_REINFORCE ||
 		pThisArmy->GetArmyAIState() == ARMYAISTATE_WAITING_FOR_UNITS_TO_CATCH_UP)
 	{
 		// Check to make sure escort can get to civilian
@@ -5121,7 +5121,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 							if (pEscort==pNewEscort)
 								pOperation->SetToAbort(AI_ABORT_LOST_PATH);
 
-							return;	
+							return;
 						}
 
 						UnitProcessed(pCivilian->GetID());
@@ -5174,7 +5174,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 		{
 			iMoveFlags |= CvUnit::MOVEFLAG_AI_ABORT_IN_DANGER;
 		}
-	
+
 		// the escort leads the way
 		bool bPathFound = false;
 		bool bContinueOperation = true;
@@ -5258,7 +5258,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 					}
 				}
 			}
-			
+
 			if(!bPathFound)
 			{
 				//we have a problem, apparently civilian and escort must split up
@@ -5266,7 +5266,7 @@ void CvTacticalAI::PlotArmyMovesEscort(CvArmyAI* pThisArmy)
 				if (ExecuteMoveToPlot(pCivilian, pOperation->GetTargetPlot(), false, (iMoveFlags | CvUnit::MOVEFLAG_CONTINUE_TO_CLOSEST_PLOT))==INT_MAX)
 				{
 					pOperation->SetToAbort(AI_ABORT_LOST_PATH);
-					strLogString.Format("%s stuck at (%d,%d), cannot find safe path to target. aborting.", 
+					strLogString.Format("%s stuck at (%d,%d), cannot find safe path to target. aborting.",
 						pCivilian->getName().c_str(), pCivilian->getX(), pCivilian->getY() );
 					bContinueOperation = false;
 				}
@@ -5397,10 +5397,10 @@ void CvTacticalAI::PlotArmyMovesCombat(CvArmyAI* pThisArmy)
 	}
 
 	// RECRUITING
-	if(pThisArmy->GetArmyAIState() == ARMYAISTATE_WAITING_FOR_UNITS_TO_REINFORCE || 
+	if(pThisArmy->GetArmyAIState() == ARMYAISTATE_WAITING_FOR_UNITS_TO_REINFORCE ||
 		pThisArmy->GetArmyAIState() == ARMYAISTATE_WAITING_FOR_UNITS_TO_CATCH_UP)
 	{
-		// This is where we try to gather. Don't use the center of mass here, it may drift anywhere 
+		// This is where we try to gather. Don't use the center of mass here, it may drift anywhere
 		ExecuteGatherMoves(pThisArmy,pThisTurnTarget);
 	}
 
@@ -5541,12 +5541,12 @@ bool CvTacticalAI::CheckForEnemiesNearArmy(CvArmyAI* pArmy)
 
 		//can we attack somebody?
 		vector<pair<CvPlot*, bool>> targets = TacticalAIHelpers::GetTargetsInRange(pUnit);
-		
+
 		//who can attack us? Use cache to avoid redundant lookups
 		int iPlotIndex = pUnit->plot()->GetPlotIndex();
 		if (cachedEnemyAttackers.find(iPlotIndex) == cachedEnemyAttackers.end())
 			cachedEnemyAttackers[iPlotIndex] = m_pPlayer->GetPossibleAttackers(*pUnit->plot(), m_pPlayer->getTeam());
-		
+
 		vector<CvUnit*>& vEnemyAttackers = cachedEnemyAttackers[iPlotIndex];
 
 		if (targets.empty() && vEnemyAttackers.empty())
@@ -5679,7 +5679,7 @@ void CvTacticalAI::DumpTacticalTargets()
 	{
 		CvUnit* pUnit = pTarget->GetUnitPtr();
 		CvString strMsg;
-		strMsg.Format("Enemy %s, id %d at (%d,%d), score %d, damage %d", 
+		strMsg.Format("Enemy %s, id %d at (%d,%d), score %d, damage %d",
 			pUnit->getName().c_str(), pUnit->GetID(), pTarget->GetTargetX(), pTarget->GetTargetY(),
 			pTarget->GetAuxIntData(), pUnit->getDamage());
 		LogTacticalMessage(strMsg);
@@ -5738,11 +5738,11 @@ void CvTacticalAI::UpdateTargetScores()
 			}
 
 			it->SetAuxIntData(max(1, iScore));
-			
+
 			CvUnit* pTargetUnit = it->GetUnitPtr();
 			if (!pTargetUnit)
 				continue;
-			
+
 			// SEAD (Suppression of Enemy Air Defenses): Prioritize AA units when we have air power
 			// Ground/naval forces should clear interceptors before our bombers go in
 			if (bHaveAirUnits && pTargetUnit->canIntercept() && pTargetUnit->getDomainType() != DOMAIN_AIR)
@@ -5750,18 +5750,18 @@ void CvTacticalAI::UpdateTargetScores()
 				// This is a land-based AA unit (Mobile SAM, AA Gun, etc.)
 				// Prioritize it so ground forces clear it before air strikes
 				int iAABonus = 20;
-				
+
 				// Higher bonus if we have more air units waiting
 				if (iAirUnitCount >= 3)
 					iAABonus += 15;
 				else if (iAirUnitCount >= 2)
 					iAABonus += 8;
-				
+
 				// Check if any of our units (including naval ranged) can attack this AA
 				// Naval ranged units can attack land targets!
 				bool bNearOurForces = (myUnits.size() > 0);
 				bool bNavalCanAttack = false;
-				
+
 				// Check for naval ranged units that can strike this land AA target
 				for (list<int>::iterator unitIt = m_CurrentTurnUnits.begin(); unitIt != m_CurrentTurnUnits.end(); ++unitIt)
 				{
@@ -5776,33 +5776,33 @@ void CvTacticalAI::UpdateTargetScores()
 						}
 					}
 				}
-				
+
 				if (bNearOurForces || bNavalCanAttack)
 					iAABonus += 10;
-				
+
 				// Extra bonus if naval can attack - combined arms flexibility
 				if (bNavalCanAttack)
 					iAABonus += 5;
-				
+
 				// Check interception range - AA units covering critical areas are priority
 				int iInterceptRange = pTargetUnit->GetAirInterceptRange();
 				if (iInterceptRange >= 4)
 					iAABonus += 10; // Long-range AA is very dangerous
 				else if (iInterceptRange >= 2)
 					iAABonus += 5;
-				
+
 				it->SetAuxIntData(it->GetAuxIntData() + iAABonus);
-				
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
 					strLogString.Format("SEAD target: %s at (%d,%d), AA range %d, priority boosted by %d (air units: %d, naval can attack: %s)",
-						pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(), 
+						pTargetUnit->getName().GetCString(), pPlot->getX(), pPlot->getY(),
 						iInterceptRange, iAABonus, iAirUnitCount, bNavalCanAttack ? "yes" : "no");
 					LogTacticalMessage(strLogString);
 				}
 			}
-			
+
 			// COUNTER-BLOCKADE: Prioritize naval units that are blockading our cities
 			// Breaking blockades is critical - it restores city healing and trade income
 			if (pTargetUnit->getDomainType() == DOMAIN_SEA && pPlot->isBlockaded(m_pPlayer->GetID()))
@@ -5842,12 +5842,12 @@ void CvTacticalAI::UpdateTargetScores()
 						break;
 					}
 				}
-				
+
 				if (bBlockadingOurCity)
 				{
 					// Major priority boost for units actively blockading our cities
 					it->SetAuxIntData(it->GetAuxIntData() + 25);
-					
+
 					if (GC.getLogging() && GC.getAILogging())
 					{
 						CvString strLogString;
@@ -5857,7 +5857,7 @@ void CvTacticalAI::UpdateTargetScores()
 					}
 				}
 			}
-			
+
 			// COMBINED ARMS BOMBARDMENT: Prioritize units defending enemy cities under siege
 			// Naval ranged AND air units should prioritize clearing garrison/defenders when ground forces are assaulting
 			if (pTargetUnit->getDomainType() == DOMAIN_LAND || pTargetUnit->IsGarrisoned())
@@ -5874,7 +5874,7 @@ void CvTacticalAI::UpdateTargetScores()
 							pEnemyCity = pAdj->getPlotCity();
 					}
 				}
-				
+
 				if (pEnemyCity)
 				{
 					// Check for combined arms siege - count all friendly forces around the city
@@ -5883,7 +5883,7 @@ void CvTacticalAI::UpdateTargetScores()
 					int iOurNavalUnits = 0;
 					bool bWeHaveNavalRanged = false;
 					bool bWeHaveAirUnits = false;
-					
+
 					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
 					{
 						CvPlot* pAdj = plotDirection(pEnemyCity->getX(), pEnemyCity->getY(), (DirectionTypes)iDir);
@@ -5899,7 +5899,7 @@ void CvTacticalAI::UpdateTargetScores()
 									iOurLandUnits++;
 								}
 							}
-							
+
 							// Check if we have naval units nearby
 							if (pAdj->isWater())
 							{
@@ -5914,7 +5914,7 @@ void CvTacticalAI::UpdateTargetScores()
 							}
 						}
 					}
-					
+
 					// Check if we have air units that can strike this city
 					if (bHaveAirUnits)
 					{
@@ -5931,13 +5931,13 @@ void CvTacticalAI::UpdateTargetScores()
 							}
 						}
 					}
-					
+
 					// If siege is ongoing and we have ranged fire support (naval or air), prioritize this target
 					if (bSiegeOngoing && (bWeHaveNavalRanged || bWeHaveAirUnits))
 					{
 						int iCombinedArmsBonus = 15;
 						int iTotalAttackers = iOurLandUnits + iOurNavalUnits;
-						
+
 						// More attackers = more value in clearing defenders
 						if (iTotalAttackers >= 4)
 							iCombinedArmsBonus += 15;
@@ -5945,7 +5945,7 @@ void CvTacticalAI::UpdateTargetScores()
 							iCombinedArmsBonus += 12;
 						else if (iTotalAttackers >= 2)
 							iCombinedArmsBonus += 6;
-						
+
 						// Multi-domain assault bonus
 						int iDomains = 0;
 						if (iOurLandUnits > 0) iDomains++;
@@ -5955,17 +5955,17 @@ void CvTacticalAI::UpdateTargetScores()
 							iCombinedArmsBonus += 15; // Full combined arms assault!
 						else if (iDomains >= 2)
 							iCombinedArmsBonus += 8;
-						
+
 						// Garrison is priority - it adds city defense and counterattack
 						if (pTargetUnit->IsGarrisoned())
 							iCombinedArmsBonus += 15;
-						
+
 						// City already damaged = assault in progress, high priority
 						if (pEnemyCity->getDamage() > 0)
 							iCombinedArmsBonus += 10;
-						
+
 						it->SetAuxIntData(it->GetAuxIntData() + iCombinedArmsBonus);
-						
+
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
@@ -5978,7 +5978,7 @@ void CvTacticalAI::UpdateTargetScores()
 					}
 				}
 			}
-			
+
 			// === AIR SOFTENING COORDINATION FOR GROUND ATTACKS ===
 			// Ground forces should prefer attacking targets that air units can soften first
 			// This creates efficient combined arms: air weakens, ground finishes
@@ -5987,30 +5987,30 @@ void CvTacticalAI::UpdateTargetScores()
 				int iAirSofteningBonus = 0;
 				int iEstimatedAirDamage = 0;
 				int iAirUnitsCanStrike = 0;
-				
+
 				// Count air units that can strike this target and estimate damage
 				for (list<int>::iterator airIt = m_CurrentTurnUnits.begin(); airIt != m_CurrentTurnUnits.end(); ++airIt)
 				{
 					CvUnit* pAirUnit = m_pPlayer->getUnit(*airIt);
 					if (!pAirUnit || pAirUnit->getDomainType() != DOMAIN_AIR || !pAirUnit->IsCanAttackRanged())
 						continue;
-					
+
 					if (pAirUnit->canRangeStrikeAt(pPlot->getX(), pPlot->getY()))
 					{
 						iAirUnitsCanStrike++;
-						
+
 						// Estimate air damage (rough calculation)
 						int iUnusedRef = 0;
 						int iDamage = pAirUnit->GetAirCombatDamage(pTargetUnit, NULL, 0, iUnusedRef, false);
 						iEstimatedAirDamage += iDamage;
 					}
 				}
-				
+
 				if (iAirUnitsCanStrike > 0)
 				{
 					int iTargetHP = pTargetUnit->GetCurrHitPoints();
 					int iTargetMaxHP = pTargetUnit->GetMaxHitPoints();
-					
+
 					// Case 1: Air can kill outright - high priority (let air handle it, ground moves on)
 					if (iEstimatedAirDamage >= iTargetHP)
 					{
@@ -6026,20 +6026,20 @@ void CvTacticalAI::UpdateTargetScores()
 					{
 						iAirSofteningBonus += 10; // Worthwhile softening
 					}
-					
+
 					// Bonus for multiple air units - more reliable softening
 					if (iAirUnitsCanStrike >= 3)
 						iAirSofteningBonus += 8;
 					else if (iAirUnitsCanStrike >= 2)
 						iAirSofteningBonus += 4;
-					
+
 					// Target is already wounded - coordinate to finish it off
 					int iHPPercent = (iTargetHP * 100) / iTargetMaxHP;
 					if (iHPPercent <= 50)
 					{
 						// Wounded unit that air can further weaken - excellent target
 						iAirSofteningBonus += 12;
-						
+
 						// Even better if air can finish it
 						if (iEstimatedAirDamage >= iTargetHP)
 							iAirSofteningBonus += 8;
@@ -6049,7 +6049,7 @@ void CvTacticalAI::UpdateTargetScores()
 						// Moderately damaged - air softening is valuable
 						iAirSofteningBonus += 6;
 					}
-					
+
 					// High-value targets worth softening
 					UnitAITypes eTargetAI = pTargetUnit->AI_getUnitAIType();
 					if (eTargetAI == UNITAI_CITY_BOMBARD || eTargetAI == UNITAI_RANGED)
@@ -6062,9 +6062,9 @@ void CvTacticalAI::UpdateTargetScores()
 						// Strong units benefit most from softening
 						iAirSofteningBonus += 5;
 					}
-					
+
 					it->SetAuxIntData(it->GetAuxIntData() + iAirSofteningBonus);
-					
+
 					if (GC.getLogging() && GC.getAILogging() && iAirSofteningBonus >= 15)
 					{
 						CvString strLogString;
@@ -6511,11 +6511,11 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 		CvUnit* pGroundUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[iGround].GetID());
 		if (!pGroundUnit || pGroundUnit->getDomainType() == DOMAIN_AIR)
 			continue;
-		
+
 		int iExpectedDamage = m_CurrentMoveUnits[iGround].GetExpectedTargetDamage();
 		if (iExpectedDamage > 0)
 			iTotalGroundDamage += iExpectedDamage;
-		
+
 		if (pGroundUnit->IsCanAttackRanged())
 			iGroundRangedCount++;
 		else
@@ -6573,17 +6573,17 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					//bonus for hitting units in cities, can only do that with missiles
 					if (pDefender->plot()->isCity())
 						iValue += 17;
-					
+
 					// MISSILE COST-BENEFIT: One-time use requires worthwhile targets
 					// Don't waste missiles on low-value targets
 					{
 						int iTargetValue = 0;
 						int iDefenderStrength = pDefender->GetBaseCombatStrength();
 						int iMissileStrength = pUnit->GetBaseRangedCombatStrength();
-						
+
 						// Calculate target value based on unit type and situation
 						UnitAITypes eDefenderAI = pDefender->AI_getUnitAIType();
-						
+
 						// HIGH PRIORITY: Enemy AA units - missiles can't be intercepted!
 						// Killing AA clears the way for our bombers
 						bool bTargetIsAA = (pDefender->GetAirInterceptRange() > 0 || pDefender->canIntercept());
@@ -6591,7 +6591,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						{
 							// Base bonus for AA
 							iTargetValue += 90;
-							
+
 							// Extra bonus if we have bombers that would benefit
 							int iOurBombers = m_pPlayer->GetNumUnitsWithUnitAI(UNITAI_ATTACK_AIR, true);
 							int iOurFighters = m_pPlayer->GetNumUnitsWithUnitAI(UNITAI_DEFENSE_AIR, true);
@@ -6599,7 +6599,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 							{
 								iTargetValue += 40; // We have air units that benefit from AA removal
 							}
-							
+
 							// Even more bonus for strong AA
 							if (pDefender->interceptionProbability() >= 50)
 							{
@@ -6631,28 +6631,28 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						{
 							iTargetValue += 20; // Regular melee - lower value for missile
 						}
-						
+
 						// Bonus for hitting high-strength units
 						if (iDefenderStrength > iMissileStrength)
 						{
 							iTargetValue += (iDefenderStrength - iMissileStrength) / 2;
 						}
-						
+
 						// Major bonus for kills - missile is "worth it" if it gets a kill
 						if (pDefender->GetCurrHitPoints() <= iAirDamage)
 						{
 							iTargetValue += 50; // Kill bonus
-							
+
 							// Extra bonus for killing expensive units
 							if (iDefenderStrength >= 50)
 								iTargetValue += 30;
 						}
-						
+
 						// Bonus for targets in cities (missiles' unique capability)
 						if (pDefender->plot()->isCity())
 						{
 							iTargetValue += 40; // Only missiles can hit these!
-							
+
 							CvCity* pTargetCity = pDefender->plot()->getPlotCity();
 							if (pTargetCity && pTargetCity->isInDangerOfFalling())
 							{
@@ -6660,28 +6660,28 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 								iTargetValue += 60;
 							}
 						}
-						
+
 						// Strategic timing: missiles are most valuable during active assaults
 						if (pApproximateTargetPlot && plotDistance(*pTestPlot, *pApproximateTargetPlot) <= 3)
 						{
 							iTargetValue += 30; // Target is near our main objective
 						}
-						
+
 						// COORDINATION WITH GROUND/NAVAL ATTACKS
 						// Missiles should support friendly units that are engaging this target
 						{
 							CvPlot* pTargetPlot = pDefender->plot();
 							int iFriendlyMeleeAdjacent = pTargetPlot->GetNumFriendlyUnitsAdjacent(m_pPlayer->getTeam(), NO_DOMAIN, false);
-							
+
 							// Friendly melee units adjacent to target - they're attacking!
 							if (iFriendlyMeleeAdjacent > 0)
 							{
 								iTargetValue += 50; // Help our troops finish the job
-								
+
 								// Extra bonus if multiple units engaging
 								if (iFriendlyMeleeAdjacent >= 2)
 									iTargetValue += 25;
-								
+
 								// Even more if target is wounded - coordinate for the kill
 								int iDefenderHPPct = (pDefender->GetCurrHitPoints() * 100) / pDefender->GetMaxHitPoints();
 								if (iDefenderHPPct <= 50)
@@ -6689,7 +6689,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 									iTargetValue += 40; // Wounded target with friendlies engaging - finish it!
 								}
 							}
-							
+
 							// Check if our ground forces are in range to follow up
 							int iFriendlyUnitsInRange = 0;
 							for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
@@ -6712,7 +6712,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 									}
 								}
 							}
-							
+
 							// Ranged units can follow up our missile strike
 							if (iFriendlyUnitsInRange >= 2)
 							{
@@ -6722,7 +6722,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 							{
 								iTargetValue += 15;
 							}
-							
+
 							// SOFTENING FOR ASSAULT: If target is blocking advance toward objective
 							if (pApproximateTargetPlot)
 							{
@@ -6731,7 +6731,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 								if (iTargetToObjective <= 2)
 								{
 									iTargetValue += 30; // Target is blocking our path to objective
-									
+
 									// Check if city assault is imminent
 									if (pApproximateTargetPlot->isCity())
 									{
@@ -6745,10 +6745,10 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 								}
 							}
 						}
-						
+
 						// Apply value threshold: don't fire if target isn't worth the missile
 						int iMinValueThreshold = 50; // Baseline for "worth firing"
-						
+
 						// Lower threshold if we're in a critical battle
 						if (pApproximateTargetPlot && pApproximateTargetPlot->isCity())
 						{
@@ -6758,7 +6758,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 								iMinValueThreshold = 30; // More willing to use missiles during city assault
 							}
 						}
-						
+
 						if (iTargetValue < iMinValueThreshold)
 						{
 							// Target not worth the missile - heavy penalty
@@ -6799,7 +6799,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					{
 						// Interceptors still active - penalize based on how many and our health
 						int iUnitHPct = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
-						
+
 						if (iInterceptorCount >= 2)
 						{
 							// Multiple interceptors - very dangerous, heavy penalty
@@ -6824,7 +6824,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 				int iLandAACount = 0;
 				int iLandAAMaxDamage = 0;
 				int iInterceptRange = pUnit->GetAirInterceptRange(); // Use our range as reference
-				
+
 				for (int iDX = -iInterceptRange; iDX <= iInterceptRange; iDX++)
 				{
 					for (int iDY = -iInterceptRange; iDY <= iInterceptRange; iDY++)
@@ -6832,7 +6832,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						CvPlot* pLoopPlot = plotXYWithRangeCheck(pTestPlot->getX(), pTestPlot->getY(), iDX, iDY, iInterceptRange);
 						if (!pLoopPlot)
 							continue;
-						
+
 						for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 						{
 							CvUnit* pAAUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -6840,7 +6840,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 								continue;
 							if (!GET_TEAM(pUnit->getTeam()).isAtWar(pAAUnit->getTeam()))
 								continue;
-							
+
 							// Check if this is a land-based AA unit (not an air interceptor)
 							if (pAAUnit->getDomainType() != DOMAIN_AIR && pAAUnit->canIntercept())
 							{
@@ -6857,12 +6857,12 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						}
 					}
 				}
-				
+
 				// Penalize targets protected by land-based AA
 				if (iLandAACount > 0)
 				{
 					int iUnitHP = pUnit->GetCurrHitPoints();
-					
+
 					// High threat: AA could kill us
 					if (iLandAAMaxDamage >= iUnitHP)
 					{
@@ -6882,17 +6882,17 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 
 				// AIR-GROUND COORDINATION: Adjust value based on ground combat needs
 				// Goal: Air should soften targets that ground forces will engage
-				
+
 				int iDefenderHP = pDefender->GetCurrHitPoints();
 				bool bIsOnPrimaryTarget = (pTestPlot == pApproximateTargetPlot);
 				bool bIsAdjacentToTarget = (pApproximateTargetPlot && plotDistance(*pTestPlot, *pApproximateTargetPlot) == 1);
-				
+
 				// Priority 1: Soften the primary target city - ground forces will definitely engage this
 				if (pCity && bIsOnPrimaryTarget)
 				{
 					// City is the main target - air softening is highly valuable
 					int iCityHP = pCity->GetMaxHitPoints() - pCity->getDamage();
-					
+
 					// Bonus for attacking city that needs softening for capture
 					// If city HP > ground damage, air is critical for the assault
 					if (iCityHP > iTotalGroundDamage)
@@ -6901,7 +6901,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						// Bigger bonus the more damage we need
 						iValue += min(iAirDamage, iNeededDamage) / 2;
 					}
-					
+
 					// If city is close to capturable and we have melee, bonus for finishing softening
 					if (iGroundMeleeCount > 0 && iCityHP <= iTotalGroundDamage + iAirDamage)
 					{
@@ -6913,11 +6913,11 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 				{
 					// Enemy units adjacent to target city/position threaten our attackers
 					iValue += 15;
-					
+
 					// Extra bonus if this is a ranged/siege unit threatening our melee
 					if (pDefender->IsCanAttackRanged())
 						iValue += 10;
-					
+
 					// If we can kill it, even better - clears the approach
 					if (iDefenderHP <= iAirDamage)
 						iValue += 20;
@@ -6943,7 +6943,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 						iValue -= 5;
 					}
 				}
-				
+
 				// Avoid overkill: penalize targeting units that are already near death
 				// if ground forces can finish them easily
 				if (!pCity && iDefenderHP <= 20 && iTotalGroundDamage >= iDefenderHP * 2)
@@ -6951,34 +6951,34 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					// Ground forces can easily kill this wounded unit - save air for tougher targets
 					iValue -= 15;
 				}
-				
+
 				// Bonus for high-threat targets that will damage our melee attackers
 				if (!pCity && pDefender->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
 				{
 					// Enemy siege is devastating - prioritize killing it before it fires
 					iValue += 25;
 				}
-				
+
 				// === DIRECT GROUND ENGAGEMENT BONUS ===
 				// Strongly prioritize targets that have friendly ground units actively engaging
 				// This ensures air softens enemies our troops are fighting RIGHT NOW
 				if (!pCity)
 				{
 					int iFriendlyMeleeAdjacent = pTestPlot->GetNumFriendlyUnitsAdjacent(m_pPlayer->getTeam(), DOMAIN_LAND, false, NULL);
-					
+
 					if (iFriendlyMeleeAdjacent > 0)
 					{
 						// Our melee units are adjacent - they're attacking this turn!
 						iValue += 30; // Strong bonus for coordinated strike
-						
+
 						// More units engaging = higher priority for air support
 						if (iFriendlyMeleeAdjacent >= 2)
 							iValue += 15;
-						
+
 						// If our units can't kill it alone, air is critical
 						if (iDefenderHP > iTotalGroundDamage)
 							iValue += 20;
-						
+
 						// Bonus for helping wounded friendlies - they need fire support
 						for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
 						{
@@ -6999,7 +6999,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 							}
 						}
 					}
-					
+
 					// Also check for friendly ranged units in range - they benefit from softening too
 					int iFriendlyRangedInRange = 0;
 					for (int iRing = 1; iRing <= 2; iRing++)
@@ -7018,7 +7018,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 							}
 						}
 					}
-					
+
 					if (iFriendlyRangedInRange >= 2)
 					{
 						// Multiple ranged units targeting this - air softening helps them all
@@ -7031,7 +7031,7 @@ CvPlot* CvTacticalAI::FindAirTargetNearTarget(CvUnit* pUnit, CvPlot* pApproximat
 					iBestValue = iValue;
 					pBestPlot = pTestPlot;
 				}
-			}			
+			}
 		}
 	}
 
@@ -7077,7 +7077,7 @@ void CvTacticalAI::ExecuteAirSweep(CvPlot* pTargetPlot)
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strMsg;
-					strMsg.Format("Air sweep with %s %d at X: %d, Y: %d - interceptors remaining: %d", 
+					strMsg.Format("Air sweep with %s %d at X: %d, Y: %d - interceptors remaining: %d",
 						pUnit->getName().c_str(), pUnit->GetID(), pTargetPlot->getX(), pTargetPlot->getY(), iInterceptorsRemaining);
 					LogTacticalMessage(strMsg);
 				}
@@ -7260,7 +7260,7 @@ bool CvTacticalAI::PositionUnitsAroundTarget(const vector<CvUnit*>& vUnits, CvPl
 
 		if (pUnit->TurnProcessed())
 			continue;
-		
+
 		// This plot distance function call is valid since the update function was called in FindAndExecuteBestUnitAssignments
 		if (bTactSimSuccess && TacticalAIHelpers::GetPlotDistanceToTarget(pUnit->plot()->GetPlotIndex(), pUnit->getDomainType()) <= TACTICAL_COMBAT_MAX_TARGET_DISTANCE)
 			continue; //do not end the turn ... we may want to shuffle them around later
@@ -7271,7 +7271,7 @@ bool CvTacticalAI::PositionUnitsAroundTarget(const vector<CvUnit*>& vUnits, CvPl
 	//we want to move the civilians last so they have a better chance of getting cover
 	struct PrSortCombatFirst
 	{
-		bool operator()(const CvUnit* lhs, const CvUnit* rhs) const 
+		bool operator()(const CvUnit* lhs, const CvUnit* rhs) const
 			{ return (lhs->IsCivilianUnit() ? 2 : lhs->AI_getUnitAIType()==UNITAI_CITY_BOMBARD ? 1 : 0) < (rhs->IsCivilianUnit() ? 2 : rhs->AI_getUnitAIType() == UNITAI_CITY_BOMBARD ? 1 : 0); }
 	};
 	std::stable_sort(farout.begin(), farout.end(), PrSortCombatFirst());
@@ -7364,14 +7364,14 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 	{
 		PrPlotMatch(CvPlot* refPlot) : pRefPlot(refPlot) {}
 		CvPlot* pRefPlot;
-		bool operator()(const SAssignment& other) { return pRefPlot==other.pPlot; } 
+		bool operator()(const SAssignment& other) { return pRefPlot==other.pPlot; }
 	};
 
 	struct PrUnitMatch
 	{
 		PrUnitMatch(CvUnit* refUnit) : pRefUnit(refUnit) {}
 		CvUnit* pRefUnit;
-		bool operator()(const SAssignment& other) { return pRefUnit==other.pUnit; } 
+		bool operator()(const SAssignment& other) { return pRefUnit==other.pUnit; }
 	};
 
 	vector<SAssignment> choices;
@@ -7391,7 +7391,7 @@ void CvTacticalAI::ExecuteLandingOperation(CvPlot* pTargetPlot)
 				continue;
 
 			const uint32 plotFlags = pEvalPlot->GetPlotCacheFlags();
-			
+
 			int iBonus = plotDistance(*pEvalPlot,*pTargetPlot) * (-10);
 			if (pCapturedCity)
 			{
@@ -7545,7 +7545,7 @@ void CvTacticalAI::ExecuteRepositionMoves()
 				{
 					CvString strTemp = pUnit->getUnitInfo().GetDescription();
 					CvString strLogString;
-					strLogString.Format("%s moving to reinforce city at, X: %d, Y: %d, Current X: %d, Current Y: %d", 
+					strLogString.Format("%s moving to reinforce city at, X: %d, Y: %d, Current X: %d, Current Y: %d",
 						strTemp.GetCString(), pTestPlot->getX(), pTestPlot->getY(), pUnit->getX(), pUnit->getY());
 					LogTacticalMessage(strLogString);
 				}
@@ -7784,7 +7784,7 @@ void CvTacticalAI::ExecuteHeals(bool bFirstPass)
 			if (pUnit->shouldPillage(pUnit->plot()))
 			{
 				pUnit->PushMission(CvTypes::getMISSION_PILLAGE());
-			
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strMsg;
@@ -7807,7 +7807,7 @@ void CvTacticalAI::ExecuteHeals(bool bFirstPass)
 	}
 }
 
-/// Move barbarian to faraway targets 
+/// Move barbarian to faraway targets
 void CvTacticalAI::ExecuteBarbarianRoaming()
 {
 	for(unsigned int iI = 0; iI < m_CurrentMoveUnits.size(); iI++)
@@ -7833,7 +7833,7 @@ void CvTacticalAI::ExecuteBarbarianRoaming()
 				CvPlot* pBestPlot = FindBestBarbarianLandTarget(pUnit);
 				if(!pBestPlot)
 					continue;
-					
+
 				//civilian to capture?
 				bool bTargetIsCombat = pBestPlot->isEnemyUnit(BARBARIAN_PLAYER, true, true);
 				bool bTargetIsCivilian = pBestPlot->isEnemyUnit(BARBARIAN_PLAYER, false, true);
@@ -7908,7 +7908,7 @@ int CvTacticalAI::ExecuteMoveToPlot(CvUnit* pUnit, CvPlot* pTarget, bool bSetPro
 			if (pUnit->shouldPillage(pUnit->plot(), true, true) && (pUnit->hasFreePillageMove() || pUnit->GetMovementPointsAtCachedTarget()>=GD_INT_GET(MOVE_DENOMINATOR)))
 			{
 				pUnit->PushMission(CvTypes::getMISSION_PILLAGE());
-				
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strMsg;
@@ -7937,7 +7937,7 @@ int CvTacticalAI::ExecuteMoveToPlot(CvUnit* pUnit, CvPlot* pTarget, bool bSetPro
 					pUnit->PushMission(CvTypes::getMISSION_MOVE_TO(), pTarget->getX(), pTarget->getY(), 0 /*no approximate flags*/, false, false, MISSIONAI_TACTMOVE, pTarget);
 			}
 		}
-		//maybe units are blocking our way? 
+		//maybe units are blocking our way?
 		else if (pUnit->GeneratePath(pTarget,iFlags|CvUnit::MOVEFLAG_IGNORE_STACKING_SELF,INT_MAX,&iTurns))
 		{
 			//already close? try to push the other unit out
@@ -8151,7 +8151,7 @@ void CvTacticalAI::ExecuteWithdrawMoves()
 		CvUnit* pUnit = m_pPlayer->getUnit(m_CurrentMoveUnits[iI].GetID());
 		if(!pUnit)
 			continue;
-		
+
 		// Allow withdraw to neighboring tactical zone which seems safe
 		CvTacticalDominanceZone* pZone = GetTacticalAnalysisMap()->GetZoneByPlot(pUnit->plot());
 		if (!pZone)
@@ -8204,7 +8204,7 @@ void CvTacticalAI::ExecuteWithdrawMoves()
 			if(GC.getLogging() && GC.getAILogging())
 			{
 				CvString strLogString;
-				strLogString.Format("%s %d withdrew from (%d,%d) towards (%d,%d)", 
+				strLogString.Format("%s %d withdrew from (%d,%d) towards (%d,%d)",
 					pUnit->getName().GetCString(),pUnit->GetID(),pUnit->getX(),pUnit->getY(),pTargetPlot->getX(),pTargetPlot->getY());
 				LogTacticalMessage(strLogString);
 			}
@@ -8238,7 +8238,7 @@ void CvTacticalAI::ExecuteEscortEmbarkedMoves(std::vector<CvUnit*> vTargets)
 			{
 				CvUnit* pTarget = vTargets[i];
 				int iMoveFlag = pUnit->CanStackUnitAtPlot(pTarget->plot()) ? CvUnit::MOVEFLAG_IGNORE_DANGER : CvUnit::MOVEFLAG_APPROX_TARGET_RING1;
-				
+
 				// Can this unit get to the embarked unit in two moves?
 				int iTurns = pUnit->TurnsToReachTarget(pTarget->plot(),iMoveFlag,1);
 				if (iTurns <= 1)
@@ -8521,7 +8521,7 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 						iExtraScore += pLoopUnit->GetBaseCombatStrength() / 5 - 40; // slight bonus for strength, but still prefer ranged
 					else
 						iExtraScore -= 60; // strongly discourage melee garrison when ranged available
-					
+
 					// Capital should never settle for melee when ranged exists — extra penalty
 					if (bIsCapital && !bCityInDanger)
 						iExtraScore -= 20;
@@ -8590,7 +8590,7 @@ CvUnit* CvTacticalAI::FindUnitForThisMove(AITacticalMove eMove, CvPlot* pTarget,
 				// Units with defensive promotions are especially valuable
 				if(pLoopUnit->getDefenseModifier() > 0 || pLoopUnit->getExtraRangedDefenseModifier() > 0)
 					iExtraScore += 31;
-				
+
 				// WITHDRAWAL PENALTY: Units with withdrawal chance are unreliable guards
 				// They may retreat when attacked, exposing whatever they're guarding
 				int iWithdrawalChance = pLoopUnit->withdrawalProbability();
@@ -8779,7 +8779,7 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 					// Give ranged units a significant priority boost vs cities
 					// This effectively doubles their priority in the sort order
 					iAttackStrength = iAttackStrength * 3 / 2;
-					
+
 					// Combined arms bombardment coordination: naval and air units get extra priority
 					// when bombarding cities that have land/naval siege ongoing
 					// This ensures coordinated fire support from sea and air
@@ -8792,7 +8792,7 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 							bool bSiegeOngoing = false;
 							int iLandAttackers = 0;
 							int iNavalAttackers = 0;
-							
+
 							for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
 							{
 								CvPlot* pAdj = plotDirection(pCity->getX(), pCity->getY(), (DirectionTypes)iDir);
@@ -8815,46 +8815,46 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 									}
 								}
 							}
-							
+
 							if (bSiegeOngoing)
 							{
 								// Combined arms bombardment coordination bonus
 								// More attackers = more important for fire support
 								int iBombardBonus = 15;
 								int iTotalAttackers = iLandAttackers + iNavalAttackers;
-								
+
 								if (iTotalAttackers >= 4)
 									iBombardBonus += 20;
 								else if (iTotalAttackers >= 3)
 									iBombardBonus += 15;
 								else if (iTotalAttackers >= 2)
 									iBombardBonus += 8;
-								
+
 								// Multi-domain assault bonus: combined land+naval is more effective
 								if (iLandAttackers > 0 && iNavalAttackers > 0)
 									iBombardBonus += 10;
-								
+
 								// Extra bonus if city is damaged (siege already in progress)
 								if (pCity->getDamage() > 0)
 									iBombardBonus += 10;
-								
+
 								// Bonus for cities under active assault (low HP)
 								int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
 								if (iCityHPPercent <= 50)
 									iBombardBonus += 15;
 								else if (iCityHPPercent <= 75)
 									iBombardBonus += 5;
-								
+
 								// Air units get slight extra bonus - they can hit any city, very flexible
 								if (pLoopUnit->getDomainType() == DOMAIN_AIR)
 									iBombardBonus += 5;
-								
+
 								iAttackStrength += iAttackStrength * iBombardBonus / 100;
 							}
 						}
 					}
 				}
-				
+
 				unit.SetAttackStrength(iAttackStrength);
 				unit.SetHealthPercent(pLoopUnit->GetCurrHitPoints(), pLoopUnit->GetMaxHitPoints());
 				m_CurrentMoveUnits.push_back(unit);
@@ -8875,13 +8875,13 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 				CvCity* pCity = pTarget->getPlotCity();
 				bool bCoastalCity = pCity->isCoastal();
 				int iCityHPPercent = ((pCity->GetMaxHitPoints() - pCity->getDamage()) * 100) / pCity->GetMaxHitPoints();
-				
+
 				bool bIslandCity = false;
 				int iLandApproaches = 0;
 				int iWaterApproaches = 0;
 				GetCoastalApproachCounts(pCity, iLandApproaches, iWaterApproaches);
 				bIslandCity = (iLandApproaches == 0);
-				
+
 				if (pLoopUnit->getDomainType() == DOMAIN_SEA)
 				{
 					// Naval melee capture bonuses
@@ -8895,7 +8895,7 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 						// Naval-dominated coastal city - naval has advantage
 						iAttackStrength = iAttackStrength * 5 / 4;
 					}
-					
+
 					// When city is low HP, naval melee should be prioritized for capture
 					// because garrison bonus often doesn't apply to naval attackers
 					if (iCityHPPercent <= 25)
@@ -8907,10 +8907,10 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 				{
 					// Check if unit has amphibious promotion (no penalty for water->land attacks)
 					bool bIsAmphibious = pLoopUnit->isAmphibious();
-					
+
 					// Check if unit is currently on water (would need amphibious attack)
 					bool bOnWater = pLoopUnit->plot()->isWater();
-					
+
 					// Land melee capture considerations
 					if (bIslandCity)
 					{
@@ -8920,7 +8920,7 @@ bool CvTacticalAI::FindUnitsWithinStrikingDistance(CvPlot* pTarget)
 							// Amphibious unit can attack from water without penalty!
 							// Good alternative to naval melee
 							iAttackStrength = iAttackStrength * 5 / 4;
-							
+
 							// At critical HP, amphibious land unit is excellent for capture
 							if (iCityHPPercent <= 25)
 								iAttackStrength = iAttackStrength * 5 / 4;
@@ -9069,7 +9069,7 @@ bool CvTacticalAI::FindParatroopersWithinStrikingDistance(CvPlot* pTarget, bool 
 	for(list<int>::const_iterator it = m_CurrentTurnUnits.begin(); it != m_CurrentTurnUnits.end(); it++)
 	{
 		CvUnit* pLoopUnit = m_pPlayer->getUnit(*it);
-		if(pLoopUnit && pLoopUnit->canUseForTacticalAI() && 
+		if(pLoopUnit && pLoopUnit->canUseForTacticalAI() &&
 			pLoopUnit->canParadropAt(pLoopUnit->plot(), pTarget->getX(), pTarget->getY()) &&
 			(!bCheckDanger || pLoopUnit->GetDanger(pTarget) < pLoopUnit->GetCurrHitPoints()))
 		{
@@ -9165,57 +9165,57 @@ bool CvTacticalAI::FindUnitsForHarassing(CvPlot* pTarget, int iNumTurnsAway, int
 						iPlunderBonus += pLoopUnit->getYieldFromTRPlunder((YieldTypes)iI);
 					}
 				}
-				
+
 				// === PILLAGING UNIT SUITABILITY BONUS ===
 				// Some units are especially good at pillaging due to their mobility and promotions
 				int iPillageSuitability = 0;
-				
+
 				// 1. RECON UNITS: Scouts/Explorers are excellent pillagers
 				// They can get deep behind enemy lines and have pillage-focused promotion tree
-				bool bIsRecon = (pLoopUnit->AI_getUnitAIType() == UNITAI_EXPLORE || 
+				bool bIsRecon = (pLoopUnit->AI_getUnitAIType() == UNITAI_EXPLORE ||
 								 pLoopUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE);
 				if (bIsRecon)
 				{
 					iPillageSuitability += 30; // Base recon bonus
-					
+
 					// Recon units with combat capability are even better pillagers
 					if (pLoopUnit->GetBaseCombatStrength() > 0)
 						iPillageSuitability += 20;
 				}
-				
+
 				// 2. ZOC-IGNORING UNITS: Can slip past enemy lines
 				// This is a key promotion for pillaging behind enemy fortifications
 				if (pLoopUnit->IsIgnoreZOC())
 				{
 					iPillageSuitability += 50; // Major bonus - can bypass defenders
 				}
-				
+
 				// 3. FAST UNITS: Can reach targets quickly and escape
 				int iBaseMoves = pLoopUnit->baseMoves(false);
 				if (iBaseMoves >= 4)
 				{
 					iPillageSuitability += (iBaseMoves - 3) * 10; // +10 for 4 moves, +20 for 5, etc.
 				}
-				
+
 				// 4. MOVE-AFTER-ATTACK: Can pillage and retreat
 				if (pLoopUnit->canMoveAfterAttacking())
 				{
 					iPillageSuitability += 25; // Can escape after pillaging
 				}
-				
+
 				// 5. LOW-VALUE UNITS: Expendable units are better for risky pillaging
 				// Don't send your expensive tanks to pillage - use scouts instead
 				if (pLoopUnit->GetBaseCombatStrength() <= 20 && pLoopUnit->GetBaseCombatStrength() > 0)
 				{
 					iPillageSuitability += 15; // Expendable combat unit
 				}
-				
+
 				// 6. CAVALRY/FAST ATTACK: Good at hit-and-run
 				if (pLoopUnit->AI_getUnitAIType() == UNITAI_FAST_ATTACK)
 				{
 					iPillageSuitability += 20;
 				}
-				
+
 				unit.SetAttackStrength(1 + iNumTurnsAway - iTurnsCalculated + iPlunderBonus + iPillageSuitability);
 				unit.SetHealthPercent(1, 1);
 				m_CurrentMoveUnits.push_back(unit);
@@ -9350,7 +9350,7 @@ int CvTacticalAI::ComputeTotalExpectedCityBombardDamage(CvUnit* pTarget)
 	for(unsigned int iI = 0; iI < m_CurrentMoveCities.size(); iI++)
 	{
 		CvCity* pAttackingCity = m_pPlayer->getCity(m_CurrentMoveCities[iI].GetID());
-		
+
 		iExpectedDamage += pAttackingCity->rangeCombatDamage(pTarget);
 
 		if (pAttackingCity->HasGarrison())
@@ -9366,7 +9366,7 @@ int CvTacticalAI::ComputeTotalExpectedCityBombardDamage(CvUnit* pTarget)
 		}
 
 	}
-	
+
 	return iExpectedDamage;
 }
 
@@ -9448,7 +9448,7 @@ CvPlot* CvTacticalAI::FindBestBarbarianLandTarget(CvUnit* pUnit)
 {
 	CvPlot* pBestMovePlot = NULL;
 	int iMaxTurns = m_iLandBarbarianRange;
-	
+
 	// combat units look at all offensive targets within x turns
 	if (pUnit->IsCanDefend())
 	{
@@ -9710,7 +9710,7 @@ CvPlot* CvTacticalAI::FindNearbyTarget(CvUnit* pUnit, int iMaxTurns, bool bOffen
 				target.GetTargetType() == AI_TACTICAL_TARGET_IMPROVEMENT_RESOURCE ||
 				(target.GetTargetType() == AI_TACTICAL_TARGET_TRADE_UNIT_LAND && pUnit->getDomainType()==DOMAIN_LAND) ||
 				(target.GetTargetType() == AI_TACTICAL_TARGET_TRADE_UNIT_SEA && pUnit->getDomainType()==DOMAIN_SEA) ||
- 				target.GetTargetType() == AI_TACTICAL_TARGET_HIGH_PRIORITY_CIVILIAN ||
+				target.GetTargetType() == AI_TACTICAL_TARGET_HIGH_PRIORITY_CIVILIAN ||
 				target.GetTargetType() == AI_TACTICAL_TARGET_LOW_PRIORITY_CIVILIAN )
 			{
 				bTypeMatch = true;
@@ -9746,7 +9746,7 @@ CvPlot* CvTacticalAI::FindNearbyTarget(CvUnit* pUnit, int iMaxTurns, bool bOffen
 				if (!pPlot)
 					continue;
 			}
-	
+
 			//shortcut, may happen often (do this after the domain checks so don't accidentally get stuck in the wrong domain)
 			if (pUnit->plot() == pPlot)
 				return pPlot;
@@ -9781,9 +9781,9 @@ void CvTacticalAI::UnitProcessed(int iID)
 	if (iID==gCurrentUnitToTrack)
 	{
 		CvPlayer& owner = GET_PLAYER(pUnit->getOwner());
-		OutputDebugString( CvString::format("turn %03d: used %s %s %d for tactical move %s. hitpoints %d, pos (%d,%d), danger %d\n", 
+		OutputDebugString( CvString::format("turn %03d: used %s %s %d for tactical move %s. hitpoints %d, pos (%d,%d), danger %d\n",
 			GC.getGame().getGameTurn(), owner.getCivilizationAdjective(), pUnit->getName().c_str(), gCurrentUnitToTrack,
-			tacticalMoveNames[m_CurrentMoveUnits.getCurrentTacticalMove()], 
+			tacticalMoveNames[m_CurrentMoveUnits.getCurrentTacticalMove()],
 			pUnit->GetCurrHitPoints(), pUnit->getX(), pUnit->getY(), pUnit->GetDanger() ) );
 	}
 
@@ -10275,7 +10275,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 				if (pUnit->IsGarrisoned())
 				{
 					CvCity* pCity = pUnit->plot()->getPlotCity();
-					
+
 					// COMBINED ARMS DEFENSE COORDINATION:
 					// Check what the city is likely to target and avoid overlapping
 					// City attack happens before garrison ranged, so coordinate
@@ -10284,7 +10284,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 					{
 						pCityTarget = pCity->getBestRangedStrikeTarget();
 					}
-					
+
 					// Count other friendly defenders for coordinated fire assessment
 					int iFriendlyNavalRanged = 0;
 					for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
@@ -10297,14 +10297,14 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 								iFriendlyNavalRanged++;
 						}
 					}
-					
+
 					// If city is targeting this unit, consider spreading fire to other threats
 					// Unless this target can be killed with combined fire
 					if (pCityTarget == pOtherUnit)
 					{
 						int iCityDamage = pCity->rangeCombatDamage(pOtherUnit, false, NULL);
 						int iCombinedDamage = iDamage + iCityDamage;
-						
+
 						if (iCombinedDamage >= pOtherUnit->GetCurrHitPoints())
 						{
 							// Combined fire CAN kill - coordinate for the kill!
@@ -10323,7 +10323,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						// This spreads damage across multiple threats
 						iDamage += 15;
 					}
-					
+
 					// THREAT TO CITY ASSESSMENT - same hierarchy as city targeting:
 					// Siege > Land Ranged > Naval Ranged > Adjacent Wounded Melee > Other
 					bool bIsNavalTarget = (pOtherUnit->getDomainType() == DOMAIN_SEA);
@@ -10367,7 +10367,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						}
 					}
 					// Priority 3: Adjacent wounded melee - capture threat!
-					else if (pCity && iTargetRing == 1 && 
+					else if (pCity && iTargetRing == 1 &&
 							 pOtherUnit->GetCurrHitPoints() < pOtherUnit->GetMaxHitPoints() / 2)
 					{
 						if (bIsNavalTarget)
@@ -10434,26 +10434,26 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 						// Sighting manager confirms this unit is attacking — small priority boost
 						iDamage += 15;
 					}
-					
+
 					// Embarked units are extremely vulnerable targets - prioritize them!
 					// Similar logic to city ranged strike in getBestRangedStrikeTarget()
 					if (pOtherUnit->isEmbarked())
 					{
 						// Embarked units have very low combat strength - easy kills
 						iDamage += 50; // Base bonus for targeting embarked
-						
+
 						// Kill bonus - embarked are often one-shot
 						if (iDamage >= pOtherUnit->GetCurrHitPoints())
 							iDamage += 60;
-						
+
 						// Adjacent embarked is a landing threat
 						if (pCity && plotDistance(*pLoopPlot, *pCity->plot()) == 1)
 							iDamage += 40;
-						
+
 						// Embarked siege/ranged are high value (kill before they land and bombard)
 						if (pOtherUnit->AI_getUnitAIType() == UNITAI_CITY_BOMBARD || pOtherUnit->IsCanAttackRanged())
 							iDamage += 30;
-						
+
 						// Suppress embarked bonuses for retreating units when city HP is low
 						// Consistent with city bombardment logic in getBestRangedStrikeTarget()
 						if (bLikelyRetreating && iCityHPPct <= 50 &&
@@ -10463,7 +10463,7 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 							if (iDamage < 0) iDamage = 0;
 						}
 					}
-					
+
 					// Escort protection check - if a naval unit is protecting embarked units,
 					// bonus for killing the escort to expose the transports
 					if (pLoopPlot->isWater() && !pOtherUnit->isEmbarked() && pOtherUnit->IsCombatUnit())
@@ -10478,13 +10478,13 @@ bool TacticalAIHelpers::PerformRangedOpportunityAttack(CvUnit* pUnit, bool bAllo
 								iEmbarkedOnPlot++;
 							}
 						}
-						
+
 						if (iEmbarkedOnPlot > 0)
 						{
 							// This naval unit is escorting embarked units - killing it exposes them!
 							// +40 base + 15 per embarked unit protected
 							iDamage += 40 + (iEmbarkedOnPlot * 15);
-							
+
 							// Extra bonus if we can kill the escort
 							if (iDamage >= pOtherUnit->GetCurrHitPoints())
 								iDamage += 30;
@@ -10550,7 +10550,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 	//special behavior for cities and citadels - don't run even if there is a "safe" plot somewhere else
 	CvPlot* pCurrentPlot = pUnit->plot();
-	bool bIsInCityOrCitadelNow = (pCurrentPlot->isFriendlyCity(*pUnit) && !pCurrentPlot->getPlotCity()->isInDangerOfFalling()) || 
+	bool bIsInCityOrCitadelNow = (pCurrentPlot->isFriendlyCity(*pUnit) && !pCurrentPlot->getPlotCity()->isInDangerOfFalling()) ||
 								(pUnit->IsCombatUnit() && TacticalAIHelpers::IsPlayerCitadel(pCurrentPlot, pUnit->getOwner()) && pUnit->getDomainType() == DOMAIN_LAND);
 	if (bIsInCityOrCitadelNow && !pUnit->isProjectedToDieNextTurn() && pUnit->canEndTurnAtPlot(pCurrentPlot))
 		if (pUnit->AI_getUnitAIType()!=UNITAI_CITY_BOMBARD || pUnit->GetDanger(pCurrentPlot)<pUnit->GetCurrHitPoints())
@@ -10610,7 +10610,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 		bool bWrongDomain = pPlot->needsEmbarkation(pUnit);
 		bool bWouldEmbark = bWrongDomain && !pUnit->isEmbarked();
-		
+
 		//RETREAT DIRECTION CHECK: Prefer plots that move us TOWARD friendly cities, not away
 		//A retreating unit should not move further from safety (frontline toward enemy)
 		bool bMovingTowardEnemy = (iCityDistance > iCurrentCityDistance);
@@ -10628,7 +10628,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		if (bWouldEmbark)
 		{
 			int iNavalThreats = 0;
-			
+
 			//Determine scan range based on game era (fallback for unseen naval units)
 			//Naval unit movement by era: Ancient=3-4, Classical=4, Medieval=4-5, Renaissance=5, Industrial+=6
 			//Plus ranged attack range (typically 2) = max effective threat range
@@ -10636,33 +10636,33 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 			int iBaseNavalScanRange;
 			if (iEra <= 1) // Ancient/Classical
 				iBaseNavalScanRange = 5;  // trireme (4 move) + melee
-			else if (iEra <= 3) // Medieval/Renaissance  
+			else if (iEra <= 3) // Medieval/Renaissance
 				iBaseNavalScanRange = 7;  // caravel/frigate (5 move) + ranged (2)
 			else // Industrial+
 				iBaseNavalScanRange = 8;  // ironclad/destroyer (6 move) + ranged (2)
-			
+
 			//Use the larger of RING5_PLOTS to scan a wide area, we'll filter by actual threat range
 			for (int iI = 0; iI < RING5_PLOTS; iI++)
 			{
 				CvPlot* pLoopPlot = iterateRingPlots(pPlot, iI);
 				if (!pLoopPlot)
 					continue;
-				
+
 				int iDist = plotDistance(*pPlot, *pLoopPlot);
-				
+
 				//Skip plots beyond our maximum scan range
 				if (iDist > iBaseNavalScanRange)
 					continue;
-				
+
 				//Check all units on this plot
 				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 				{
 					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
 					if (!pLoopUnit)
 						continue;
-					
+
 					//Is this an enemy naval unit that can attack?
-					if (pLoopUnit->getDomainType() == DOMAIN_SEA && 
+					if (pLoopUnit->getDomainType() == DOMAIN_SEA &&
 						pLoopUnit->isEnemy(pUnit->getTeam()) &&
 						pLoopUnit->IsCanAttack())
 					{
@@ -10670,16 +10670,16 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 						//maxMoves() includes all promotions (Navigation, etc.)
 						int iUnitMoves = pLoopUnit->maxMoves() / GD_INT_GET(MOVE_DENOMINATOR);
 						int iThreatRange = iUnitMoves;
-						
+
 						//Add ranged attack range if applicable
 						if (pLoopUnit->IsCanAttackRanged())
 							iThreatRange += pLoopUnit->GetRange();
-						
+
 						//Is this unit close enough to threaten us?
 						if (iDist <= iThreatRange)
 						{
 							iNavalThreats++;
-							
+
 							if (GC.getLogging() && GC.getAILogging())
 							{
 								CvString strLogString;
@@ -10693,7 +10693,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 					}
 				}
 			}
-			
+
 			//Also check remembered sightings for naval units that recently moved into fog.
 			//Use the sighting manager's last-seen coordinates rather than the unit's live plot,
 			//otherwise we'd be leaking hidden information into the retreat logic.
@@ -10705,7 +10705,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				const UnitSighting* pSighting = sightMgr.GetSighting(it->first, it->second);
 				if (!pSighting || pSighting->IsExpired(iCurrentTurn) || pSighting->IsConfirmed(iCurrentTurn))
 					continue;
-				
+
 				//Is this a remembered enemy naval unit that can attack?
 				if (((pSighting->flags & SIGHTING_FLAG_NAVAL) != 0) && GET_PLAYER((PlayerTypes)pSighting->owner).isAlive())
 				{
@@ -10716,20 +10716,20 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 
 					//Calculate distance from the unit's last seen position to the embark plot.
 					int iDist = plotDistance(pPlot->getX(), pPlot->getY(), (int)pSighting->x, (int)pSighting->y);
-					
+
 					//Calculate threat range from remembered capabilities only.
 					int iUnitMoves = (int)pSighting->movementPoints;
 					int iThreatRange = iUnitMoves;
-					
+
 					if ((pSighting->flags & SIGHTING_FLAG_RANGED) != 0)
 						iThreatRange += pkRememberedUnitInfo->GetRange();
-					
+
 					//Is this remembered unit close enough to potentially threaten us?
 					//Use a slightly larger range since the unit may have moved toward us
 					if (iDist <= iThreatRange + 2)
 					{
 						iNavalThreats++;
-						
+
 						if (GC.getLogging() && GC.getAILogging())
 						{
 							CvString strLogString;
@@ -10741,14 +10741,14 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 					}
 				}
 			}
-			
+
 			if (iNavalThreats > 0)
 			{
 				bIsZeroDanger = false;
 				//Set a significant danger value - embarking with naval threats is extremely dangerous
 				if (iDanger < iNavalThreats * 100)
 					iDanger = iNavalThreats * 100;
-					
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
@@ -10859,7 +10859,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 			{
 				TeamTypes eOurTeam = pUnit->getTeam();
 				TeamTypes ePlotTeam = pPlot->getTeam();
-				
+
 				if (ePlotTeam != NO_TEAM && !GET_TEAM(eOurTeam).isAtWar(ePlotTeam))
 				{
 					bool bWeHaveOpenBorders = GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eOurTeam);
@@ -10873,13 +10873,13 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 								continue;
 							if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 								continue;
-							
+
 							TeamTypes eEnemyTeam = GET_PLAYER(eEnemy).getTeam();
 							if (!GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eEnemyTeam))
 							{
 								bIsThirdPartySafeHaven = true;
 								iScore -= 50; //bonus for enemy-blocked territory
-								
+
 								//Extra if third party is at war with enemy
 								if (GET_TEAM(ePlotTeam).isAtWar(eEnemyTeam))
 									iScore -= 30;
@@ -10913,7 +10913,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 			//prefer plots in our territory (we can see threats better)
 			if (!bIsInTerritory)
 				iEmbarkScore += 200;
-			
+
 			//Check for friendly naval escort on this water plot
 			//A friendly naval unit provides some protection, but it's still risky if they could be killed
 			CvUnit* pNavalEscort = pPlot->getBestDefender(pUnit->getOwner());
@@ -10922,7 +10922,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 				//We have a naval escort! Much safer, but evaluate their survival chance
 				int iEscortDanger = pNavalEscort->GetDanger(pPlot);
 				int iEscortHP = pNavalEscort->GetCurrHitPoints();
-				
+
 				if (iEscortDanger >= iEscortHP)
 				{
 					//Escort is likely to die - still risky but better than nothing
@@ -10938,7 +10938,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 					//Escort is relatively safe - good protection!
 					iEmbarkScore -= 400; //significant bonus for safe escort
 				}
-				
+
 				if (GC.getLogging() && GC.getAILogging())
 				{
 					CvString strLogString;
@@ -10948,7 +10948,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 					GET_PLAYER(pUnit->getOwner()).GetTacticalAI()->LogTacticalMessage(strLogString);
 				}
 			}
-			
+
 			//THIRD-PARTY TERRITORY SAFE HAVEN CHECK
 			//If this plot or adjacent plots are in neutral territory where:
 			//  - We have open borders (can enter)
@@ -10959,13 +10959,13 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 			{
 				TeamTypes eOurTeam = pUnit->getTeam();
 				TeamTypes ePlotTeam = pPlot->getTeam();
-				
+
 				//Check if this is a third party (not our enemy)
 				if (ePlotTeam != NO_TEAM && !GET_TEAM(eOurTeam).isAtWar(ePlotTeam))
 				{
 					//We're not at war with the plot owner - check open borders
 					bool bWeHaveOpenBorders = GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eOurTeam);
-					
+
 					if (bWeHaveOpenBorders)
 					{
 						//Check if any of our current enemies lack open borders with this third party
@@ -10977,24 +10977,24 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 								continue;
 							if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 								continue;
-								
+
 							//This is an enemy - do they have open borders with the third party?
 							TeamTypes eEnemyTeam = GET_PLAYER(eEnemy).getTeam();
 							bool bEnemyHasOpenBorders = GET_TEAM(ePlotTeam).IsAllowsOpenBordersToTeam(eEnemyTeam);
-							
+
 							if (!bEnemyHasOpenBorders)
 							{
 								bEnemyBlocked = true;
 								break;
 							}
 						}
-						
+
 						if (bEnemyBlocked)
 						{
-							//This third-party territory blocks enemy pursuit! 
+							//This third-party territory blocks enemy pursuit!
 							//Enemy can only attack with ranged units from outside
 							iEmbarkScore -= 300; //significant bonus for safe haven
-							
+
 							//Extra bonus if the third party is at war with our enemy
 							for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 							{
@@ -11003,7 +11003,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 									continue;
 								if (!GET_TEAM(eOurTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 									continue;
-									
+
 								if (GET_TEAM(ePlotTeam).isAtWar(GET_PLAYER(eEnemy).getTeam()))
 								{
 									//Third party is hostile to our enemy - even safer!
@@ -11011,7 +11011,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 									break;
 								}
 							}
-							
+
 							if (GC.getLogging() && GC.getAILogging())
 							{
 								CvString strLogString;
@@ -11023,7 +11023,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 					}
 				}
 			}
-			
+
 			aEmbarkList.push_back( OptionWithScore<pair<CvPlot*, int>>(make_pair(pPlot, it->iMovesLeft), iEmbarkScore) );
 		}
 		else if(bIsZeroDanger)
@@ -11097,7 +11097,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 		kSelectedMove = aEmbarkList.back().option;
 		pSelectedPlot = kSelectedMove.first;
 		szListName = "embark(lastResort)";
-		
+
 		if (GC.getLogging() && GC.getAILogging())
 		{
 			CvString strLogString;
@@ -11112,7 +11112,7 @@ pair<CvPlot*, int> TacticalAIHelpers::FindSafestPlotInReach(const CvUnit* pUnit,
 	{
 		CvString strLogString;
 		strLogString.Format("FindSafestPlotInReach: %s (%d) at (%d,%d) selected WATER plot (%d,%d) from %s list. Lists: city=%d cover=%d zero=%d danger=%d embark=%d",
-			pUnit->getName().GetCString(), pUnit->GetID(), 
+			pUnit->getName().GetCString(), pUnit->GetID(),
 			pUnit->getX(), pUnit->getY(),
 			pSelectedPlot->getX(), pSelectedPlot->getY(), szListName,
 			(int)aCityList.size(), (int)aCoverList.size(), (int)aZeroDangerList.size(), (int)aDangerList.size(), (int)aEmbarkList.size());
@@ -11382,7 +11382,7 @@ int TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(const CvCity* pCity, c
 {
 	if (!pAttacker || !pCity || pAttacker->isDelayedDeath() || pAttacker->IsDead())
 		return 0;
-		
+
 	int iDamage = 0;
 	const CvUnit* pGarrison = bOverrideGarrison ? pGarrisonOverride : pCity->GetGarrisonedUnit();
 	int iGarrisonMaxHP = (pGarrison != NULL && pGarrison->GetMaxHitPoints() > pGarrison->getDamage() + iExtraGarrisonDamage) ? pGarrison->GetMaxHitPoints() : 0;
@@ -11408,13 +11408,13 @@ int TacticalAIHelpers::GetSimulatedDamageFromAttackOnCity(const CvCity* pCity, c
 }
 
 //helper function for unit threat calculation
-int TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(const CvUnit* pDefender, const CvUnit* pAttacker, 
-				const CvPlot* pDefenderPlot, const CvPlot* pAttackerPlot, int& iAttackerDamage, 
+int TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(const CvUnit* pDefender, const CvUnit* pAttacker,
+				const CvPlot* pDefenderPlot, const CvPlot* pAttackerPlot, int& iAttackerDamage,
 				bool bIgnoreUnitAdjacencyBoni, int iExtraSelfDamage, int iExtraDefenderDamage, bool bQuickAndDirty)
 {
 	if (!pAttacker || !pDefender || pDefender->isDelayedDeath() || pDefender->IsDead() || pAttacker->isDelayedDeath() || pAttacker->IsDead())
 		return 0;
-		
+
 	int iDamage = 0;
 	int iUnusedReferenceVariable = 0;
 	if (pAttacker->IsCanAttackRanged())
@@ -11448,7 +11448,7 @@ int TacticalAIHelpers::GetSimulatedDamageFromAttackOnUnit(const CvUnit* pDefende
 	else
 	{
 		//for melee attack check whether the attacker can actually go where the defender is
-		//the defender might only be there hypothetically - so an empty plot is a valid target 
+		//the defender might only be there hypothetically - so an empty plot is a valid target
 		if (pDefenderPlot && !pAttacker->canMoveOrAttackInto(*pDefenderPlot))
 			return 0;
 
@@ -11766,7 +11766,7 @@ int TacticalAIHelpers::CountAdditionallyVisiblePlots(CvUnit * pUnit, CvPlot * pT
 			if (vPlots[i] && !vPlots[i]->isVisible(pUnit->getTeam())) //we already know that would have line of sight
 				iCount++;
 	}
-	
+
 	return iCount;
 }
 
@@ -12311,7 +12311,7 @@ bool ScoreAttackDamage(const CvTacticalPlot* tactPlot, const CvUnit* pUnit, cons
 	int iBonusScore = 0; //splash damage and other bonuses
 	bool bRanged = pUnit->IsCanAttackRanged();
 
-	//the damage calculation doesn't know about hypothetical flanking units, so we ignore it here and add it ourselves 
+	//the damage calculation doesn't know about hypothetical flanking units, so we ignore it here and add it ourselves
 	int iPrevCityDamage = 0;
 	SUnitIDValueContainer prevUnitDamage;
 	int iPrevCityHitPoints = 0;
@@ -12777,7 +12777,7 @@ bool TacticalAIHelpers::IsPlayerCitadel(const CvPlot* pPlot, PlayerTypes ePlayer
 
 		return true;
 	}
-	
+
 	return false;
 }
 
@@ -12797,7 +12797,7 @@ int TacticalAIHelpers::GetOtherPlayerImprovementDamage(const CvPlot* pPlot, Play
 		if (!bCheckWar || GET_PLAYER(ePlayer).IsAtWarWith(pPlot->getOwner()))
 			return pInfo->GetNearbyEnemyDamage();
 	}
-	
+
 	return 0;
 }
 
@@ -12934,7 +12934,7 @@ STacticalAssignment* ScorePlotForPillageMove(const SUnitStats& unit, const CvTac
 			// route in rough terrain?
 			iBonusScore += 10;
 		}
-		
+
 		if (pUnit->getPillageHealAmount(pTestPlot) > 0)
 		{
 			int iHealAmount = pUnit->getPillageHealAmount(pTestPlot);
@@ -12964,7 +12964,7 @@ STacticalAssignment* ScorePlotForPillageMove(const SUnitStats& unit, const CvTac
 
 	result->iSelfDamage = iSelfDamage;
 	result->SetScore(0, iBonusScore, iDamageDelta);
-	
+
 	return result;
 }
 
@@ -13067,7 +13067,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		//siege units (with limited visibility) should not move there unless covered (the -1 is important)
 		if (pUnit->visibilityRange() < 2 && testPlot->getNumAdjacentFriendlies(DomainForUnit(pUnit), -1) < 2)
 			return INT_MAX;
-		
+
 		iDanger = max(iMaxHitPoints / 2, iDanger);
 	}
 	if (!MOD_COMBATAI_TWO_PASS_DANGER && !bOnlyCheckImpossible)
@@ -13169,22 +13169,22 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		bool bNearCarrier = false;
 		bool bNearCapitalShip = false;
 		int iASWScreenBonus = 0;
-		
+
 		for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 			if (!pLoopPlot)
 				continue;
-			
+
 			for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 			{
 				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
 				if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
 					continue;
-				
+
 				if (pLoopUnit->getDomainType() != DOMAIN_SEA)
 					continue;
-				
+
 				// Carrier screening is highest priority
 				if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
 				{
@@ -13192,7 +13192,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					iASWScreenBonus += 8;
 				}
 				// Other capital ships also benefit from ASW screening
-				else if (pLoopUnit->GetBaseCombatStrength() > pUnit->GetBaseCombatStrength() && 
+				else if (pLoopUnit->GetBaseCombatStrength() > pUnit->GetBaseCombatStrength() &&
 						 !IsAntiSubmarineUnit(pLoopUnit))
 				{
 					bNearCapitalShip = true;
@@ -13200,13 +13200,13 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				}
 			}
 		}
-		
+
 		// Bonus for screening high-value assets
 		if (bNearCarrier)
 			iResult += min(iASWScreenBonus, 15);
 		else if (bNearCapitalShip)
 			iResult += min(iASWScreenBonus, 8);
-		
+
 		// Bonus for positioning ahead of the fleet (toward enemies)
 		// ASW ships should be between enemies and valuable ships
 		if ((bNearCarrier || bNearCapitalShip) && testPlot->getEnemyDistance(CvTacticalPlot::TD_SEA) < 3)
@@ -13222,14 +13222,14 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		int iConcentrationBonus = 0;
 		int iAdjacentNavalFriendlies = 0;
 		int iNearbyNavalUnitsInRange = 0;
-		
+
 		// Count nearby friendly naval combat units
 		for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 			if (!pLoopPlot)
 				continue;
-			
+
 			for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 			{
 				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -13237,13 +13237,13 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					continue;
 				if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
 					continue;
-				
+
 				int iDist = plotDistance(*pTestPlot, *pLoopPlot);
 				if (iDist <= 1)
 				{
 					iAdjacentNavalFriendlies++;
 				}
-				
+
 				// Count ships that share attack range with us (for ranged units)
 				if (pUnit->IsCanAttackRanged() && pLoopUnit->IsCanAttackRanged())
 				{
@@ -13258,7 +13258,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				}
 			}
 		}
-		
+
 		// Bonus for naval formation - not too spread out, not too bunched
 		if (iAdjacentNavalFriendlies >= 1 && iAdjacentNavalFriendlies <= 3)
 		{
@@ -13268,19 +13268,19 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		{
 			iConcentrationBonus += 4; // A bit crowded but still supporting
 		}
-		
+
 		// Ranged ships get bonus for being in coordinated firing positions
 		if (pUnit->IsCanAttackRanged() && iNearbyNavalUnitsInRange >= 1)
 		{
 			iConcentrationBonus += min(iNearbyNavalUnitsInRange * 3, 12); // Up to +12 for fire coordination
 		}
-		
+
 		// Position near enemy targets where fleet can focus fire
 		if (testPlot->getEnemyDistance(CvTacticalPlot::TD_SEA) <= 2 && iAdjacentNavalFriendlies >= 2)
 		{
 			iConcentrationBonus += 10; // Good attack position with support
 		}
-		
+
 		iResult += iConcentrationBonus;
 	}
 
@@ -13291,7 +13291,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		int iCarrierBonus = 0;
 		bool bHasCargo = pUnit->hasCargo();
 		int iCargoCount = pUnit->getCargo();
-		
+
 		// SAFETY FIRST: Carriers with aircraft are extremely valuable and must be protected
 		if (bHasCargo)
 		{
@@ -13309,7 +13309,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			{
 				iCarrierBonus += 10; // Good safe distance
 			}
-			
+
 			// Extra bonus for escort coverage when loaded
 			int iEscortCount = 0;
 			for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
@@ -13317,7 +13317,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 				if (!pLoopPlot)
 					continue;
-				
+
 				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 				{
 					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -13327,7 +13327,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 						continue;
 					if (pLoopUnit == pUnit)
 						continue;
-					
+
 					int iDist = plotDistance(*pTestPlot, *pLoopPlot);
 					if (iDist <= 1)
 					{
@@ -13338,7 +13338,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					}
 				}
 			}
-			
+
 			// Loaded carriers need escorts
 			if (iEscortCount >= 2)
 				iCarrierBonus += 15;
@@ -13347,7 +13347,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			else if (iEscortCount == 0 && iEnemyDist <= 3)
 				iCarrierBonus -= 20; // No escort near enemies - very risky!
 		}
-		
+
 		// AIR RANGE OPTIMIZATION: Position to maximize air unit effectiveness
 		// Check if this position keeps carrier within strike range of targets
 		if (bHasCargo)
@@ -13355,7 +13355,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			int iMaxAirRange = 0;
 			int iMinAirRange = 99;
 			int iAttackAirCount = 0;
-			
+
 			// Get actual range of loaded air units by iterating cargo
 			// Note: We use the carrier's current plot since cargo moves with carrier
 			const CvPlot* pCarrierPlot = pUnit->plot();
@@ -13366,12 +13366,12 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				{
 					const CvUnit* pCargoUnit = ::GetPlayerUnit(*pUnitNode);
 					pUnitNode = pCarrierPlot->nextUnitNode(pUnitNode);
-					
+
 					if (pCargoUnit && pCargoUnit->getTransportUnit() == pUnit)
 					{
 						// This is one of our loaded aircraft
 						int iCargoRange = pCargoUnit->GetRange();
-						
+
 						// Only count attack aircraft (bombers, missiles) for strike range
 						// Fighters have shorter range and are for defense
 						UnitAITypes eCargoAI = pCargoUnit->AI_getUnitAIType();
@@ -13391,25 +13391,25 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					}
 				}
 			}
-			
+
 			// If no attack aircraft, use a default range (might have only fighters)
 			if (iMaxAirRange == 0)
 				iMaxAirRange = 6; // Default fighter range for interception positioning
-			
+
 			// Check if there are enemy targets within air range from this position
 			const CvPlot* pTargetPlot = assumedPosition.getTarget();
 			if (pTargetPlot && iAttackAirCount > 0)
 			{
 				int iDistToTarget = plotDistance(*pTestPlot, *pTargetPlot);
-				
+
 				// Optimal: within air range but not too close (safe position)
 				// Use the minimum range of our attack aircraft to ensure all can strike
 				int iEffectiveRange = (iMinAirRange < 99) ? iMinAirRange : iMaxAirRange;
-				
+
 				if (iDistToTarget <= iEffectiveRange && iDistToTarget >= 3)
 				{
 					iCarrierBonus += 25; // Perfect positioning - safe but in range
-					
+
 					// Extra bonus if all attack aircraft can reach
 					if (iDistToTarget <= iMinAirRange)
 						iCarrierBonus += 10; // All aircraft can strike
@@ -13423,7 +13423,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					iCarrierBonus += 5; // Close to range, might reach next turn
 				}
 			}
-			
+
 			// Also check for any enemy units within air range
 			int iTargetsInAirRange = 0;
 			int iMaxRingToCheck = min(iMaxAirRange, 10); // Cap at 10 for performance
@@ -13448,7 +13448,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					}
 				}
 			}
-			
+
 			// Bonus for having targets in optimal air range (scaled by attack aircraft count)
 			if (iTargetsInAirRange > 0 && iAttackAirCount > 0)
 			{
@@ -13457,18 +13457,18 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				iCarrierBonus += min(iTargetBonus, 25);
 			}
 		}
-		
+
 		// FLEET INTEGRATION: Carriers should stay with the battle group but behind the line
 		{
 			int iCapitalShipsAhead = 0; // Ships between carrier and enemy
 			int iCapitalShipsBehind = 0; // Ships behind carrier (carrier is too far forward)
-			
+
 			for (int i = RING0_PLOTS; i < RING3_PLOTS; i++)
 			{
 				CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 				if (!pLoopPlot)
 					continue;
-				
+
 				for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 				{
 					CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -13478,7 +13478,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 						continue;
 					if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
 						continue; // Don't count other carriers
-					
+
 					// Check if this ship is between us and enemies
 					int iFriendlyEnemyDist = 0;
 					for (int j = RING0_PLOTS; j < RING3_PLOTS; j++)
@@ -13490,7 +13490,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 							break;
 						}
 					}
-					
+
 					int iCarrierEnemyDist = testPlot->getEnemyDistance(CvTacticalPlot::TD_SEA);
 					if (iFriendlyEnemyDist > 0 && iFriendlyEnemyDist < iCarrierEnemyDist)
 					{
@@ -13502,7 +13502,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					}
 				}
 			}
-			
+
 			// Bonus for having ships ahead (screening the carrier)
 			if (iCapitalShipsAhead >= 2)
 			{
@@ -13512,7 +13512,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 			{
 				iCarrierBonus += 8;
 			}
-			
+
 			// Penalty for being ahead of the fleet (carrier is exposed)
 			if (iCapitalShipsBehind > 0 && iCapitalShipsAhead == 0)
 			{
@@ -13523,7 +13523,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				iCarrierBonus -= 8; // More ships behind than ahead - we're too far forward
 			}
 		}
-		
+
 		iResult += iCarrierBonus;
 	}
 
@@ -13535,20 +13535,20 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 		int iEscortBonus = 0;
 		int iEmbarkedUnitsNearby = 0;
 		int iEmbarkedUnitsAdjacent = 0;
-		
+
 		// Check for friendly embarked units that need protection
 		for (int i = RING0_PLOTS; i < RING2_PLOTS; i++)
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 			if (!pLoopPlot || !pLoopPlot->isWater())
 				continue;
-			
+
 			for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 			{
 				CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
 				if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
 					continue;
-				
+
 				// Found a friendly embarked unit
 				if (pLoopUnit->isEmbarked())
 				{
@@ -13556,7 +13556,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 					int iDist = plotDistance(*pTestPlot, *pLoopPlot);
 					if (iDist <= 1)
 						iEmbarkedUnitsAdjacent++;
-					
+
 					// Higher value targets get more escort priority
 					// Great Generals, Settlers, Workers are very valuable
 					if (pLoopUnit->IsGreatGeneral() || pLoopUnit->IsGreatAdmiral())
@@ -13570,16 +13570,16 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 				}
 			}
 		}
-		
+
 		if (iEmbarkedUnitsNearby > 0)
 		{
 			// Base bonus for being near embarked units
 			iResult += min(iEscortBonus, 20);
-			
+
 			// Extra bonus for being adjacent (direct protection)
 			if (iEmbarkedUnitsAdjacent > 0)
 				iResult += iEmbarkedUnitsAdjacent * 3;
-			
+
 			// Naval ranged units should position to provide fire support
 			if (pUnit->IsCanAttackRanged())
 			{
@@ -13630,7 +13630,7 @@ int ScoreCombatUnitTurnEnd(const CvUnit* pUnit, eUnitAssignmentType eLastAssignm
 }
 
 STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const CvTacticalPlot* testPlot,
-												const CvTacticalPosition& assumedPosition, eUnitMoveEvalMode evalMode) 
+												const CvTacticalPosition& assumedPosition, eUnitMoveEvalMode evalMode)
 {
 	//default action is do nothing and invalid score (not -INT_MAX, to prevent overflows!)
 	STacticalAssignment* result = gAssignmentStorage.peekNext();
@@ -13666,14 +13666,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	//zero to TACTICAL_COMBAT_MAX_TARGET_DISTANCE
 	static const int iPlotScoreForEnemyDistanceLandAttack[5][5] = {
 		{ -1,-1,-1,-1,-1 }, //none (should not occur)
-		{ 12, 12, 6, 1, -1 }, //firstline (note that it's ok to evaluate the score in an enemy plot for a firstline unit -> meleekill) 
+		{ 12, 12, 6, 1, -1 }, //firstline (note that it's ok to evaluate the score in an enemy plot for a firstline unit -> meleekill)
 		{ -1, 8, 12, 2, -1 }, //secondline
 		{  1, 1, 8, 12, -1 }, //thirdline (ranged and damaged melee units)
 		{ -1, 1, 8,  8, -1 }, //support (can also happen for damaged melee units)
 	};
 	static const int iPlotScoreForEnemyDistanceSeaAttack[5][5] = {
 		{ -1,-1,-1,-1,-1 }, //none (should not occur)
-		{ 12, 8, 6, 1, -1 }, //firstline (note that it's ok to evaluate the score in an enemy plot for a firstline unit -> meleekill) 
+		{ 12, 8, 6, 1, -1 }, //firstline (note that it's ok to evaluate the score in an enemy plot for a firstline unit -> meleekill)
 		{ -1, 8, 8, 6, -1 }, //secondline
 		{  1, 6, 8, 8, -1 }, //thirdline (ranged and damaged melee units)
 		{ -1, 1, 8,  8, -1 }, //support (can also happen for damaged melee units)
@@ -13878,7 +13878,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 		if (bIsFrontlineCitadelOrCity)
 		{
 			if (pUnit->GetRange()>1 || testPlot->getNumAdjacentFriendlies(CvTacticalPlot::TD_LAND, unit.iPlotIndex) == 0 || testPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND) > 0)
-	 			iDangerScore += TACTICAL_COMBAT_CITADEL_BONUS;
+				iDangerScore += TACTICAL_COMBAT_CITADEL_BONUS;
 			else
 				iDangerScore += TACTICAL_COMBAT_CITADEL_BONUS/2;
 		}
@@ -14087,11 +14087,11 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	{
 		bool bIsOpenGround = pTestPlot->isOpenGround();
 		bool bIsRoughGround = pTestPlot->isRoughGround();
-		
+
 		// Check defensive terrain bonuses - important for where to end turn
 		int iOpenDefBonus = pUnit->openDefenseModifier();
 		int iRoughDefBonus = pUnit->roughDefenseModifier();
-		
+
 		if (iOpenDefBonus != 0 || iRoughDefBonus != 0)
 		{
 			// Unit has terrain-specific defense bonuses
@@ -14117,7 +14117,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				iPlotScore -= iRoughDefBonus / 8;
 			}
 		}
-		
+
 		// Also consider noDefensiveBonus flag (mounted units without special promotions)
 		// These units should avoid rough terrain when possible as they get no defense bonus there
 		if (pUnit->noDefensiveBonus())
@@ -14136,7 +14136,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				iPlotScore += 1;
 			}
 		}
-		
+
 		// === FEATURE-SPECIFIC TERRAIN PROMOTIONS (Woodsman, etc.) ===
 		// Units with promotions like Woodsman get bonuses in specific features (forest/jungle)
 		// They should prefer positioning in these features for defense and to enable attacks
@@ -14150,12 +14150,12 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// Unit has specific defense bonus in this feature (e.g., Woodsman in forest)
 				// This is different from the generic rough terrain bonus
 				iPlotScore += iFeatureDefBonus / 4; // +5-12 typically
-				
+
 				// Extra bonus when enemies are nearby (we'll be attacked here)
 				if (testPlot->getEnemyDistance(eRelevantDomain) <= 2)
 					iPlotScore += iFeatureDefBonus / 6;
 			}
-			
+
 			// Check if unit has attack bonus from this feature (RoughFromMod)
 			// Units with this bonus fight better when attacking FROM this feature
 			int iFeatureAttackFromBonus = pUnit->getExtraRoughFromPercent();
@@ -14169,7 +14169,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				}
 			}
 		}
-		
+
 		// === FLANKING POSITIONING FOR MELEE UNITS ===
 		// Units with high FlankAttackModifier should position to enable flanking attacks
 		int iFlankMod = pUnit->GetFlankAttackModifier();
@@ -14177,19 +14177,19 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 		{
 			// Count enemies this plot is adjacent to (potential flanking targets)
 			int iAdjacentEnemies = testPlot->getNumAdjacentEnemies(eRelevantDomain);
-			
+
 			if (iAdjacentEnemies > 0)
 			{
 				// We're adjacent to enemies - good flanking position if friendlies are also nearby
 				int iAdjacentFriendlies = testPlot->getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
-				
+
 				// Bonus for being in position to flank with friendlies
 				if (iAdjacentFriendlies > 0)
 				{
 					// Good flanking position - we can support friendlies or be supported
 					iPlotScore += 2 + (iFlankMod / 15); // +3 to +4 for high flank modifier
 				}
-				
+
 				// Extra bonus if multiple enemies are adjacent (cavalry charge opportunity)
 				if (iAdjacentEnemies >= 2 && iFlankMod >= 25)
 				{
@@ -14197,12 +14197,12 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				}
 			}
 		}
-		
+
 		// === SPOTTER/OBSERVER FOR INDIRECT FIRE UNITS (Artillery, Battleships, etc.) ===
 		// Fast and recon units should position to provide sight for indirect fire units
 		// Indirect fire units (IsRangeAttackIgnoreLOS) can attack over obstacles if they have sight
 		// This gives valuable tactical advantage - artillery can fire over mountains, forests, etc.
-		// 
+		//
 		// Key units that benefit: Artillery, Rocket Artillery, Battleship, Missile Cruiser
 		// Good spotters: Scouts, Cavalry, Helicopters, Destroyers, Fighters doing recon
 		if (assumedPosition.haveEnemies())
@@ -14210,11 +14210,11 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			int iUnitRange = pUnit->GetRange();
 			int iUnitSight = pUnit->visibilityRange();
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
-			
+
 			// Check if this unit could be a good spotter (fast or recon type)
 			bool bIsGoodSpotter = false;
 			bool bIsIndirectFireUnit = pUnit->IsRangeAttackIgnoreLOS();
-			
+
 			// Good spotters: fast units, recon, aircraft doing sweeps
 			if (!bIsIndirectFireUnit)
 			{
@@ -14234,14 +14234,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					break;
 				}
 			}
-			
+
 			if (bIsGoodSpotter)
 			{
 				// Count friendly indirect fire units that could benefit from our spotting
 				int iFriendlyIndirectFireUnits = 0;
 				int iFriendlyIndirectFireRange = 0;
 				CvPlot* pBestIndirectFirePlot = NULL;
-				
+
 				// Search for friendly indirect fire units within reasonable range
 				for (int iRing = 1; iRing <= 5; iRing++)
 				{
@@ -14250,7 +14250,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 						if (!pLoopPlot)
 							continue;
-						
+
 						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
 						if (pFriendly && pFriendly->IsCanAttackRanged() && pFriendly->IsRangeAttackIgnoreLOS())
 						{
@@ -14263,14 +14263,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// If we have indirect fire allies, prioritize positions that provide sight to enemies
 				if (iFriendlyIndirectFireUnits > 0)
 				{
 					// Count enemies we can see from this position that indirect fire could target
 					int iEnemiesWeCanSpot = 0;
 					int iEnemiesBehindObstacles = 0;
-					
+
 					// Check enemies within our sight range
 					for (int iRing = 1; iRing <= min(iUnitSight, 3); iRing++)
 					{
@@ -14279,16 +14279,16 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 							if (!pLoopPlot)
 								continue;
-							
+
 							// Can we see this plot from our test position?
 							if (!pTestPlot->canSeePlot(pLoopPlot, pUnit->getTeam(), iUnitSight, NO_DIRECTION))
 								continue;
-							
+
 							CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
 							if (pEnemy && pEnemy->IsCombatUnit())
 							{
 								iEnemiesWeCanSpot++;
-								
+
 								// Check if this enemy is behind an obstacle from the indirect fire unit
 								// (i.e., would the indirect fire unit need spotting to hit this target?)
 								if (pBestIndirectFirePlot)
@@ -14308,12 +14308,12 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							}
 						}
 					}
-					
+
 					// Bonus for spotting enemies that artillery can hit
 					if (iEnemiesWeCanSpot > 0)
 					{
 						iPlotScore += iEnemiesWeCanSpot * 2;
-						
+
 						// BIG bonus for spotting enemies that are behind obstacles!
 						// This is the key value of spotters - enabling indirect fire over mountains/forests
 						if (iEnemiesBehindObstacles > 0)
@@ -14322,7 +14322,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							iPlotScore += iFriendlyIndirectFireUnits * 3; // More bonus per indirect fire unit
 						}
 					}
-					
+
 					// Spotters should stay safe enough to maintain sight
 					// Mild penalty for getting too close to enemies (might die)
 					if (iEnemyDist == 1 && testPlot->getNumAdjacentEnemies(eRelevantDomain) >= 2)
@@ -14331,7 +14331,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// === INDIRECT FIRE UNIT POSITIONING ===
 			// Artillery and battleships should consider spotter availability
 			if (bIsIndirectFireUnit)
@@ -14339,7 +14339,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// Check for friendly spotters that can extend our effective range
 				int iFriendlySpotters = 0;
 				int iBestSpotterSight = 0;
-				
+
 				for (int iRing = 1; iRing <= min(iUnitRange + 2, 5); iRing++)
 				{
 					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
@@ -14347,7 +14347,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 						if (!pLoopPlot)
 							continue;
-						
+
 						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
 						if (pFriendly && pFriendly != pUnit && !pFriendly->IsRangeAttackIgnoreLOS())
 						{
@@ -14362,24 +14362,24 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Bonus for having spotters nearby
 				if (iFriendlySpotters > 0)
 				{
 					iPlotScore += 3; // Base bonus for having spotter support
 					iPlotScore += min(iFriendlySpotters, 3) * 2; // +2 per spotter, max +6
-					
+
 					// Extra bonus if spotters can see further than we can
 					if (iBestSpotterSight > iUnitSight)
 					{
 						iPlotScore += 4; // Good coordination - spotters extend our reach
 					}
 				}
-				
+
 				// Artillery with indirect fire can position behind obstacles
 				// Check if this plot is protected by terrain from enemy sight
-				if (pTestPlot->isHills() || pTestPlot->isMountain() || 
-					pTestPlot->getFeatureType() == FEATURE_FOREST || 
+				if (pTestPlot->isHills() || pTestPlot->isMountain() ||
+					pTestPlot->getFeatureType() == FEATURE_FOREST ||
 					pTestPlot->getFeatureType() == FEATURE_JUNGLE)
 				{
 					// Protected position for indirect fire
@@ -14390,7 +14390,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				}
 			}
 		}
-		
+
 		// === MODERN ARMOR (TANK) POSITIONING ===
 		// Tanks (high-strength fast melee) use different tactics than cavalry:
 		// - Lead assaults as spearhead (not flanking)
@@ -14399,12 +14399,12 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 		// - Can absorb damage, so less concerned about escape routes
 		int iOurStrength = pUnit->GetBaseCombatStrength();
 		bool bIsModernArmor = (pUnit->baseMoves(false) >= 4 && iOurStrength >= 60);
-		
+
 		if (bIsModernArmor && assumedPosition.haveEnemies())
 		{
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
 			int iAdjacentFriendlies = testPlot->getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
-			
+
 			// 1. SPEARHEAD POSITIONING: Tanks should lead the assault
 			// Position at the front of friendly formations
 			if (iEnemyDist <= 2)
@@ -14425,7 +14425,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Bonus for having infantry support (combined arms)
 				if (iFriendlyInfantry >= 2)
 				{
@@ -14435,7 +14435,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				{
 					iPlotScore += 5;
 				}
-				
+
 				// Tanks are happier on the front line than cavalry
 				// They can absorb hits and break through
 				if (iEnemyDist == 1)
@@ -14443,13 +14443,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					// Adjacent to enemy - assault position
 					// Good for tanks, unlike cavalry
 					iPlotScore += 4;
-					
+
 					// Extra bonus for having support
 					if (iAdjacentFriendlies >= 2)
 						iPlotScore += 4;
 				}
 			}
-			
+
 			// 2. BREAKTHROUGH CORRIDOR: Position toward enemy cities
 			const CvPlot* pTarget = assumedPosition.getTarget();
 			if (pTarget && pTarget->isCity())
@@ -14458,7 +14458,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				if (pTargetCity && GET_PLAYER(assumedPosition.getPlayer()).IsAtWarWith(pTargetCity->getOwner()))
 				{
 					int iDistToCity = plotDistance(*pTestPlot, *pTarget);
-					
+
 					// Tanks should push toward the objective
 					if (iDistToCity <= 3)
 					{
@@ -14470,7 +14470,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// 3. AVOID TERRAIN THAT NEGATES ARMOR ADVANTAGE
 			// Tanks dislike rough terrain even more than cavalry
 			// But for different reasons: reduces mobility, not defense
@@ -14478,7 +14478,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				// Tanks struggle in rough terrain
 				iPlotScore -= 3;
-				
+
 				// Worse if near enemies (can't maneuver)
 				if (iEnemyDist <= 2)
 					iPlotScore -= 2;
@@ -14487,12 +14487,12 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				// Open terrain - tank country
 				iPlotScore += 4;
-				
+
 				// Extra bonus for open terrain near enemies (can exploit mobility)
 				if (iEnemyDist <= 2)
 					iPlotScore += 2;
 			}
-			
+
 			// 4. MASS CONCENTRATION: Tanks work best in groups
 			// Unlike cavalry which spreads out for flanking
 			if (iAdjacentFriendlies >= 2)
@@ -14506,7 +14506,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				iPlotScore -= 4;
 			}
 		}
-		
+
 		// === SLOW INFANTRY POSITIONING (Spearmen, Swordsmen, Pikemen, Longswordsmen, etc.) ===
 		// Slow melee infantry (2 moves) use fundamentally different tactics than fast cavalry:
 		// - Form defensive lines and hold positions
@@ -14515,13 +14515,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 		// - Mainline infantry (swordsmen) are versatile front-line fighters
 		// Detection: Non-ranged, 2 moves or less, not a tank
 		bool bIsSlowInfantry = (!pUnit->IsCanAttackRanged() && pUnit->baseMoves(false) <= 2 && !bIsModernArmor);
-		
+
 		if (bIsSlowInfantry && assumedPosition.haveEnemies())
 		{
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
 			int iAdjacentEnemies = testPlot->getNumAdjacentEnemies(eRelevantDomain);
 			int iAdjacentFriendlies = testPlot->getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
-			
+
 			// Check for anti-cavalry bonus (spearmen/pikemen have bonus vs UNITCOMBAT_MOUNTED)
 			static UnitCombatTypes eMountedCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_MOUNTED");
 			int iAntiCavalryBonus = 0;
@@ -14529,9 +14529,9 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				iAntiCavalryBonus = pUnit->unitCombatModifier(eMountedCombat);
 			}
-			
+
 			bool bIsAntiCavalry = (iAntiCavalryBonus >= 25); // Spearman typically has +50% vs mounted
-			
+
 			// 1. ANTI-CAVALRY INTERCEPTION POSITIONING
 			// Spearmen/pikemen should position to intercept enemy cavalry
 			if (bIsAntiCavalry)
@@ -14539,7 +14539,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// Check for enemy cavalry nearby that we can intercept
 				int iEnemyCavalryNearby = 0;
 				int iClosestCavalryDist = INT_MAX;
-				
+
 				for (int iRing = 1; iRing <= 3; iRing++)
 				{
 					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
@@ -14563,23 +14563,23 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Bonus for positioning to intercept cavalry
 				if (iEnemyCavalryNearby > 0)
 				{
 					// Strong bonus for being in interception range of cavalry
 					iPlotScore += 10;
-					
+
 					// Extra bonus if we're close enough to be attacked (we want that!)
 					if (iClosestCavalryDist <= 2)
 					{
 						iPlotScore += 8; // Bait position - cavalry may attack us
 					}
-					
+
 					// Bonus per cavalry we can threaten
 					iPlotScore += iEnemyCavalryNearby * 3;
 				}
-				
+
 				// Anti-cavalry units should protect ranged units from cavalry charges
 				// Position between friendly ranged and enemy cavalry
 				if (iEnemyCavalryNearby > 0)
@@ -14597,7 +14597,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							}
 						}
 					}
-					
+
 					// Strong bonus for screening ranged from cavalry
 					if (iAdjacentFriendlyRanged > 0)
 					{
@@ -14605,7 +14605,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// 2. TERRAIN DEFENSE: Slow infantry LOVE defensive terrain
 			// Unlike cavalry, infantry can fully utilize terrain bonuses
 			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
@@ -14613,25 +14613,25 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				// Strong bonus for defensive terrain (hills, forests)
 				iPlotScore += iTerrainDefMod / 4; // +5 for 20%, +12 for 50%
-				
+
 				// Extra bonus when enemies are close (we'll be attacked here)
 				if (iEnemyDist <= 2)
 					iPlotScore += iTerrainDefMod / 6;
 			}
-			
+
 			// Penalty for open ground (no terrain defense)
 			if (pTestPlot->isOpenGround() && iEnemyDist <= 2)
 			{
 				iPlotScore -= 4; // Exposed without terrain advantage
 			}
-			
+
 			// 3. FORMATION FIGHTING: Infantry is strongest in groups
 			// Mutual support and combined strength
 			if (iAdjacentFriendlies >= 2)
 			{
 				// Good formation - infantry phalanx/shield wall
 				iPlotScore += 6;
-				
+
 				// Extra bonus for being part of a larger formation
 				if (iAdjacentFriendlies >= 3)
 					iPlotScore += 3;
@@ -14641,7 +14641,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// Isolated infantry is vulnerable
 				iPlotScore -= 6;
 			}
-			
+
 			// 4. HOLD THE LINE: Infantry should maintain front-line positions
 			// They don't have the mobility to reposition quickly
 			if (iEnemyDist == 1 && iAdjacentEnemies > 0)
@@ -14666,17 +14666,17 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iPlotScore += 2; // Reserve/support position
 				}
 			}
-			
+
 			// 5. CHOKEPOINT CONTROL: Infantry excels at holding chokepoints
 			if (pTestPlot->IsChokePoint() && iEnemyDist <= 3)
 			{
 				iPlotScore += 12; // Chokepoint is ideal for infantry
-				
+
 				// Even better with terrain defense
 				if (iTerrainDefMod > 0)
 					iPlotScore += 4;
 			}
-			
+
 			// 6. FORTIFICATION VALUE: Infantry benefits greatly from fortifying
 			if (pUnit->canFortify(pTestPlot) && iEnemyDist >= 2 && iTerrainDefMod > 0)
 			{
@@ -14700,13 +14700,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 		bool bIsSkirmisher = (pUnit->AI_getUnitAIType() == UNITAI_SKIRMISHER ||
 							  pUnit->getUnitInfo().GetUnitAIType(UNITAI_SKIRMISHER));
 		bool bIsFastRanged = (iBaseMoves >= 3);
-		
+
 		// Only apply these bonuses to fast ranged units (not slow siege or archers)
 		if (bIsFastRanged || bIsSkirmisher)
 		{
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
 			int iAdjacentEnemies = testPlot->getNumAdjacentEnemies(eRelevantDomain);
-			
+
 			// 1. KITING DISTANCE: Prefer positions at optimal range from enemies
 			// Fast ranged wants to be at range 2 (can shoot, enemy can't close gap easily)
 			if (iUnitRange >= 2)
@@ -14715,7 +14715,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				{
 					// Perfect kiting distance - in range to attack but enemy needs 2 moves to reach
 					iPlotScore += 8;
-					
+
 					// Extra bonus for skirmishers who specialize in this
 					if (bIsSkirmisher)
 						iPlotScore += 4;
@@ -14735,20 +14735,20 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iPlotScore += 5;
 				}
 			}
-			
+
 			// 2. ESCAPE ROUTE AWARENESS: Fast ranged need multiple retreat paths
 			// Count passable adjacent plots that are further from enemies
 			if (bCanMoveAfterAttack || bIsFastRanged)
 			{
 				int iEscapeRoutes = 0;
 				int iBlockedSides = 0;
-				
+
 				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
 				{
 					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
 					if (!pAdj)
 						continue;
-					
+
 					// Check if this adjacent plot is a valid escape route
 					if (pUnit->canMoveInto(*pAdj, CvUnit::MOVEFLAG_DESTINATION))
 					{
@@ -14770,7 +14770,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						iBlockedSides++;
 					}
 				}
-				
+
 				// Bonus for having multiple escape routes
 				if (iEscapeRoutes >= 3)
 				{
@@ -14785,19 +14785,19 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					// No escape routes and close to enemies - very bad for mobile ranged
 					iPlotScore -= 8;
 				}
-				
+
 				// Penalty for being cornered (blocked by terrain on multiple sides)
 				if (iBlockedSides >= 4 && iEnemyDist <= 2)
 				{
 					iPlotScore -= 6; // Getting pinned is death for skirmishers
 				}
 			}
-			
+
 			// 3. FIRING ARC OPTIMIZATION: Prefer positions with targets in range
 			// Fast ranged should position where they can hit enemies while staying mobile
 			{
 				int iTargetsInRange = 0;
-				
+
 				// Check how many enemies we can hit from this position
 				for (int iRing = 1; iRing <= iUnitRange; iRing++)
 				{
@@ -14810,7 +14810,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							if (pEnemy && !pEnemy->IsCivilianUnit())
 							{
 								iTargetsInRange++;
-								
+
 								// Bonus for having high-value targets in range (siege, ranged)
 								if (pEnemy->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
 									iTargetsInRange++; // Siege counts double
@@ -14820,20 +14820,20 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Bonus for having multiple targets in range
 				if (iTargetsInRange >= 2)
 				{
 					iPlotScore += min(iTargetsInRange * 2, 8); // Up to +8 for many targets
 				}
-				
+
 				// Penalty if we have no targets in range (wasted turn for skirmisher)
 				if (iTargetsInRange == 0 && assumedPosition.haveEnemies())
 				{
 					iPlotScore -= 4;
 				}
 			}
-			
+
 			// 4. AVOID MELEE THREATS: Fast ranged should stay away from fast enemy melee
 			// Chariot archers should fear enemy cavalry, etc.
 			if (iAdjacentEnemies > 0)
@@ -14843,18 +14843,18 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
 					if (!pAdj)
 						continue;
-					
+
 					CvUnit* pAdjEnemy = pAdj->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
 					if (pAdjEnemy && !pAdjEnemy->IsCanAttackRanged())
 					{
 						// Adjacent enemy melee - check if they're fast enough to be a threat
 						int iEnemyMoves = pAdjEnemy->baseMoves(false);
-						
+
 						if (iEnemyMoves >= iBaseMoves)
 						{
 							// Enemy is as fast or faster - big danger!
 							iPlotScore -= 8;
-							
+
 							// Extra penalty if we can't move after attacking
 							if (!bCanMoveAfterAttack)
 								iPlotScore -= 4;
@@ -14867,14 +14867,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// 5. OPEN TERRAIN PREFERENCE: Fast ranged prefer open terrain for mobility
 			// Rough terrain slows down escape and pursuit
 			if (pTestPlot->isOpenGround())
 			{
 				// Open ground - easier to maneuver and escape
 				iPlotScore += 3;
-				
+
 				// Extra bonus for very fast units (4+ moves)
 				if (iBaseMoves >= 4)
 					iPlotScore += 2;
@@ -14887,7 +14887,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iPlotScore -= 2; // Mild penalty when near enemies
 				}
 			}
-			
+
 			// 6. STAY MOBILE: Skirmishers should avoid positions that end their movement
 			// Fortifying or garrisoning negates their mobility advantage
 			if (bIsSkirmisher && (pTestPlot->isCity() || TacticalAIHelpers::IsPlayerCitadel(pTestPlot, pUnit->getOwner())))
@@ -14912,7 +14912,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
 			int iAdjacentEnemies = testPlot->getNumAdjacentEnemies(eRelevantDomain);
 			int iAdjacentFriendlyMelee = 0;
-			
+
 			// Count friendly melee units that can screen for us
 			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
 			{
@@ -14926,14 +14926,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// 1. STAY BEHIND THE LINE: Slow ranged must maintain distance
 			if (iEnemyDist == 1 && iAdjacentEnemies > 0)
 			{
 				// CRITICAL: Adjacent to enemy melee - disaster for slow ranged
 				// They cannot escape and will be destroyed
 				iPlotScore -= 20;
-				
+
 				// Slightly less bad if we have melee support
 				if (iAdjacentFriendlyMelee >= 2)
 					iPlotScore += 5;
@@ -14942,7 +14942,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				// Perfect firing position - one tile behind the front
 				iPlotScore += 10;
-				
+
 				// Even better if we have melee screen between us and enemies
 				if (iAdjacentFriendlyMelee >= 1)
 					iPlotScore += 4;
@@ -14952,7 +14952,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// One tile too far back - can still fire but should close up
 				iPlotScore += 2;
 			}
-			
+
 			// 2. DEFENSIVE TERRAIN: Slow ranged benefit greatly from terrain bonuses
 			// They can't run, so they need to survive being attacked
 			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
@@ -14960,19 +14960,19 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				// Strong bonus for defensive terrain
 				iPlotScore += iTerrainDefMod / 4; // Up to +6 for 25% terrain
-				
+
 				// Extra valuable when enemies are close
 				if (iEnemyDist <= 2)
 					iPlotScore += iTerrainDefMod / 8;
 			}
-			
+
 			// 3. AVOID OPEN GROUND: Unlike cavalry, slow ranged are vulnerable in the open
 			if (pTestPlot->isOpenGround() && iEnemyDist <= 3)
 			{
 				// Open terrain is dangerous for units that can't retreat
 				iPlotScore -= 3;
 			}
-			
+
 			// 4. STAY NEAR FRIENDLIES: Slow ranged need protection
 			int iAdjacentFriendlies = testPlot->getNumAdjacentFriendlies(eRelevantDomain, unit.iPlotIndex);
 			if (iAdjacentFriendlies >= 2)
@@ -14983,7 +14983,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				iPlotScore -= 6; // Isolated and vulnerable
 			}
-			
+
 			// 5. FORTIFICATION VALUE: Slow ranged benefit from fortifying
 			// Unlike fast units, they should dig in when not attacking
 			if (pUnit->canFortify(pTestPlot) && iEnemyDist >= 2)
@@ -14999,16 +14999,16 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	if (pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
 	{
 		int iMedicHeal = pUnit->getAdjacentTileHeal();
-		
+
 		// Only apply if this unit has medic ability (heals adjacent friendlies)
 		if (iMedicHeal > 0)
 		{
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
-			
+
 			// Count wounded friendly units nearby that would benefit from our medic aura
 			int iWoundedFriendliesNearby = 0;
 			int iTotalHealingNeeded = 0;
-			
+
 			for (int i = RING0_PLOTS; i < RING1_PLOTS; i++) // Adjacent tiles only (medic range)
 			{
 				CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
@@ -15026,20 +15026,20 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// Bonus for positioning to heal wounded friendlies
 			if (iWoundedFriendliesNearby > 0)
 			{
 				// Base bonus per wounded unit we can heal
 				int iMedicBonus = iWoundedFriendliesNearby * 4;
-				
+
 				// Scale with how much healing is needed (up to cap)
 				iMedicBonus += min(iTotalHealingNeeded / 20, 8);
-				
+
 				// Cap bonus
 				iPlotScore += min(iMedicBonus, 20);
 			}
-			
+
 			// Medics should stay safe to keep providing healing
 			// Mild penalty for being on the front line
 			if (iEnemyDist == 1)
@@ -15064,7 +15064,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	{
 		int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
 		bool bHasGeneralBonus = assumedPosition.HasSupport(pUnit->getDomainType());
-		
+
 		// Only care about General aura when enemies are nearby (combat expected)
 		if (iEnemyDist <= 3 && assumedPosition.haveEnemies())
 		{
@@ -15073,7 +15073,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			// Count generals within extended range for better coordination
 			int iGeneralsInRange = 0;
 			int iGeneralRange = /*2*/ GD_INT_GET(GREAT_GENERAL_RANGE);
-			
+
 			// Check for Generals within aura range
 			for (int iRing = 0; iRing <= iGeneralRange; iRing++)
 			{
@@ -15093,14 +15093,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 								bIsRelevantGeneral = true;
 							else if (pUnit->getDomainType() == DOMAIN_SEA && pLoopUnit->IsGreatAdmiral())
 								bIsRelevantGeneral = true;
-							
+
 							if (bIsRelevantGeneral)
 							{
 								iGeneralsInRange++;
 								// Extended range generals may have AuraRangeChange
 								int iThisGeneralRange = iGeneralRange + pLoopUnit->GetAuraRangeChange();
 								int iActualDist = plotDistance(*pTestPlot, *pLoopPlot);
-								
+
 								// Are we actually within this General's aura?
 								if (iActualDist <= iThisGeneralRange)
 								{
@@ -15114,19 +15114,19 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// If we found a General nearby, bonus for positioning to benefit from aura
 			if (iGeneralsInRange > 0)
 			{
 				// Base bonus for being within General aura
 				iPlotScore += 5;
-				
+
 				// Melee units benefit more from General aura (in direct combat)
 				if (!pUnit->IsCanAttackRanged())
 				{
 					iPlotScore += 4; // Melee gets more from combat bonus
 				}
-				
+
 				// Extra bonus when on front line (where combat bonus matters most)
 				if (iEnemyDist <= 2)
 				{
@@ -15139,7 +15139,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// Check if there ARE friendly Generals we could move toward
 				// This encourages units to converge on General-supported positions
 				bool bFriendlyGeneralExists = false;
-				
+
 				// Quick check via area effect units list (more efficient)
 				const std::vector<std::pair<int,int>>& possibleUnits = GET_PLAYER(pUnit->getOwner()).GetAreaEffectPositiveUnits();
 				for (size_t i = 0; i < possibleUnits.size(); i++)
@@ -15154,7 +15154,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 								(pUnit->getDomainType() == DOMAIN_SEA && pPossibleGeneral->IsGreatAdmiral()))
 							{
 								bFriendlyGeneralExists = true;
-								
+
 								// Mild bonus for moving toward the General's direction
 								int iDistToGeneral = plotDistance(*pTestPlot, *pUnitPlot);
 								int iDistFromCurrent = plotDistance(*pUnit->plot(), *pUnitPlot);
@@ -15180,7 +15180,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 		// Check if this plot is coastal (adjacent to water)
 		bool bIsCoastalPlot = false;
 		int iAdjacentWaterTiles = 0;
-		
+
 		for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
 		{
 			CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
@@ -15190,14 +15190,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				iAdjacentWaterTiles++;
 			}
 		}
-		
+
 		// Only apply if this is a coastal position
 		if (bIsCoastalPlot && assumedPosition.haveEnemies())
 		{
 			int iNavalFireSupportBonus = 0;
 			int iNavalRangedNearby = 0;
 			int iTotalNavalRangedStrength = 0;
-			
+
 			// Check for friendly naval ranged units that can provide fire support
 			for (int iRing = 1; iRing <= 3; iRing++)
 			{
@@ -15206,27 +15206,27 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 					if (!pLoopPlot || !pLoopPlot->isWater())
 						continue;
-					
+
 					for (int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
 					{
 						CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
 						if (!pLoopUnit || pLoopUnit->getOwner() != pUnit->getOwner())
 							continue;
-						
+
 						// Found a friendly naval unit
-						if (pLoopUnit->getDomainType() == DOMAIN_SEA && 
-							pLoopUnit->IsCanAttackRanged() && 
+						if (pLoopUnit->getDomainType() == DOMAIN_SEA &&
+							pLoopUnit->IsCanAttackRanged() &&
 							pLoopUnit->IsCombatUnit())
 						{
 							// Check if this naval unit can actually fire at enemies near our position
 							int iNavalRange = pLoopUnit->GetRange();
 							int iDistToUs = plotDistance(*pTestPlot, *pLoopPlot);
-							
+
 							if (iDistToUs <= iNavalRange)
 							{
 								iNavalRangedNearby++;
 								iTotalNavalRangedStrength += pLoopUnit->GetBaseRangedCombatStrength();
-								
+
 								// Battleships and similar heavy naval ranged are particularly valuable
 								if (pLoopUnit->GetBaseRangedCombatStrength() >= 50)
 									iNavalFireSupportBonus += 5;
@@ -15237,22 +15237,22 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			if (iNavalRangedNearby > 0)
 			{
 				// Base bonus for having naval fire support
 				int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
-				
+
 				// Strong bonus when engaging enemies with naval support
 				if (iEnemyDist <= 2)
 				{
 					iPlotScore += iNavalFireSupportBonus;
-					
+
 					// Extra bonus for melee units (they need fire support most)
 					if (!pUnit->IsCanAttackRanged())
 						iPlotScore += min(iNavalRangedNearby * 3, 12);
 				}
-				
+
 				// Coastal city assault bonus
 				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
 				{
@@ -15274,23 +15274,23 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	// - Position for quick surgical strikes
 	// - Use their ability to reach any terrain
 	// - Avoid clustering (vulnerable to area AA)
-	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND && 
+	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND &&
 		pUnit->IsHoveringUnit() && evalMode != EM_INTERMEDIATE)
 	{
 		int iUnitRange = pUnit->GetRange();
 		int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
-		
+
 		// 1. AA AVOIDANCE ZONES: Helicopters must avoid areas covered by AA
 		// This is life-or-death for helicopters
 		int iAAUnitsNearby = 0;
 		int iClosestAADist = INT_MAX;
-		
+
 		for (int i = RING0_PLOTS; i < RING_PLOTS[4]; i++) // Check 4-tile radius
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 			if (!pLoopPlot)
 				continue;
-			
+
 			CvUnit* pPotentialAA = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
 			if (pPotentialAA && pPotentialAA->canIntercept() && pPotentialAA->getDomainType() != DOMAIN_AIR)
 			{
@@ -15300,18 +15300,18 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iClosestAADist = iDistToAA;
 			}
 		}
-		
+
 		// Heavy penalty for being in AA coverage
 		if (iAAUnitsNearby > 0)
 		{
 			// Get interception range (usually 2-3)
 			int iAARange = 2; // Default interception range
-			
+
 			if (iClosestAADist <= iAARange)
 			{
 				// In interception range - very dangerous
 				iPlotScore -= 20;
-				
+
 				// Even worse with multiple AA (crossfire)
 				if (iAAUnitsNearby >= 2)
 					iPlotScore -= iAAUnitsNearby * 10;
@@ -15327,14 +15327,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			// No AA nearby - helicopter can operate freely
 			iPlotScore += 8;
 		}
-		
+
 		// 2. STRIKE POSITIONING: Position to hit targets without entering AA zones
 		// Helicopters should position at their max range from valuable targets
 		{
 			int iTargetsInRange = 0;
 			int iHighValueTargetsInRange = 0;
 			int iArmorTargetsInRange = 0;
-			
+
 			for (int iRing = 1; iRing <= iUnitRange; iRing++)
 			{
 				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
@@ -15346,7 +15346,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						if (pEnemy && !pEnemy->IsCivilianUnit())
 						{
 							iTargetsInRange++;
-							
+
 							// Check for anti-armor bonus (tank hunting)
 							UnitCombatTypes eEnemyCombatType = pEnemy->getUnitCombatType();
 							if (eEnemyCombatType != NO_UNITCOMBAT)
@@ -15356,13 +15356,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 								{
 									// We have a significant bonus against this unit type
 									iArmorTargetsInRange++;
-									
+
 									// Modern tanks are especially valuable targets
 									if (pEnemy->GetBaseCombatStrength() >= 60)
 										iArmorTargetsInRange++;
 								}
 							}
-							
+
 							// Other high-value targets for helicopter
 							if (pEnemy->AI_getUnitAIType() == UNITAI_CITY_BOMBARD)
 								iHighValueTargetsInRange += 2; // Siege
@@ -15374,15 +15374,15 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// Bonus for having targets in range
 			if (iTargetsInRange > 0)
 				iPlotScore += min(iTargetsInRange * 2, 6);
-			
+
 			// Extra bonus for high-value targets
 			if (iHighValueTargetsInRange > 0)
 				iPlotScore += min(iHighValueTargetsInRange * 3, 12);
-			
+
 			// TANK HUNTING BONUS: Strong bonus for positions with armor targets in range
 			// This is a primary role for helicopter gunships
 			if (iArmorTargetsInRange > 0)
@@ -15391,7 +15391,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				iPlotScore += 8; // Base bonus for having tank-hunting opportunity
 			}
 		}
-		
+
 		// 3. DON'T CLUSTER: Helicopters should spread out to avoid area attacks
 		int iAdjacentFriendlyHelis = 0;
 		for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
@@ -15404,13 +15404,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iAdjacentFriendlyHelis++;
 			}
 		}
-		
+
 		if (iAdjacentFriendlyHelis >= 2)
 		{
 			// Clustering helicopters - vulnerable to area attacks
 			iPlotScore -= 6;
 		}
-		
+
 		// 4. TERRAIN FLEXIBILITY: Helicopters can use any terrain
 		// They should use this to reach positions other units can't
 		// No terrain penalties for helicopters!
@@ -15426,7 +15426,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			if (iEnemyDist <= iUnitRange && iAAUnitsNearby == 0)
 				iPlotScore += 5; // Exploit water-hover for attack angles
 		}
-		
+
 		// 5. MOBILITY PRESERVATION: Don't garrison helicopters
 		if (pTestPlot->isCity())
 		{
@@ -15450,20 +15450,20 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	if (pUnit->IsCanAttackRanged() && pUnit->getDomainType() == DOMAIN_LAND && evalMode != EM_INTERMEDIATE)
 	{
 		int iSuppressionMod = pUnit->getNearbyEnemyCombatMod(); // Negative = debuff enemies
-		
+
 		// Only apply to units with suppression auras (negative modifier)
 		if (iSuppressionMod < 0)
 		{
 			int iSuppressionRange = pUnit->getNearbyEnemyCombatRange(); // Usually 2 tiles
 			if (iSuppressionRange <= 0)
 				iSuppressionRange = 2; // Default assumption
-			
+
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
-			
+
 			// 1. AURA COVERAGE: Count enemies that would be debuffed from this position
 			int iEnemiesInAura = 0;
 			int iHighValueInAura = 0; // Melee units are more affected by combat debuffs
-			
+
 			for (int iRing = 1; iRing <= iSuppressionRange; iRing++)
 			{
 				for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
@@ -15475,13 +15475,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						if (pEnemy && pEnemy->IsCombatUnit())
 						{
 							iEnemiesInAura++;
-							
+
 							// Melee units are high-value targets for suppression
 							// Combat debuffs affect their attack/defense directly
 							if (!pEnemy->IsCanAttackRanged())
 							{
 								iHighValueInAura++;
-								
+
 								// Modern armor (tanks) are even more valuable to suppress
 								if (pEnemy->GetBaseCombatStrength() >= 60)
 									iHighValueInAura++;
@@ -15490,20 +15490,20 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// Bonus for covering multiple enemies with suppression aura
 			if (iEnemiesInAura > 0)
 			{
 				// Base bonus per enemy in aura
 				int iAuraBonus = iEnemiesInAura * 4;
-				
+
 				// Extra bonus for suppressing melee/tanks (more affected by combat mod)
 				iAuraBonus += iHighValueInAura * 3;
-				
+
 				// Cap the bonus to prevent runaway values
 				iPlotScore += min(iAuraBonus, 25);
 			}
-			
+
 			// 2. SUPPORT POSITIONING: Stay near friendly melee to support their attacks
 			// Enemies debuffed by our aura are easier for friendlies to kill
 			int iFriendlyMeleeNearby = 0;
@@ -15519,13 +15519,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					}
 				}
 			}
-			
+
 			// Bonus for being near friendlies who benefit from our suppression
 			if (iFriendlyMeleeNearby > 0 && iEnemiesInAura > 0)
 			{
 				iPlotScore += min(iFriendlyMeleeNearby * 3, 9); // +3 per friendly, max +9
 			}
-			
+
 			// 3. SAFE DISTANCE: Suppression units shouldn't be on front line
 			// They're typically fragile and need protection
 			if (iEnemyDist == 1)
@@ -15545,7 +15545,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iPlotScore += 6; // Good position - in aura range but not adjacent
 				}
 			}
-			
+
 			// 4. DEFENSIVE TERRAIN: Suppression units benefit from cover
 			// They need to survive to maintain their aura
 			int iTerrainDefMod = pTestPlot->defenseModifier(pUnit->getTeam(), false, false);
@@ -15553,7 +15553,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				iPlotScore += iTerrainDefMod / 10; // Small bonus for defensive terrain
 			}
-			
+
 			// 5. COMBINED ARMS WITH ANTI-TANK: If this unit also has anti-armor bonus,
 			// it should position where it can both suppress AND engage armor
 			UnitCombatTypes eArmorCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_ARMOR");
@@ -15566,7 +15566,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					// Check for armor targets in firing range
 					int iUnitRange = pUnit->GetRange();
 					int iArmorInRange = 0;
-					
+
 					for (int iRing = 1; iRing <= iUnitRange; iRing++)
 					{
 						for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
@@ -15582,7 +15582,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							}
 						}
 					}
-					
+
 					// Strong bonus for positions with armor targets in range
 					if (iArmorInRange > 0)
 					{
@@ -15605,13 +15605,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	{
 		int iOurStrength = pUnit->GetBaseCombatStrength();
 		bool bIsLightTank = (iOurStrength >= 30 && iOurStrength < 60);
-		
+
 		if (bIsLightTank && assumedPosition.haveEnemies())
 		{
 			int iUnitRange = pUnit->GetRange();
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
 			int iAdjacentEnemies = testPlot->getNumAdjacentEnemies(eRelevantDomain);
-			
+
 			// 1. SCREENING POSITION: Stay ahead of main force but not too exposed
 			// Light tanks should be at range 2-3 from enemies (can fire, hard to catch)
 			if (iEnemyDist == 2 || iEnemyDist == iUnitRange)
@@ -15624,33 +15624,33 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// Too close for a light tank
 				iPlotScore -= 10;
 			}
-			
+
 			// 2. FLANK POSITIONING: Light tanks exploit gaps
 			// Check for positions on the flanks of enemy formations
 			{
 				int iEnemiesInFront = 0;
 				int iEnemiesOnSide = 0;
-				
+
 				const CvPlot* pTarget = assumedPosition.getTarget();
 				if (pTarget)
 				{
 					DirectionTypes eDirToTarget = directionXY(pTestPlot, pTarget);
-					
+
 					for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++)
 					{
 						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 						if (!pLoopPlot)
 							continue;
-						
+
 						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
 						if (pEnemy && pEnemy->IsCombatUnit())
 						{
 							DirectionTypes eDirToEnemy = directionXY(pTestPlot, pLoopPlot);
-							
+
 							// Is enemy in our attack direction or on the side?
 							int iAngleDiff = abs((int)eDirToTarget - (int)eDirToEnemy);
 							if (iAngleDiff > 3) iAngleDiff = 6 - iAngleDiff;
-							
+
 							if (iAngleDiff <= 1)
 								iEnemiesInFront++;
 							else
@@ -15658,7 +15658,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Bonus for flanking positions (enemies on side, not in front)
 				if (iEnemiesOnSide > 0 && iEnemiesInFront == 0)
 				{
@@ -15669,7 +15669,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					iPlotScore -= 5; // Facing strong enemy concentration
 				}
 			}
-			
+
 			// 3. HEAVY TANK SUPPORT: Position to support friendly heavy armor
 			{
 				bool bNearFriendlyHeavyArmor = false;
@@ -15688,18 +15688,18 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Bonus for being near heavy tanks (combined arms support)
 				if (bNearFriendlyHeavyArmor)
 				{
 					iPlotScore += 6;
-					
+
 					// Extra bonus if in position to support their attack
 					if (iEnemyDist <= iUnitRange)
 						iPlotScore += 4;
 				}
 			}
-			
+
 			// 4. AVOID HEAVY ENEMY ARMOR: Don't get caught by tanks
 			{
 				bool bHeavyEnemyNearby = false;
@@ -15717,14 +15717,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				if (bHeavyEnemyNearby)
 				{
 					// Enemy heavy armor nearby - dangerous for light tank
 					iPlotScore -= 10;
 				}
 			}
-			
+
 			// 5. OPEN TERRAIN: Light tanks need mobility
 			if (pTestPlot->isOpenGround())
 			{
@@ -15734,7 +15734,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 			{
 				iPlotScore -= 3;
 			}
-			
+
 			// 6. ESCAPE ROUTES: Light tanks need to retreat if caught
 			{
 				int iEscapeRoutes = 0;
@@ -15749,7 +15749,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 							iEscapeRoutes++;
 					}
 				}
-				
+
 				if (iEscapeRoutes >= 2)
 				{
 					iPlotScore += 4;
@@ -15773,22 +15773,22 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	{
 		// Check if this unit can cross mountains
 		bool bCanCrossMountains = pUnit->canCrossMountains() || GET_PLAYER(assumedPosition.getPlayer()).CanCrossMountain();
-		
+
 		if (bCanCrossMountains)
 		{
 			int iEnemyDist = testPlot->getEnemyDistance(eRelevantDomain);
-			
+
 			// Check if this plot is a mountain
 			if (pTestPlot->isMountain())
 			{
 				// 1. DEFENSIVE MOUNTAIN POSITION: Mountains are excellent defensive terrain
 				// The defense bonus is already in defenseModifier, but we add awareness for the
 				// tactical value of being unreachable by most enemies
-				
+
 				// Count how many enemy units CANNOT reach us on the mountain
 				int iEnemiesWhoCannotReach = 0;
 				int iEnemiesWhoCanReach = 0;
-				
+
 				for (int iRing = 1; iRing <= 3; iRing++)
 				{
 					for (int i = RING_PLOTS[iRing-1]; i < RING_PLOTS[min(iRing, 5)]; i++)
@@ -15796,15 +15796,15 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						CvPlot* pLoopPlot = iterateRingPlots(pTestPlot, i);
 						if (!pLoopPlot)
 							continue;
-						
+
 						CvUnit* pEnemy = pLoopPlot->getBestDefender(NO_PLAYER, pUnit->getOwner(), NULL, true);
 						if (pEnemy && pEnemy->IsCombatUnit())
 						{
 							// Check if enemy can cross mountains
-							bool bEnemyCanCrossMountains = pEnemy->canCrossMountains() || 
+							bool bEnemyCanCrossMountains = pEnemy->canCrossMountains() ||
 								GET_PLAYER(pEnemy->getOwner()).CanCrossMountain() ||
 								pEnemy->IsHoveringUnit();
-							
+
 							if (bEnemyCanCrossMountains)
 								iEnemiesWhoCanReach++;
 							else
@@ -15812,13 +15812,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						}
 					}
 				}
-				
+
 				// Strong bonus if enemies cannot reach us on the mountain
 				if (iEnemiesWhoCannotReach > 0 && iEnemiesWhoCanReach == 0)
 				{
 					// Completely safe from nearby melee enemies!
 					iPlotScore += 15;
-					
+
 					// Extra bonus per enemy who can't reach us (we're denying them options)
 					iPlotScore += iEnemiesWhoCannotReach * 3;
 				}
@@ -15827,13 +15827,13 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 					// Mostly safe - only some enemies can follow
 					iPlotScore += 8 + (iEnemiesWhoCannotReach - iEnemiesWhoCanReach) * 2;
 				}
-				
+
 				// 2. RANGED UNITS ON MOUNTAINS: Excellent firing platform
 				if (pUnit->IsCanAttackRanged())
 				{
 					// Mountains provide LOS advantage and protection
 					iPlotScore += 8;
-					
+
 					// Extra bonus if in range to attack enemies who can't reach us
 					int iUnitRange = pUnit->GetRange();
 					if (iEnemyDist <= iUnitRange && iEnemiesWhoCannotReach > 0)
@@ -15841,14 +15841,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						iPlotScore += 6; // Can attack enemies who can't retaliate
 					}
 				}
-				
+
 				// 3. WOUNDED UNITS: Mountains are great for wounded units to heal safely
 				int iHealthPercent = (pUnit->GetCurrHitPoints() * 100) / pUnit->GetMaxHitPoints();
 				if (iHealthPercent < 50 && iEnemiesWhoCanReach == 0)
 				{
 					iPlotScore += 10; // Safe healing position
 				}
-				
+
 				// 4. BLOCKING MOUNTAIN PASS: If this mountain is between enemies and our city
 				// it can serve as an impassable barrier (for enemies who can't cross)
 				const CvPlot* pTarget = assumedPosition.getTarget();
@@ -15869,7 +15869,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 				// 5. MOUNTAIN ESCAPE ROUTES: Check for nearby mountains as escape options
 				// Units that can cross mountains have unique retreat paths
 				int iMountainEscapeRoutes = 0;
-				
+
 				for (int i = RING0_PLOTS; i < RING1_PLOTS; i++)
 				{
 					CvPlot* pAdj = iterateRingPlots(pTestPlot, i);
@@ -15880,14 +15880,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 						iMountainEscapeRoutes++;
 					}
 				}
-				
+
 				// Bonus for having mountain escape options
 				if (iMountainEscapeRoutes > 0 && iEnemyDist <= 2)
 				{
 					// Near enemies but have mountain escape routes
 					iPlotScore += iMountainEscapeRoutes * 2;
 				}
-				
+
 				// 6. MOUNTAIN FLANKING: Use mountains to get behind enemy lines
 				// Mountains that enemies can't cross can serve as flanking corridors
 				if (assumedPosition.haveEnemies() && iEnemyDist <= 4)
@@ -15940,7 +15940,7 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 	STacticalAssignment* result = gAssignmentStorage.peekNext();
 	result->init(unit.iPlotIndex,testPlot->getPlotIndex(), unit.iUnitID, unit.iMovesLeft, unit.eMoveStrategy, A_MOVE, GetPrevPlotScore(unit.iUnitID, assumedPosition));
 	int iScore = 0;
-		
+
 	//the plot we're checking right now
 	const CvPlot* pTestPlot = testPlot->getPlot();
 	const CvUnit* pUnit = unit.pUnit;
@@ -16028,7 +16028,7 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 				iScore += 100;
 			}
 			//we want one of our own combat units covering us (either sim or non sim). cities are also considered safe
-			else if (!pTestPlot->isFriendlyCity(*pUnit) && !bHaveSimCover && !bHaveRealCover) 
+			else if (!pTestPlot->isFriendlyCity(*pUnit) && !bHaveSimCover && !bHaveRealCover)
 				return result;
 
 			//surrounding cover is also good
@@ -16051,12 +16051,12 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 		// Melee units benefit most from combat bonuses (direct combat)
 		// Ranged/siege benefit less but still gain from the bonus
 		int iGeneralAuraRange = /*2*/ GD_INT_GET(GREAT_GENERAL_RANGE) + pUnit->GetAuraRangeChange();
-		
+
 		// Count units within aura range, weighted by type
 		int iMeleeUnitsInAura = 0;
 		int iRangedUnitsInAura = 0;
 		int iUnitsNearFront = 0; // Units close to enemies that will actually fight
-		
+
 		for (int iRing = 0; iRing <= iGeneralAuraRange; iRing++)
 		{
 			int iStart = (iRing == 0) ? 0 : RING_PLOTS[iRing-1];
@@ -16072,12 +16072,12 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 						// Don't count units that ignore Great General benefit
 						if (pLoopUnit->IsIgnoreGreatGeneralBenefit())
 							continue;
-						
+
 						// Check domain match (Generals for land, Admirals for sea)
 						if ((pUnit->IsGreatGeneral() && pLoopUnit->getDomainType() != DOMAIN_LAND) ||
 							(pUnit->IsGreatAdmiral() && pLoopUnit->getDomainType() != DOMAIN_SEA))
 							continue;
-						
+
 						if (pLoopUnit->IsCanAttackRanged())
 						{
 							iRangedUnitsInAura++;
@@ -16086,7 +16086,7 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 						{
 							iMeleeUnitsInAura++;
 						}
-						
+
 						// Check if this unit is near the front (will actually benefit from combat bonus)
 						// Get the enemy distance for this unit's plot
 						const CvTacticalPlot* unitTactPlot = assumedPosition.getTactPlot(pLoopPlot->GetPlotIndex());
@@ -16098,17 +16098,17 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 				}
 			}
 		}
-		
+
 		// Bonus for covering units with aura (melee counts more)
 		// Melee units are in direct combat and gain full benefit from +15% combat
 		iScore += iMeleeUnitsInAura * 3;
 		// Ranged still benefits but less directly
 		iScore += iRangedUnitsInAura * 1;
-		
+
 		// Extra bonus for covering units that are actually near the front
 		// Combat bonuses matter most when units are engaged with enemies
 		iScore += iUnitsNearFront * 2;
-		
+
 		// Bonus for stacking with a strong melee unit (direct protection + full bonus)
 		if (testPlot->hasFriendlyCombatUnit())
 		{
@@ -16122,7 +16122,7 @@ STacticalAssignment* ScorePlotForNonFightingUnitMove(const SUnitStats& unit, con
 					{
 						// Stacked with melee - good for protection and gives them stacked bonus
 						iScore += 3;
-						
+
 						// Extra bonus if melee is damaged (General gives morale/healing support)
 						if (pStackedUnit->getDamage() > 0)
 							iScore += 2;
@@ -16331,9 +16331,9 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 								  unit.pUnit->getUnitInfo().GetUnitAIType(UNITAI_SKIRMISHER));
 			bool bIsFastRanged = (unit.pUnit->baseMoves(false) >= 3);
 			bool bCanKite = unit.pUnit->canMoveAfterAttacking();
-			
+
 			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
-			
+
 			// Target prioritization for skirmishers and mounted archers
 			if (bIsSkirmisher || (bIsFastRanged && bCanKite))
 			{
@@ -16341,11 +16341,11 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 				if (eEnemyAI == UNITAI_CITY_BOMBARD)
 				{
 					result->AddScore(0, 20, 0); // High priority - siege can't catch us
-					
+
 					// Bonus for killing siege - removes major threat
 					if (bIsKill)
 						result->AddScore(0, 15, 0);
-					
+
 					// Extra bonus if we can move after attack (perfect kiting)
 					if (bCanKite && result->iRemainingMoves > 0)
 						result->AddScore(0, 10, 0);
@@ -16355,12 +16355,12 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 				else if (!pEnemyUnit->IsCanAttackRanged())
 				{
 					int iEnemyMoves = pEnemyUnit->baseMoves(false);
-					
+
 					// Slow enemy (2 moves or less) - easy to kite
 					if (iEnemyMoves <= 2)
 					{
 						result->AddScore(0, 12, 0);
-						
+
 						// Perfect target if we have more mobility
 						if (unit.pUnit->baseMoves(false) > iEnemyMoves + 1)
 							result->AddScore(0, 5, 0);
@@ -16379,7 +16379,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					// Against other ranged, kills are valuable
 					if (bIsKill)
 						result->AddScore(0, 10, 0);
-					
+
 					// Caution against long-range ranged (crossbows, gatling guns)
 					if (pEnemyUnit->GetRange() >= unit.pUnit->GetRange())
 					{
@@ -16388,22 +16388,22 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 							result->AddScore(0, -(5), 0);
 					}
 				}
-				
+
 				// PRIORITY 3: Wounded enemies - finish them with ranged fire
 				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
 				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
 				int iEnemyHPPercent = (iEnemyHP * 100) / iEnemyMaxHP;
-				
+
 				if (iEnemyHPPercent <= 50)
 				{
 					// Wounded enemy - opportunistic kill
 					result->AddScore(0, (100 - iEnemyHPPercent) / 8, 0); // Up to +6 for nearly dead
-					
+
 					// Big bonus for finishing wounded targets
 					if (bIsKill)
 						result->AddScore(0, 12, 0);
 				}
-				
+
 				// PRIORITY 4: Isolated enemies - safe to harass
 				int iEnemySupport = enemyPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
 				if (iEnemySupport == 0)
@@ -16416,12 +16416,12 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					if (!bCanKite || !gSafePlotCount[unit.iUnitID])
 						result->AddScore(0, -(5), 0);
 				}
-				
+
 				// Workers and settlers - easy targets for mounted raiders
 				if (pEnemyUnit->IsCivilianUnit())
 				{
 					result->AddScore(0, 15, 0);
-					
+
 					// Settlers are extremely valuable
 					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
 						result->AddScore(0, 20, 0);
@@ -16447,7 +16447,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 				{
 					// Prefer shooting at enemies in terrain we have bonus against
 					result->AddScore(0, iFeatureAttackBonus / 3, 0); // +8-15 typically
-					
+
 					// Extra for kills
 					if (bIsKill)
 						result->AddScore(0, iFeatureAttackBonus / 5, 0);
@@ -16461,36 +16461,36 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 	// Bazookas have PROMOTION_ANTI_TANK (+50% vs UNITCOMBAT_ARMOR).
 	// AT Guns and similar units have bonuses against tanks/armored vehicles.
 	// These units should hunt armor whenever possible - it's their primary role.
-	if (!enemyPlot->isEnemyCity() && unit.pUnit->getDomainType() == DOMAIN_LAND && 
+	if (!enemyPlot->isEnemyCity() && unit.pUnit->getDomainType() == DOMAIN_LAND &&
 		unit.pUnit->IsCanAttackRanged() && !unit.pUnit->IsHoveringUnit()) // Non-helicopter ranged
 	{
 		CvUnit* pEnemyUnit = enemyPlot->getEnemyUnit();
 		if (pEnemyUnit && pEnemyUnit->IsCombatUnit())
 		{
 			UnitCombatTypes eEnemyCombatType = pEnemyUnit->getUnitCombatType();
-			
+
 			if (eEnemyCombatType != NO_UNITCOMBAT)
 			{
 				// Check for anti-type bonus (e.g., Bazooka's +50% vs Armor)
 				int iAntiTypeBonus = unit.pUnit->unitCombatModifier(eEnemyCombatType);
-				
+
 				// Only apply if we have a significant bonus (25%+)
 				if (iAntiTypeBonus >= 25)
 				{
 					// This is our primary target type - prioritize it!
 					result->AddScore(0, 25, 0);
-					
+
 					// Scale bonus with our advantage magnitude
 					result->AddScore(0, iAntiTypeBonus / 5, 0); // +10 at 50%, +20 at 100%
-					
+
 					// Extra bonus for kills - removing the threat we're designed to counter
 					if (bIsKill)
 						result->AddScore(0, 20, 0);
-					
+
 					// Modern tanks are high-value targets (more threatening)
 					if (pEnemyUnit->GetBaseCombatStrength() >= 60)
 						result->AddScore(0, 10, 0);
-					
+
 					// Slightly less valuable if enemy is heavily wounded (will die anyway)
 					int iEnemyHPPercent = (pEnemyUnit->GetCurrHitPoints() * 100) / pEnemyUnit->GetMaxHitPoints();
 					if (iEnemyHPPercent <= 25 && !bIsKill)
@@ -16500,7 +16500,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					}
 				}
 			}
-			
+
 			// PENALTY: Anti-armor units are less effective against non-armor targets
 			// Bazookas have -25% vs fortified units and cities (from COVERING_FIRE promotion)
 			// Check if we have a PENALTY against this target type
@@ -16514,7 +16514,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					result->AddScore(0, iPenaltyMod / 2, 0); // e.g., -12 for -25% penalty
 				}
 			}
-			
+
 			// Also check fortification penalty (Bazookas are bad vs fortified)
 			if (pEnemyUnit->IsFortified())
 			{
@@ -16534,23 +16534,23 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 	// - Picking off wounded units
 	// - Destroying siege/artillery before it can fire
 	// - Avoiding AA coverage zones at all costs
-	if (unit.pUnit->getDomainType() == DOMAIN_LAND && unit.pUnit->IsCanAttackRanged() && 
+	if (unit.pUnit->getDomainType() == DOMAIN_LAND && unit.pUnit->IsCanAttackRanged() &&
 		unit.pUnit->IsHoveringUnit())
 	{
 		CvUnit* pEnemyUnit = enemyPlot->getEnemyUnit();
 		const CvPlot* pTargetPlot = enemyPlot->getPlot();
-		
+
 		// 1. AA AVOIDANCE: Check for anti-air threats near target
 		// This is CRITICAL - helicopters take massive damage from AA
 		int iAAThreatsNearTarget = 0;
 		int iMaxAADamage = 0;
-		
+
 		for (int i = RING0_PLOTS; i < RING_PLOTS[3]; i++) // Check 3-tile radius
 		{
 			CvPlot* pLoopPlot = iterateRingPlots(pTargetPlot, i);
 			if (!pLoopPlot)
 				continue;
-			
+
 			CvUnit* pPotentialAA = pLoopPlot->getBestDefender(NO_PLAYER, unit.pUnit->getOwner(), NULL, true);
 			if (pPotentialAA && pPotentialAA->canIntercept() && pPotentialAA->getDomainType() != DOMAIN_AIR)
 			{
@@ -16560,14 +16560,14 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					iMaxAADamage = iAADamage;
 			}
 		}
-		
+
 		// Heavy penalty for attacking into AA coverage
 		if (iAAThreatsNearTarget > 0)
 		{
 			// Estimate interception damage as fraction of our HP
 			int iOurHP = unit.pUnit->GetCurrHitPoints();
 			int iDamagePercent = (iMaxAADamage * 100) / max(1, iOurHP);
-			
+
 			// Scale penalty by damage risk
 			if (iDamagePercent >= 50)
 			{
@@ -16585,7 +16585,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			{
 				result->AddScore(0, -(10), 0); // Mild risk
 			}
-			
+
 			// Extra penalty for multiple AA (crossfire)
 			if (iAAThreatsNearTarget >= 2)
 				result->AddScore(0, -(iAAThreatsNearTarget * 15), 0);
@@ -16595,13 +16595,13 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			// No AA coverage - helicopter can operate freely!
 			result->AddScore(0, 15, 0); // Safe operating zone
 		}
-		
+
 		// 2. TARGET PRIORITY: Helicopters excel at specific targets
 		if (pEnemyUnit && !enemyPlot->isEnemyCity())
 		{
 			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
 			UnitCombatTypes eEnemyCombatType = pEnemyUnit->getUnitCombatType();
-			
+
 			// PRIORITY A: TANK HUNTING - Helicopters have anti-armor bonus
 			// Check if we have a combat modifier bonus against this unit type
 			int iAntiArmorBonus = 0;
@@ -16609,19 +16609,19 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			{
 				iAntiArmorBonus = unit.pUnit->unitCombatModifier(eEnemyCombatType);
 			}
-			
+
 			if (iAntiArmorBonus >= 25) // Significant bonus (typically 50%+ vs armor)
 			{
 				// This is a prime target - exploit our anti-armor advantage
 				result->AddScore(0, 30, 0);
-				
+
 				// Scale bonus with our advantage
 				result->AddScore(0, iAntiArmorBonus / 5, 0); // +10 at 50%, +20 at 100%
-				
+
 				// Extra bonus for killing armor (removes threat, exploits bonus fully)
 				if (bIsKill)
 					result->AddScore(0, 25, 0);
-				
+
 				// Even more valuable if it's a modern tank (high strength)
 				if (pEnemyUnit->GetBaseCombatStrength() >= 60)
 					result->AddScore(0, 15, 0);
@@ -16630,7 +16630,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			else if (eEnemyAI == UNITAI_CITY_BOMBARD)
 			{
 				result->AddScore(0, 25, 0);
-				
+
 				// Extra bonus for killing siege
 				if (bIsKill)
 					result->AddScore(0, 20, 0);
@@ -16640,7 +16640,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			{
 				// Very high value target - removing AA opens airspace
 				result->AddScore(0, 30, 0);
-				
+
 				if (bIsKill)
 					result->AddScore(0, 25, 0);
 			}
@@ -16652,12 +16652,12 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 				{
 					// Heavily wounded - perfect helicopter target
 					result->AddScore(0, 15, 0);
-					
+
 					if (bIsKill)
 						result->AddScore(0, 10, 0);
 				}
 			}
-			
+
 			// PRIORITY E: Isolated targets - helicopter can reach where others can't
 			int iEnemySupport = enemyPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
 			if (iEnemySupport == 0)
@@ -16665,18 +16665,18 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 				// Isolated unit - helicopter's reach advantage
 				result->AddScore(0, 12, 0);
 			}
-			
+
 			// PRIORITY E: Supply line disruption - workers, settlers behind enemy lines
 			if (pEnemyUnit->IsCivilianUnit())
 			{
 				result->AddScore(0, 20, 0);
-				
+
 				// Settlers are prime targets
 				if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
 					result->AddScore(0, 15, 0);
 			}
 		}
-		
+
 		// 3. AVOID FORTIFIED/ENTRENCHED TARGETS: Helicopters waste their mobility on these
 		// Better to let ground forces handle dug-in enemies
 		if (pEnemyUnit && pEnemyUnit->IsCombatUnit() && !pEnemyUnit->IsCanAttackRanged())
@@ -16688,7 +16688,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			}
 		}
 	}
-	
+
 	// === LIGHT TANK / ARMORED CAR TACTICS ===
 	// Light tanks: Fast ranged units with moderate armor. Different from helicopters:
 	// - Bound by terrain (no hovering)
@@ -16701,7 +16701,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 	{
 		int iOurStrength = unit.pUnit->GetBaseCombatStrength();
 		bool bIsLightTank = (iOurStrength >= 30 && iOurStrength < 60);
-		
+
 		if (bIsLightTank && !enemyPlot->isEnemyCity())
 		{
 			CvUnit* pEnemyUnit = enemyPlot->getEnemyUnit();
@@ -16709,7 +16709,7 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 			{
 				int iEnemyStrength = pEnemyUnit->GetBaseCombatStrength();
 				UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
-				
+
 				// 1. RECONNAISSANCE ROLE: Light tanks should spot and report, not brawl
 				// Prefer softer targets over heavy armor
 				if (iEnemyStrength > iOurStrength + 20)
@@ -16724,18 +16724,18 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					// Weaker enemy - good target for light tank
 					result->AddScore(0, 10, 0);
 				}
-				
+
 				// 2. SCREENING ROLE: Engage enemy recon and light units
 				// Counter enemy light units and scouts
 				if (pEnemyUnit->baseMoves(false) >= 3 && !pEnemyUnit->IsCanAttackRanged())
 				{
 					// Enemy fast melee (cavalry/light armor) - good target for light tank
 					result->AddScore(0, 12, 0);
-					
+
 					if (bIsKill)
 						result->AddScore(0, 8, 0);
 				}
-				
+
 				// 3. EXPLOIT GAPS: Light tanks can quickly exploit weak points
 				// Prefer targets on the flanks of enemy formations
 				int iEnemySupport = enemyPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
@@ -16754,22 +16754,22 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 					// Heavily defended - not ideal for light tank
 					result->AddScore(0, -(8), 0);
 				}
-				
+
 				// 4. FIRE SUPPORT: Prioritize helping our heavier units
 				// Check if friendly heavy armor is engaged with this target
 				vector<SUnitStats> allUnits = assumedPosition.getAvailableUnits();
 				allUnits.insert(allUnits.end(), assumedPosition.getFinishedUnits().begin(), assumedPosition.getFinishedUnits().end());
-				
+
 				bool bFriendlyArmorEngaged = false;
 				for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
 				{
 					const CvUnit* pFriendly = it->pUnit;
 					if (!pFriendly || pFriendly == unit.pUnit)
 						continue;
-					
+
 					// Check for heavy armor (strength >= 60, fast melee)
-					if (pFriendly->GetBaseCombatStrength() >= 60 && 
-						pFriendly->baseMoves(false) >= 4 && 
+					if (pFriendly->GetBaseCombatStrength() >= 60 &&
+						pFriendly->baseMoves(false) >= 4 &&
 						!pFriendly->IsCanAttackRanged())
 					{
 						int iDistToEnemy = plotDistance(it->iPlotIndex, enemyPlot->getPlotIndex());
@@ -16780,17 +16780,17 @@ STacticalAssignment* ScorePlotForRangedAttack(const SUnitStats& unit, const CvTa
 						}
 					}
 				}
-				
+
 				if (bFriendlyArmorEngaged)
 				{
 					// Support our heavy tanks
 					result->AddScore(0, 15, 0);
-					
+
 					// Extra bonus if this softens target for heavy armor kill
 					if (!bIsKill && result->unitDamage.GetValue(pEnemyUnit->GetID()) > pEnemyUnit->GetCurrHitPoints() / 3)
 						result->AddScore(0, 8, 0);
 				}
-				
+
 				// 5. SOFT TARGETS: Light tanks excel against infantry, siege, supply
 				if (eEnemyAI == UNITAI_CITY_BOMBARD)
 				{
@@ -17108,26 +17108,26 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 	// This is especially valuable for fast units with high moves remaining
 	bool bCanMoveAfterAttack = pUnit->canMoveAfterAttacking() && result->iRemainingMoves > 0;
 	bool bHasSafePlot = (gSafePlotCount[unit.iUnitID] > 0);
-	
+
 	if (bCanMoveAfterAttack)
 	{
 		// Calculate retreat potential based on remaining moves
 		int iRetreatMoves = result->iRemainingMoves / GD_INT_GET(MOVE_DENOMINATOR);
-		
+
 		// Bonus for having escape route - scaled by remaining movement
 		if (bHasSafePlot)
 		{
 			// Base hit-and-run bonus - unit can attack and escape
 			result->AddScore(0, 8, 0);
-			
+
 			// Extra bonus per movement point available for retreat
 			result->AddScore(0, iRetreatMoves * 3, 0);
-			
+
 			// Fast units (3+ moves after attack) are excellent at hit-and-run
 			if (iRetreatMoves >= 3)
 			{
 				result->AddScore(0, 10, 0); // cavalry charge & retreat
-				
+
 				// If unit has high base moves, it's a dedicated fast unit
 				if (pUnit->baseMoves(false) >= 4)
 					result->AddScore(0, 5, 0); // cavalry/lancer/mounted archer bonus
@@ -17139,13 +17139,13 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			// Still slightly better than being stuck, but not by much
 			result->AddScore(0, 2, 0);
 		}
-		
+
 		// Hit-and-run units prefer wounded targets they can finish quickly
 		// Attack, kill, retreat before enemy can respond
 		if (bIsKill && bHasSafePlot)
 		{
 			result->AddScore(0, 15, 0); // Safe kill - ideal hit-and-run
-			
+
 			// Extra bonus for killing ranged/siege units that threaten our lines
 			CvUnit* pEnemy = enemyPlot->getEnemyUnit();
 			if (pEnemy && pEnemy->IsCanAttackRanged())
@@ -17153,7 +17153,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				result->AddScore(0, 10, 0); // Silencing enemy ranged is valuable
 			}
 		}
-		
+
 		// Penalize attacks that leave us in danger with no escape
 		if (!bHasSafePlot && !bIsKill)
 		{
@@ -17185,22 +17185,22 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 		bool bIsFastMelee = (pUnit->baseMoves(false) >= 3);
 		int iOurStrength = pUnit->GetBaseCombatStrength();
 		bool bIsModernArmor = (bIsFastMelee && iOurStrength >= 60);
-		
+
 		// Check for city attack modifiers on the unit
 		int iCityAttackMod = pUnit->cityAttackModifier();
-		
+
 		if (bIsModernArmor)
 		{
 			// TANKS: Designed for breakthrough - good at city assault
 			// No penalty, and bonus for capturing cities
 			result->AddScore(0, 15, 0); // Tanks are effective city attackers
-			
+
 			// Extra bonus if this would capture the city
 			if (bIsKill)
 			{
 				result->AddScore(0, 25, 0); // Tank breakthrough captures city!
 			}
-			
+
 			// Tanks with infantry support are even better at city assault
 			int iFriendlyInfantryNearby = 0;
 			for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
@@ -17209,7 +17209,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				if (pLoopPlot)
 				{
 					CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
-					if (pFriendly && !pFriendly->IsCanAttackRanged() && 
+					if (pFriendly && !pFriendly->IsCanAttackRanged() &&
 						pFriendly->AI_getUnitAIType() != UNITAI_FAST_ATTACK &&
 						pFriendly->baseMoves(false) <= 3)
 					{
@@ -17217,7 +17217,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					}
 				}
 			}
-			
+
 			if (iFriendlyInfantryNearby >= 2)
 			{
 				result->AddScore(0, 12, 0); // Combined arms city assault
@@ -17226,7 +17226,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			{
 				result->AddScore(0, 6, 0);
 			}
-			
+
 			// Apply any city attack modifier bonus the unit has
 			if (iCityAttackMod > 0)
 			{
@@ -17239,13 +17239,13 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			// These units are historically bad at assaulting fortifications
 			// Apply penalty based on their city attack modifier
 			result->AddScore(0, iCityAttackMod / 3, 0); // e.g., -10 for -33% modifier
-			
+
 			// Even worse if this isn't a capture (just chip damage)
 			if (!bIsKill)
 			{
 				result->AddScore(0, -(8), 0); // Cavalry shouldn't be assaulting cities
 			}
-			
+
 			// Cavalry should prefer other targets when available
 			// Small additional penalty to encourage finding unit targets
 			result->AddScore(0, -(5), 0);
@@ -17305,10 +17305,10 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 	{
 		bool bEnemyOnOpen = pEnemyPlot->isOpenGround();
 		bool bEnemyOnRough = pEnemyPlot->isRoughGround();
-		
+
 		int iOpenAttackBonus = pUnit->openAttackModifier();
 		int iRoughAttackBonus = pUnit->roughAttackModifier();
-		
+
 		if (iOpenAttackBonus != 0 || iRoughAttackBonus != 0)
 		{
 			// Unit has terrain-specific attack bonuses from promotions or unit type
@@ -17335,7 +17335,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				result->AddScore(0, -(iRoughAttackBonus / 8), 0);
 			}
 		}
-		
+
 		// === FEATURE-SPECIFIC ATTACK BONUSES (Woodsman, Jungle Fighter, etc.) ===
 		// Units with feature-specific attack bonuses should prioritize targets on those features
 		FeatureTypes eEnemyFeature = pEnemyPlot->getFeatureType();
@@ -17347,13 +17347,13 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			{
 				// Strong preference for targets we have feature bonus against
 				result->AddScore(0, iFeatureAttackBonus / 3, 0); // +8-15 typically
-				
+
 				// Extra bonus for kills - our feature advantage makes kills more likely
 				if (bIsKill)
 					result->AddScore(0, iFeatureAttackBonus / 5, 0);
 			}
 		}
-		
+
 		// Check if we have attack bonus when attacking FROM our current terrain (RoughFromMod/Woodsman)
 		const CvPlot* pOurPlot = assumedUnitPlot->getPlot();
 		if (pOurPlot)
@@ -17367,7 +17367,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					// We're attacking FROM rough terrain with Woodsman-type bonus
 					// This bonus makes our attacks stronger
 					result->AddScore(0, iRoughFromBonus / 3, 0); // +3-10 typically
-					
+
 					// Extra for kills since we're attacking at advantage
 					if (bIsKill)
 						result->AddScore(0, iRoughFromBonus / 5, 0);
@@ -17383,33 +17383,33 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 	{
 		int iFlankMod = pUnit->GetFlankAttackModifier();
 		CvTacticalPlot::eTactPlotDomain eUnitDomain = pUnit->getDomainType() == DOMAIN_SEA ? CvTacticalPlot::TD_SEA : CvTacticalPlot::TD_LAND;
-		
+
 		// Count friendly units adjacent to the enemy (not including us since we're the attacker)
 		int iAdjacentFriendlies = enemyPlot->getNumAdjacentFriendlies(eUnitDomain, unit.iPlotIndex);
-		
+
 		// Count enemy units adjacent to target (enemy support)
 		int iAdjacentEnemies = enemyPlot->getNumAdjacentEnemies(eUnitDomain);
-		
+
 		// Net flanking advantage: more friendlies than enemies = flanking bonus
 		int iFlankingAdvantage = iAdjacentFriendlies - iAdjacentEnemies;
-		
+
 		if (iFlankingAdvantage > 0)
 		{
 			// We have flanking advantage - bonus scales with unit's FlankAttackModifier
 			// Base flanking is 10% per adjacent friend (BONUS_PER_ADJACENT_FRIEND)
 			// FlankAttackModifier adds to this, so cavalry with +25% gets 35% per flanker
-			
+
 			int iBaseFlankBonus = iFlankingAdvantage * 3; // +3 per net flanker for all melee
 			int iFlankModBonus = (iFlankMod * iFlankingAdvantage) / 10; // Extra for high flank modifier
-			
+
 			result->AddScore(0, iBaseFlankBonus + iFlankModBonus, 0);
-			
+
 			// Extra bonus for cavalry-type units with high flank modifier
 			// These units should strongly prefer flanking attacks
 			if (iFlankMod >= 25)
 			{
 				result->AddScore(0, 5, 0); // cavalry/lancer bonus for any flanking situation
-				
+
 				// Big bonus for multiple flankers - cavalry excels at concentrated charges
 				if (iAdjacentFriendlies >= 2)
 					result->AddScore(0, iFlankMod / 5, 0); // +5 to +10 for multiple flankers
@@ -17421,7 +17421,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			// This is not cavalry's strong suit - mild penalty
 			result->AddScore(0, -(5), 0);
 		}
-		
+
 		// Units with high FlankAttackModifier should avoid attacking isolated enemies
 		// when there are flanking opportunities elsewhere
 		// (This is a soft preference - isolated enemies are still valid targets)
@@ -17446,23 +17446,23 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 		if (pEnemyUnit)
 		{
 			bool bIsFastMelee = (pUnit->baseMoves(false) >= 3 && !pUnit->IsCanAttackRanged());
-			bool bIsCavalry = (pUnit->AI_getUnitAIType() == UNITAI_FAST_ATTACK || 
+			bool bIsCavalry = (pUnit->AI_getUnitAIType() == UNITAI_FAST_ATTACK ||
 							   pUnit->getUnitInfo().GetUnitAIType(UNITAI_FAST_ATTACK));
 			UnitAITypes eEnemyAI = pEnemyUnit->AI_getUnitAIType();
-			
+
 			// Distinguish modern armor (tanks) from ancient/medieval cavalry
 			// Tanks have high base combat strength (60+) and typically 5+ moves
 			// They use different tactics: breakthrough vs hit-and-run
 			int iOurStrength = pUnit->GetBaseCombatStrength();
 			bool bIsModernArmor = (bIsFastMelee && iOurStrength >= 60);
-			
+
 			// === MODERN ARMOR (TANKS) TACTICS ===
 			// Tanks excel at: breakthrough attacks, combined arms, absorbing damage
 			// Tanks struggle with: urban combat, anti-tank weapons, fighting alone
 			if (bIsModernArmor)
 			{
 				int iEnemyStrength = pEnemyUnit->GetBaseCombatStrength();
-				
+
 				// 1. BREAKTHROUGH PRIORITY: Tanks should break through defensive lines
 				// Target units blocking the path to objectives (cities)
 				CvCity* pNearbyEnemyCity = pEnemyPlot->GetAdjacentCity();
@@ -17486,27 +17486,27 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						}
 					}
 				}
-				
+
 				if (pNearbyEnemyCity)
 				{
 					// Enemy is defending near a city - breakthrough value
 					result->AddScore(0, 20, 0);
-					
+
 					// Extra bonus for killing defenders blocking city assault
 					if (bIsKill)
 						result->AddScore(0, 15, 0);
-					
+
 					// Adjacent to city = highest priority breach point
 					if (pNearbyEnemyCity->plot()->isAdjacent(pEnemyPlot))
 						result->AddScore(0, 10, 0);
 				}
-				
+
 				// 2. COMBINED ARMS: Tanks benefit from infantry support
 				// Check for friendly infantry nearby (protects from AT threats)
 				int iFriendlyInfantryNearby = 0;
 				CvTacticalPlot::eTactPlotDomain eUnitDomain = CvTacticalPlot::TD_LAND;
 				int iAdjacentFriendlies = enemyPlot->getNumAdjacentFriendlies(eUnitDomain, unit.iPlotIndex);
-				
+
 				// Estimate infantry support (non-fast-attack melee friendlies)
 				for (int i = RING0_PLOTS; i < RING_PLOTS[2]; i++)
 				{
@@ -17514,7 +17514,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (pLoopPlot)
 					{
 						CvUnit* pFriendly = pLoopPlot->getBestDefender(pUnit->getOwner());
-						if (pFriendly && !pFriendly->IsCanAttackRanged() && 
+						if (pFriendly && !pFriendly->IsCanAttackRanged() &&
 							pFriendly->AI_getUnitAIType() != UNITAI_FAST_ATTACK &&
 							pFriendly->baseMoves(false) <= 3)
 						{
@@ -17522,7 +17522,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						}
 					}
 				}
-				
+
 				// Bonus for attacking with infantry support (combined arms)
 				if (iFriendlyInfantryNearby >= 2)
 				{
@@ -17539,7 +17539,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (!bIsKill)
 						result->AddScore(0, -(5), 0);
 				}
-				
+
 				// 3. ARMOR ADVANTAGE: Tanks can engage other heavy units
 				// Unlike cavalry, tanks don't need to avoid armored enemies
 				if (!pEnemyUnit->IsCanAttackRanged() && !pEnemyUnit->IsCivilianUnit())
@@ -17558,7 +17558,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 							result->AddScore(0, -(8), 0);
 					}
 				}
-				
+
 				// 4. PRIORITY TARGETS: Modern context priorities
 				// Anti-tank units (AT guns, tank destroyers) are dangerous
 				// Siege is still valuable but tanks are better at direct assault
@@ -17576,17 +17576,17 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					result->AddScore(0, 8, 0);
 					if (bIsKill)
 						result->AddScore(0, 10, 0);
-					
+
 					// Artillery is especially valuable to destroy
 					if (pEnemyUnit->GetRange() >= 3)
 						result->AddScore(0, 5, 0);
 				}
-				
+
 				// 5. WOUNDED TARGETS: Exploitation
 				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
 				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
 				int iEnemyHPPercent = (iEnemyHP * 100) / iEnemyMaxHP;
-				
+
 				if (iEnemyHPPercent <= 50)
 				{
 					// Exploit weakness - tanks are good at finishing
@@ -17594,7 +17594,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (bIsKill)
 						result->AddScore(0, 10, 0);
 				}
-				
+
 				// 6. SPEARHEAD ROLE: Tanks lead the assault
 				// Bonus for being first to engage (breaking the line)
 				if (iAdjacentFriendlies >= 1 && enemyPlot->getNumAdjacentEnemies(eUnitDomain) >= 2)
@@ -17602,7 +17602,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					// Multiple enemies - tank is breaking through
 					result->AddScore(0, 8, 0);
 				}
-				
+
 				// Civilians - tanks can capture but it's not their specialty
 				if (pEnemyUnit->IsCivilianUnit())
 				{
@@ -17618,11 +17618,11 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				if (eEnemyAI == UNITAI_CITY_BOMBARD)
 				{
 					result->AddScore(0, 25, 0); // High priority - cripples enemy sieges
-					
+
 					// Extra bonus for killing siege - removes threat permanently
 					if (bIsKill)
 						result->AddScore(0, 20, 0);
-					
+
 					// Cavalry with hit-and-run can safely raid siege lines
 					if (pUnit->canMoveAfterAttacking() && result->iRemainingMoves > 0)
 						result->AddScore(0, 10, 0); // Can hit and escape
@@ -17632,11 +17632,11 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				{
 					// Ranged units are vulnerable to cavalry charges
 					result->AddScore(0, 15, 0);
-					
+
 					// Extra bonus for killing - silences their firepower
 					if (bIsKill)
 						result->AddScore(0, 15, 0);
-					
+
 					// Archers and crossbowmen are especially vulnerable
 					if (eEnemyAI == UNITAI_RANGED)
 						result->AddScore(0, 5, 0);
@@ -17647,7 +17647,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				if (iEnemySupport == 0)
 				{
 					result->AddScore(0, 12, 0); // Isolated target - safe approach
-					
+
 					// Hit-and-run units can safely engage isolated targets
 					if (pUnit->canMoveAfterAttacking())
 						result->AddScore(0, 5, 0);
@@ -17659,34 +17659,34 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (eEnemyAI != UNITAI_CITY_BOMBARD && !bIsKill)
 						result->AddScore(0, -(8), 0);
 				}
-				
+
 				// PRIORITY 4: Low-defense targets (wounded or weak)
 				// Cavalry can rapidly exploit weaknesses in enemy lines
 				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
 				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
 				int iEnemyHPPercent = (iEnemyHP * 100) / iEnemyMaxHP;
-				
+
 				if (iEnemyHPPercent <= 50)
 				{
 					// Wounded enemy - easy kill potential
 					result->AddScore(0, (100 - iEnemyHPPercent) / 5, 0); // Up to +10 for nearly dead
-					
+
 					// Cavalry should finish off wounded targets
 					if (bIsKill)
 						result->AddScore(0, 8, 0);
 				}
-				
+
 				// PRIORITY 5: Workers and settlers - raiders' delight
 				if (pEnemyUnit->IsCivilianUnit())
 				{
 					// Cavalry raids on workers/settlers are devastating economically
 					result->AddScore(0, 20, 0);
-					
+
 					// Settlers are extremely valuable targets
 					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
 						result->AddScore(0, 30, 0);
 				}
-				
+
 				// Penalty for attacking heavily armored units without advantage
 				// Cavalry historically struggled against prepared heavy infantry
 				if (!pEnemyUnit->IsCanAttackRanged() && !pEnemyUnit->IsCivilianUnit())
@@ -17697,14 +17697,14 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						// Heavily armored, supported melee unit - not ideal cavalry target
 						result->AddScore(0, -(10), 0);
 					}
-					
+
 					// Fortified infantry is tough for cavalry
 					if (pEnemyUnit->IsFortified() && !bIsKill)
 					{
 						result->AddScore(0, -(pEnemyUnit->fortifyModifier() / 5), 0); // -2 to -5
 					}
 				}
-				
+
 				// === ENEMY COMBAT BONUS IMPROVEMENT AWARENESS (Shoshone Encampment, etc.) ===
 				// Check if the enemy gets a combat bonus from nearby improvements (like Shoshone encampments)
 				// This makes the enemy significantly tougher to attack - prefer other targets
@@ -17714,13 +17714,13 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					// Enemy has defensive bonus from nearby improvement (+20% for Shoshone)
 					// Penalize attacking them - prefer targets without this bonus
 					result->AddScore(0, -(iEnemyImprovementBonus / 2), 0); // -10 for 20% bonus
-					
+
 					// Extra penalty if we're cavalry - we're fast, we can find better targets
 					if (bIsCavalry)
 						result->AddScore(0, -(iEnemyImprovementBonus / 4), 0); // additional -5
 				}
 			}
-			
+
 			// === RECON UNIT TACTICS (scouts, explorers) ===
 			// Recon units are weaker than cavalry but still fast (3 moves).
 			// They should:
@@ -17729,9 +17729,9 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			// 3. Target siege/ranged units (fragile, high value)
 			// 4. Avoid strong/fortified enemies
 			// 5. Capture undefended workers/settlers
-			bool bIsRecon = (pUnit->AI_getUnitAIType() == UNITAI_EXPLORE || 
+			bool bIsRecon = (pUnit->AI_getUnitAIType() == UNITAI_EXPLORE ||
 							 pUnit->getUnitInfo().GetDefaultUnitAIType() == UNITAI_EXPLORE);
-			
+
 			if (bIsRecon && !bIsCavalry) // Don't double-apply if already counted as cavalry
 			{
 				int iEnemyStrength = pEnemyUnit->GetBaseCombatStrength();
@@ -17739,14 +17739,14 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
 				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
 				int iEnemyHPPercent = (iEnemyHP * 100) / max(iEnemyMaxHP, 1);
-				
+
 				// 1. SAFE KILLS: Recon excels at finishing wounded enemies
 				// This is their primary combat role - cleanup duty
 				if (bIsKill)
 				{
 					// Big bonus for kills - this is what recon should do
 					result->AddScore(0, 15, 0);
-					
+
 					// Extra bonus for killing badly wounded targets (almost guaranteed success)
 					if (iEnemyHPPercent <= 25)
 						result->AddScore(0, 10, 0);
@@ -17760,7 +17760,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (iEnemyStrength > iOurStrength * 1.2f)
 						result->AddScore(0, -(10), 0);
 				}
-				
+
 				// 2. HIGH-VALUE SOFT TARGETS: Siege and ranged units
 				// These are valuable and fragile - good recon targets
 				if (eEnemyAI == UNITAI_CITY_BOMBARD)
@@ -17775,7 +17775,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (bIsKill)
 						result->AddScore(0, 8, 0);
 				}
-				
+
 				// 3. CIVILIANS: Easy captures
 				if (pEnemyUnit->IsCivilianUnit())
 				{
@@ -17783,11 +17783,11 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SETTLE)
 						result->AddScore(0, 20, 0); // Settlers are extremely valuable
 				}
-				
+
 				// 4. SURVIVAL PRIORITY: Avoid dangerous situations
 				// Recon units are too valuable for exploration to throw away
 				int iEnemySupport = enemyPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
-				
+
 				// Isolated targets are safe
 				if (iEnemySupport == 0)
 				{
@@ -17798,19 +17798,19 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					// Multiple enemies nearby and we can't get a kill - very risky
 					result->AddScore(0, -(15), 0);
 				}
-				
+
 				// Avoid fortified strong enemies
 				if (pEnemyUnit->IsFortified() && !bIsKill)
 				{
 					result->AddScore(0, -(12), 0);
 				}
-				
+
 				// Penalize attacking units much stronger than us
 				if (!pEnemyUnit->IsCivilianUnit() && iEnemyStrength >= iOurStrength * 1.5f && !bIsKill)
 				{
 					result->AddScore(0, -(15), 0); // Don't pick fights you can't win
 				}
-				
+
 				// 5. SURVIVALISM BONUS: Recon with self-healing can be more aggressive
 				// If unit can heal in enemy/neutral territory, it can sustain longer raids
 				int iEnemyHeal = pUnit->getExtraEnemyHeal();
@@ -17819,11 +17819,11 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				{
 					// Can heal outside friendly territory - more sustainable aggression
 					int iHealBonus = max(iEnemyHeal, iNeutralHeal);
-					
+
 					// Bonus for attacking when we can self-heal
 					if (bIsKill)
 						result->AddScore(0, iHealBonus / 3, 0); // +3-6 for typical survivalism
-					
+
 					// Reduce penalty for risky attacks if we can heal
 					// Units with self-heal can afford to take some damage
 					if (result->iSelfDamage > 0 && result->iSelfDamage < pUnit->GetCurrHitPoints() / 2)
@@ -17832,7 +17832,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						result->AddScore(0, min(iHealBonus / 2, result->iSelfDamage / 5), 0);
 					}
 				}
-				
+
 				// 6. WITHDRAWAL BONUS: Recon with withdrawal chance can take more risks
 				// Units that can withdraw from melee effectively take less damage on average
 				int iWithdrawalChance = pUnit->withdrawalProbability();
@@ -17841,11 +17841,11 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					// Withdrawal is powerful - it completely negates damage when it triggers
 					// Scale bonus based on withdrawal chance (typically 50-75% for recon)
 					int iWithdrawBonus = iWithdrawalChance / 10; // +5-7 for typical withdrawal
-					
+
 					// Withdrawal only helps against melee attackers, not ranged
 					// Since recon is attacking, the bonus applies to counterattacks they might face
 					result->AddScore(0, iWithdrawBonus, 0);
-					
+
 					// Extra bonus when taking risks - withdrawal makes self-damage less certain
 					if (result->iSelfDamage > 0 && !bIsKill)
 					{
@@ -17854,20 +17854,20 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						int iEffectiveDamageReduction = (result->iSelfDamage * iWithdrawalChance) / 200;
 						result->AddScore(0, iEffectiveDamageReduction, 0);
 					}
-					
+
 					// Withdrawal makes isolated attacks safer since you can escape
 					if (iEnemySupport == 0)
 						result->AddScore(0, 3, 0); // Extra safe when can withdraw from lone enemy
 				}
 			}
-			
+
 			// === SLOW INFANTRY MELEE TACTICS (Spearmen, Swordsmen, Pikemen, etc.) ===
 			// Slow melee units (2 moves) use fundamentally different melee tactics than cavalry:
 			// - Anti-cavalry units (spearmen/pikemen) should prioritize mounted targets
 			// - Mainline infantry (swordsmen) should target weakened enemies for kills
 			// - All slow infantry prefers supported attacks over isolated charges
 			bool bIsSlowInfantry = (!pUnit->IsCanAttackRanged() && pUnit->baseMoves(false) <= 2);
-			
+
 			if (bIsSlowInfantry && !bIsFastMelee && !bIsCavalry && !bIsRecon)
 			{
 				int iEnemySupport = enemyPlot->getNumAdjacentEnemies(CvTacticalPlot::TD_LAND);
@@ -17875,35 +17875,35 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
 				int iEnemyMaxHP = pEnemyUnit->GetMaxHitPoints();
 				int iEnemyHPPercent = (iEnemyHP * 100) / max(iEnemyMaxHP, 1);
-				
+
 				// Check for anti-cavalry bonus (spearmen/pikemen)
 				static UnitCombatTypes eMountedCombat = (UnitCombatTypes)GC.getInfoTypeForString("UNITCOMBAT_MOUNTED");
 				int iAntiCavalryBonus = 0;
 				bool bEnemyIsCavalry = false;
-				
+
 				if (eMountedCombat != NO_UNITCOMBAT)
 				{
 					iAntiCavalryBonus = pUnit->unitCombatModifier(eMountedCombat);
 					bEnemyIsCavalry = (pEnemyUnit->getUnitCombatType() == eMountedCombat);
 				}
-				
+
 				bool bIsAntiCavalry = (iAntiCavalryBonus >= 25);
-				
+
 				// 1. ANTI-CAVALRY MELEE: Spearmen should prioritize mounted targets
 				if (bIsAntiCavalry && bEnemyIsCavalry)
 				{
 					// This is our specialty - give big bonus for engaging cavalry
 					result->AddScore(0, 35, 0);
-					
+
 					// Extra bonus based on our anti-cavalry strength
 					result->AddScore(0, iAntiCavalryBonus / 5, 0); // +10 for +50% bonus
-					
+
 					// Killing cavalry is excellent
 					if (bIsKill)
 					{
 						result->AddScore(0, 25, 0);
 					}
-					
+
 					// Bonus for protecting ranged units from cavalry
 					// Check if there are friendly ranged units nearby that cavalry could threaten
 					int iNearbyFriendlyRanged = 0;
@@ -17923,7 +17923,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 							}
 						}
 					}
-					
+
 					// Big bonus for protecting ranged from cavalry
 					if (iNearbyFriendlyRanged > 0)
 					{
@@ -17940,7 +17940,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						result->AddScore(0, -(8), 0);
 					}
 				}
-				
+
 				// 2. MAINLINE INFANTRY (non-anti-cavalry): Target priority
 				// Swordsmen and similar units are versatile front-line fighters
 				if (!bIsAntiCavalry)
@@ -17967,7 +17967,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 							result->AddScore(0, 8, 0);
 					}
 				}
-				
+
 				// 3. FORMATION FIGHTING: Infantry needs mutual support
 				// Unlike cavalry, infantry charges without support are dangerous
 				if (iOurSupport >= 2)
@@ -17987,7 +17987,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					else
 						result->AddScore(0, -(5), 0); // Still risky even for kill
 				}
-				
+
 				// 4. DEFENSIVE COMBAT BONUS: Infantry uses terrain
 				// If we're on good defensive terrain, we can afford more aggressive attacks
 				const CvPlot* pOurPlot = assumedUnitPlot->getPlot();
@@ -18000,14 +18000,14 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						result->AddScore(0, iOurTerrainDef / 8, 0);
 					}
 				}
-				
+
 				// Penalty for attacking fortified enemies (infantry struggles)
 				if (pEnemyUnit->IsFortified() && !bIsKill)
 				{
 					int iFortifyMod = pEnemyUnit->fortifyModifier();
 					result->AddScore(0, -(iFortifyMod / 4), 0); // -5 to -12
 				}
-				
+
 				// 5. CIVILIANS: Infantry can capture them, but not a specialty
 				if (pEnemyUnit->IsCivilianUnit())
 				{
@@ -18035,12 +18035,12 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				if (pUnit->getDomainType() != DOMAIN_SEA)
 					bRelevantDefender = false;
 			}
-			
+
 			if (bRelevantDefender)
 			{
 				// Killing a defender near a city is valuable - opens assault paths
 				result->AddScore(0, 50, 0);
-				
+
 				// Extra bonus if the city is the primary target
 				if (assumedPosition.getTarget() == pAdjacentEnemyCity->plot())
 					result->AddScore(0, 30, 0);
@@ -18055,21 +18055,21 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 		// Check if we have naval ranged units that could have softened this target
 		bool bHaveNavalRanged = false;
 		int iNavalRangedDamage = 0;
-		
+
 		vector<SUnitStats> allUnits = assumedPosition.getAvailableUnits();
 		allUnits.insert(allUnits.end(), assumedPosition.getFinishedUnits().begin(), assumedPosition.getFinishedUnits().end());
-		
+
 		for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
 		{
 			const CvUnit* pLoopUnit = it->pUnit;
 			if (!pLoopUnit || !pLoopUnit->IsCanAttackRanged())
 				continue;
-			
+
 			// Found a naval ranged unit (or submarine)
 			if (pLoopUnit->getDomainType() == DOMAIN_SEA)
 			{
 				bHaveNavalRanged = true;
-				
+
 				// Check if ranged unit can hit this target
 				int iRangedDistance = plotDistance(it->iPlotIndex, enemyPlot->getPlotIndex());
 				if (iRangedDistance <= pLoopUnit->GetRange())
@@ -18079,7 +18079,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				}
 			}
 		}
-		
+
 		if (bHaveNavalRanged)
 		{
 			// Attacking a coastal city - check if ranged can help soften
@@ -18092,7 +18092,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					if (result->eAssignmentType == A_MELEEKILL)
 					{
 						result->AddScore(0, 75, 0); // Capture the softened city!
-						
+
 						// Extra bonus for island cities (naval-only capture)
 						int iLandApproaches = 0;
 						for (int iDir = 0; iDir < NUM_DIRECTION_TYPES; iDir++)
@@ -18119,12 +18119,12 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 				CvUnit* pEnemy = enemyPlot->getEnemyUnit();
 				int iEnemyMaxHP = pEnemy->GetMaxHitPoints();
 				int iEnemyHP = pEnemy->GetCurrHitPoints();
-				
+
 				// Bonus if enemy is already damaged (ranged softened it)
 				if (iEnemyHP < iEnemyMaxHP)
 				{
 					int iDamagePercent = (100 * (iEnemyMaxHP - iEnemyHP)) / iEnemyMaxHP;
-					
+
 					// Prefer finishing off damaged enemies
 					if (result->eAssignmentType == A_MELEEKILL || result->eAssignmentType == A_MELEEKILL_NO_ADVANCE)
 					{
@@ -18135,16 +18135,16 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						result->AddScore(0, iDamagePercent / 5, 0); // Up to +20 for attacking damaged
 					}
 				}
-				
+
 				// Extra bonus for high-value targets (carriers, capital ships)
-				if (bIsKill && (pEnemy->AI_getUnitAIType() == UNITAI_CARRIER_SEA || 
+				if (bIsKill && (pEnemy->AI_getUnitAIType() == UNITAI_CARRIER_SEA ||
 					pEnemy->GetBaseCombatStrength() > pUnit->GetBaseCombatStrength()))
 				{
 					result->AddScore(0, 30, 0);
 				}
 			}
 		}
-		
+
 		// DESTROYER SUB-HUNTING COORDINATION
 		// Anti-submarine warfare units (destroyers) should prioritize hunting submarines
 		// This creates proper hunter-killer tactics where ASW units seek out and destroy subs
@@ -18153,13 +18153,13 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 		{
 			// Major bonus for ASW units attacking submarines - this is their primary role
 			result->AddScore(0, 60, 0);
-			
+
 			// Extra bonus if we can kill the sub
 			if (bIsKill)
 			{
 				result->AddScore(0, 50, 0); // Eliminating subs is critical for fleet protection
 			}
-			
+
 			// Bonus based on sub threat level
 			// High-value targets: nuclear subs, attack subs with missiles
 			if (pEnemyUnit->AI_getUnitAIType() == UNITAI_SUBMARINE)
@@ -18174,23 +18174,23 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					result->AddScore(0, 20, 0); // Regular attack sub
 				}
 			}
-			
+
 			// Check if we have friendly units that need protection from this sub
 			bool bSubThreatensFriendlies = false;
 			int iThreatenedValue = 0;
-			
+
 			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
 			{
 				const CvUnit* pLoopUnit = it->pUnit;
 				if (!pLoopUnit || pLoopUnit->getDomainType() != DOMAIN_SEA)
 					continue;
-				
+
 				// Check if this friendly unit is in danger from the submarine
 				int iDistToSub = plotDistance(it->iPlotIndex, enemyPlot->getPlotIndex());
 				if (iDistToSub <= pEnemyUnit->GetRange() + 1) // Sub could attack next turn
 				{
 					bSubThreatensFriendlies = true;
-					
+
 					// Carriers are particularly vulnerable and valuable
 					if (pLoopUnit->AI_getUnitAIType() == UNITAI_CARRIER_SEA)
 					{
@@ -18208,13 +18208,13 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					}
 				}
 			}
-			
+
 			// Big bonus for protecting threatened friendlies
 			if (bSubThreatensFriendlies)
 			{
 				result->AddScore(0, min(iThreatenedValue, 150), 0); // Cap at +150
 			}
-			
+
 			// Coordination bonus: if we have multiple ASW units, coordinate attack
 			int iASWCount = 0;
 			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
@@ -18227,14 +18227,14 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 						iASWCount++;
 				}
 			}
-			
+
 			// More ASW units nearby = coordinated hunt bonus
 			if (iASWCount >= 2)
 			{
 				result->AddScore(0, 20, 0); // Pack hunting bonus
 			}
 		}
-		
+
 		// NAVAL FLEET CONCENTRATION: Naval melee should prioritize targets being attacked by fleet
 		// This creates focus fire coordination where ranged softens and melee finishes
 		if (!IsSubmarineUnit(pUnit)) // Subs have their own coordination logic
@@ -18242,7 +18242,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 			int iFriendlyRangedEngaging = 0;
 			int iTotalRangedDamage = 0;
 			int iOtherMeleeEngaging = 0;
-			
+
 			for (vector<SUnitStats>::const_iterator it = allUnits.begin(); it != allUnits.end(); ++it)
 			{
 				const CvUnit* pLoopUnit = it->pUnit;
@@ -18250,9 +18250,9 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					continue;
 				if (pLoopUnit->getDomainType() != DOMAIN_SEA || !pLoopUnit->IsCombatUnit())
 					continue;
-				
+
 				int iDistToTarget = plotDistance(it->iPlotIndex, enemyPlot->getPlotIndex());
-				
+
 				// Count ranged ships that can engage
 				if (pLoopUnit->IsCanAttackRanged())
 				{
@@ -18268,22 +18268,22 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					iOtherMeleeEngaging++;
 				}
 			}
-			
+
 			// Bonus for attacking targets that ranged fleet is engaging
 			if (iFriendlyRangedEngaging >= 1)
 			{
 				result->AddScore(0, 20, 0); // Base coordination bonus
-				
+
 				// Extra bonus per ranged ship (up to +40 more)
 				result->AddScore(0, min(iFriendlyRangedEngaging * 12, 40), 0);
-				
+
 				// Check if ranged fire has already softened the target
 				CvUnit* pEnemyUnit = enemyPlot->getEnemyUnit();
 				if (pEnemyUnit)
 				{
 					int iEnemyHP = pEnemyUnit->GetCurrHitPoints();
 					int iMaxHP = pEnemyUnit->GetMaxHitPoints();
-					
+
 					// Big bonus if target is already damaged (ranged fire worked)
 					if (iEnemyHP < iMaxHP * 2 / 3)
 					{
@@ -18293,7 +18293,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					{
 						result->AddScore(0, 15, 0); // Target taking damage
 					}
-					
+
 					// Bonus if our melee damage plus ranged can kill
 					if (iTotalRangedDamage + result->unitDamage.GetValue(pEnemyUnit->GetID()) >= iEnemyHP)
 					{
@@ -18301,7 +18301,7 @@ STacticalAssignment* ScorePlotForMeleeAttack(const SUnitStats& unit, const CvTac
 					}
 				}
 			}
-			
+
 			// Bonus for attacking with multiple melee (coordinated assault)
 			if (iOtherMeleeEngaging >= 1)
 			{

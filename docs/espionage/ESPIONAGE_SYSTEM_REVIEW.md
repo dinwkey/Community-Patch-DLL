@@ -1,7 +1,7 @@
 # Espionage System Review
 ## Community-Patch-DLL Civilization V
 
-**Date:** January 2026  
+**Date:** January 2026
 **Focus Areas:** Spy Actions, Missions, Counterespionage, Tech Stealing
 
 ---
@@ -178,7 +178,7 @@ if (eCounterSpyFocus != NO_EVENT_CHOICE_CITY)
    - **Lines:** `CvEspionageClasses.cpp:1610-1611`
    - **Code:**
    ```cpp
-   int iIdentifyRoll = GC.getGame().randRangeInclusive(1, 100, 
+   int iIdentifyRoll = GC.getGame().randRangeInclusive(1, 100,
      CvSeeder::fromRaw(0xe9deaa7f)
        .mix(pCity->plot()->GetPseudoRandomSeed())
        .mix(m_pPlayer->GetID())
@@ -275,7 +275,7 @@ if (m_aaPlayerStealableTechList[eCityOwner].size() == 0)
   pCityEspionage->ResetProgress(ePlayer)
   pSpy->SetSpyState(..., SPY_STATE_SURVEILLANCE)
   pSpy->m_bEvaluateReassignment = true  // Flag for AI to move spy
-  
+
   // Notify player
   Notification: "TXT_KEY_NOTIFICATION_SPY_CANT_STEAL_TECH"
 }
@@ -398,7 +398,7 @@ if (city_has_counterspy && counterspy_has_mission)
 For humans:
   → Display event popup with mission choices
   → Player selects active mission focus
-  
+
 For AI:
   → GetBestMissionInCity(pCity, aCounterspyMissionList, uiSpyIndex)
   → AI selects optimal mission
@@ -478,8 +478,8 @@ For AI:
    {
      if (pSpy->GetTurnCounterspyMissionChanged() == 0)
        return 0
-     return max(0, ESPIONAGE_COUNTERSPY_CHANGE_FOCUS_COOLDOWN 
-                   + pSpy->GetTurnCounterspyMissionChanged() 
+     return max(0, ESPIONAGE_COUNTERSPY_CHANGE_FOCUS_COOLDOWN
+                   + pSpy->GetTurnCounterspyMissionChanged()
                    - GC.getGame().getGameTurn())
    }
    ```
@@ -625,7 +625,7 @@ struct IntrigueNotificationMessage
 
 #### Spy Rank Effects on Intrigue:
 ```cpp
-iSpyRank = pSpy->GetSpyRank(ePlayer) 
+iSpyRank = pSpy->GetSpyRank(ePlayer)
          + GetCulture()->GetInfluenceMajorCivSpyRankBonus(eCityOwner)
 
 if (MOD_BALANCE_VP)
@@ -652,7 +652,7 @@ else
    - **Lines:** `CvEspionageClasses.cpp:6318`
    - **Code:**
    ```cpp
-   if (m_aIntrigueNotificationMessages[ui].m_iTurnNum 
+   if (m_aIntrigueNotificationMessages[ui].m_iTurnNum
        < (GC.getGame().getGameTurn() - iIntrigueTurnsValid))
    ```
    - **Comment:** `// todo: make 5 an xml global`
@@ -700,14 +700,14 @@ else
    - **Lines:** `CvEspionageClasses.cpp:2062-2065`
    - **Code:**
    ```cpp
-   iSpyRank = m_aSpyList[uiSpyIndex].GetSpyRank(ePlayer) 
+   iSpyRank = m_aSpyList[uiSpyIndex].GetSpyRank(ePlayer)
             + m_pPlayer->GetCulture()->GetInfluenceMajorCivSpyRankBonus(eCityOwner)
    ```
    - **Issue:** No maximum cap on combined rank
    - **Impact:** Rare case but could expose classified intel with no cost
    - **Recommendation:** Cap combined rank:
    ```cpp
-   iSpyRank = min(SPY_RANK_SPECIAL_AGENT, 
+   iSpyRank = min(SPY_RANK_SPECIAL_AGENT,
                   iSpyRank + culture_bonus)
    ```
 
@@ -840,7 +840,7 @@ struct ScoreCityEntry
 
 2. **Line 6318** (`CvEspionageClasses.cpp`)
    ```cpp
-   if (m_aIntrigueNotificationMessages[ui].m_iTurnNum < 
+   if (m_aIntrigueNotificationMessages[ui].m_iTurnNum <
        (GC.getGame().getGameTurn() - iIntrigueTurnsValid))  // todo: make 5 an xml global
    ```
    - **Context:** Intrigue message lifetime hardcoded

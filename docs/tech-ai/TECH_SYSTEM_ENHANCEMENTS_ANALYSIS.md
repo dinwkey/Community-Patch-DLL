@@ -2,10 +2,10 @@
 
 > Historical note: This backup-branch comparison was written for earlier `feature/copilot` states. The maintained branch is now `custom/ai-gameplay-enhancements`; comparison labels below are dated context.
 
-**Generated:** 2026-01-13  
-**Purpose:** Analyze tech system improvements in backup branch  
-**Comparison:** feature/copilot vs feature/copilot-backup  
-**File:** CvTechClasses.cpp and CvTechClasses.h  
+**Generated:** 2026-01-13
+**Purpose:** Analyze tech system improvements in backup branch
+**Comparison:** feature/copilot vs feature/copilot-backup
+**File:** CvTechClasses.cpp and CvTechClasses.h
 **Net Lines:** +19/-2 (net +17 lines)
 
 ---
@@ -29,9 +29,9 @@ The backup branch contains **2 distinct improvements** to the tech system:
 
 ## Enhancement 1: Tech Set Version Tracking
 
-**Type:** Performance optimization  
-**Purpose:** Cache invalidation for tech-dependent calculations  
-**Impact:** Enables other systems to detect when tech ownership changes  
+**Type:** Performance optimization
+**Purpose:** Cache invalidation for tech-dependent calculations
+**Impact:** Enables other systems to detect when tech ownership changes
 
 ### What It Does
 
@@ -68,7 +68,7 @@ void CvTeamTechs::Reset()
     // ... existing reset code ...
     m_iNumTechs = 0;
     m_iTechSetVersion = 0;  // NEW: Reset version on reset
-    
+
     for(iI = 0; iI < m_pTechs->GetNumTechs(); iI++)
     {
         // ...
@@ -108,7 +108,7 @@ class SomeCache
 {
     int m_iCachedValue;
     int m_iTechSetVersion;
-    
+
     int GetValue(CvTeamTechs& techs)
     {
         // Check if tech set changed since last calculation
@@ -133,9 +133,9 @@ class SomeCache
 
 ## Enhancement 2: Research Overflow Capping
 
-**Type:** Bug fix  
-**Purpose:** Prevent integer overflow in extremely long games  
-**Impact:** Stability in games 500+ turns with high science output  
+**Type:** Bug fix
+**Purpose:** Prevent integer overflow in extremely long games
+**Impact:** Stability in games 500+ turns with high science output
 
 ### The Problem
 
@@ -156,7 +156,7 @@ Implement a dynamic cap on research overflow based on player's science output:
     const long long iSciencePerTurnTimes100 = (long long)GET_PLAYER(ePlayer).GetScienceTimes100();
     const long long iDynamicCap = std::max( (long long)10000, iSciencePerTurnTimes100 * 10 );
     // at least 100 beakers, up to 10 turns of science
-    
+
     if (iOverflow > iDynamicCap)
         iOverflow = iDynamicCap;
 }
@@ -206,9 +206,9 @@ Turn 1000: Overflow stable at cap = 1,000,000 ✅
 
 ## Enhancement 3: Median Tech Cache Refactoring
 
-**Type:** Code quality improvement  
-**Purpose:** Better code organization  
-**Impact:** Clearer intent and variable grouping  
+**Type:** Code quality improvement
+**Purpose:** Better code organization
+**Impact:** Clearer intent and variable grouping
 
 ### Changes
 
@@ -244,7 +244,7 @@ private:
     CvTechXMLEntries* m_pTechs;
     CvPlayer* m_pPlayer;
     CvTechAI* m_pTechAI;
-    
+
     // Transient cache for median tech research cost to avoid expensive recomputation within a turn
     mutable int m_iMedianTechCacheValue;
     mutable int m_iMedianTechCacheTurn;
@@ -405,8 +405,8 @@ Would you like me to:
 
 ---
 
-**Generated:** 2026-01-13  
-**Analysis Status:** COMPLETE  
-**Recommendation:** IMPLEMENT  
-**Risk Level:** ✅ MINIMAL  
+**Generated:** 2026-01-13
+**Analysis Status:** COMPLETE
+**Recommendation:** IMPLEMENT
+**Risk Level:** ✅ MINIMAL
 **Bug Prevention:** ⭐⭐⭐⭐⭐ (Eliminates catastrophic overflow bug)

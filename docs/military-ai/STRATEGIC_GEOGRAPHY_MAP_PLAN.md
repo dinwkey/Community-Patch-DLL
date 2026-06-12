@@ -1,8 +1,8 @@
 # Strategic Geography Map — Implementation Plan
 
-> **Status:** Planning  
-> **Author:** AI-assisted analysis session, Feb 2026  
-> **Scope:** Major AI improvement — persistent strategic terrain awareness for Vox Populi  
+> **Status:** Planning
+> **Author:** AI-assisted analysis session, Feb 2026
+> **Scope:** Major AI improvement — persistent strategic terrain awareness for Vox Populi
 > **Prerequisite commit:** `6d5f9df81` (multi-front war handling improvements)
 
 ---
@@ -109,7 +109,7 @@ struct StrategicCityAnalysis
     // Identity
     int iCityID;
     PlayerTypes eOwner;
-    
+
     // Strategic classification
     bool bIsCapital;
     bool bIsFrontLine;       // Adjacent to border with hostile/neutral territory
@@ -120,23 +120,23 @@ struct StrategicCityAnalysis
     bool bIsChokepoint;      // Controls a narrow passage (mountains/water on flanks)
     bool bIsFloodgate;       // If lost, exposes 2+ other cities to direct attack
     bool bIsCoastalExposed;  // Coastal city vulnerable to amphibious assault
-    
+
     // Defensive metrics
     int iDefensiveDepth;     // Min distance to nearest hostile border
     int iApproachCorridors;  // Number of distinct land approach vectors (1=chokepoint, 4+=exposed)
     int iTerrainDefenseScore; // Aggregate terrain defense bonus of surrounding tiles
     int iRiverBarriers;      // Number of river crossings enemies must make to approach
     int iMountainShielding;  // Mountain/impassable tiles blocking approach vectors
-    
+
     // Dependency graph
     int iSupportsNumCities;  // How many other cities depend on this one for connectivity
     std::vector<int> vDependentCities;  // City IDs that lose connectivity if this falls
     std::vector<int> vDefensiveLineCities; // Other cities on the same defensive line
-    
+
     // Infrastructure
     int iRoadPriority;       // Derived priority for road/rail building (higher = build first)
     bool bNeedsStrategicRoad; // Should builders prioritize connecting this city
-    
+
     // Per-enemy analysis (populated during wartime)
     struct EnemyApproach
     {
@@ -154,7 +154,7 @@ public:
     void Init(PlayerTypes ePlayer);
     void Update();  // Full recalculation (expensive, every 5-10 turns)
     void UpdateIncremental();  // Light update (after city gain/loss/border change)
-    
+
     // Queries consumed by other systems
     const StrategicCityAnalysis* GetCityAnalysis(int iCityID) const;
     bool IsCitySalient(int iCityID) const;
@@ -164,21 +164,21 @@ public:
     int GetDefensiveDepth(int iCityID) const;
     int GetApproachCorridors(int iCityID) const;
     int GetRoadPriority(int iCityID) const;
-    
+
     // Defensive line queries
     std::vector<int> GetDefensiveLine(PlayerTypes eEnemy) const;
     std::vector<int> GetCriticalCities() const;  // Cities where loss cascades
     std::vector<int> GetExpendableCities() const; // Cities that can be sacrificed
-    
+
     // Chokepoint queries
     std::vector<CvPlot*> GetChokepoints(PlayerTypes eEnemy) const;
     CvPlot* GetBestDefensivePosition(CvCity* pCity, PlayerTypes eEnemy) const;
-    
+
 private:
     PlayerTypes m_ePlayer;
     int m_iLastFullUpdate;
     std::map<int, StrategicCityAnalysis> m_cityAnalysis;
-    
+
     // Internal computation
     void ClassifyAllCities();
     void ComputeDefensiveDepth();
@@ -203,7 +203,7 @@ For each owned city C:
   3. If min_border_dist <= 8:  → SECOND_LINE
   4. If min_border_dist <= 12: → REAR_AREA
   5. Else:                     → CORE
-  
+
   Capital always gets CORE treatment for defense priority regardless of actual distance.
 ```
 
@@ -219,7 +219,7 @@ For each FRONT_LINE city C:
   2. Compute the "front line" as the line connecting those neighbors
   3. If C is significantly forward of that line (> 4 tiles ahead):
      → C is a SALIENT
-  
+
   Simpler heuristic (Phase 1):
   - Count hostile-owned tiles within RING3 (37 plots)
   - Count friendly-owned tiles within RING3
@@ -274,7 +274,7 @@ For each city C at position (x, y):
   3. If ANY approach direction has a chokepoint:
      → C.bIsChokepoint = true
      → C.iApproachCorridors -= 1 for each blocked direction
-  
+
   Enhanced: use CvPlot::IsChokePoint() on surrounding tiles and aggregate.
   A city with ≥3 adjacent IsChokePoint() tiles is itself a chokepoint city.
 ```
@@ -608,10 +608,10 @@ The strategic geography map should **aggregate** per-plot `IsChokePoint()` flags
 
 ## Appendix C: Naval Strategic Geography — Research & Feasibility Analysis
 
-> **Status:** Research complete, implementation deferred  
-> **Date:** Feb 2026  
-> **Prerequisite:** Land strategic geography (Phases 1-6) — COMPLETED  
-> **Complexity estimate:** HIGH — significantly harder than land geography  
+> **Status:** Research complete, implementation deferred
+> **Date:** Feb 2026
+> **Prerequisite:** Land strategic geography (Phases 1-6) — COMPLETED
+> **Complexity estimate:** HIGH — significantly harder than land geography
 
 ### C.1 Problem Statement
 
@@ -657,7 +657,7 @@ For each water tile W:
      perpendicular to the "flow" direction
   2. If the narrowest cross-section ≤ 3 tiles AND water exists on both sides:
      → W is a NAVAL_CHOKEPOINT
-  
+
   More robust approach:
   - For each pair of large water Areas separated by land:
     - Find the shortest water path connecting them (may go through coastal cities/canals)
@@ -724,7 +724,7 @@ Edges: connections through:
   - Coastal city passages (naval units can transit through coastal cities)
   - Canal improvements (passable forts connecting water areas)
   - Potential canal sites (for forward planning)
-  
+
 Edge weight: width of the connection (1 tile = chokepoint, 5+ tiles = open water)
 ```
 
@@ -929,12 +929,12 @@ Instead of scanning all water tiles, scan outward from each coastal city:
 For each coastal city:
     Skip if city is INTERIOR (land strategic map says no threat)
     Skip if city is on a lake (CvLandmass::isLake())
-    
+
     Scan RING1..RING5 (37-91 plots):
         Count water tiles by direction → coastal exposure
         Check for IsWaterAreaSeparator() on adjacent land → nearby chokepoint
         Check for narrow water passages (water tile with ≤2 water neighbors) → strait
-    
+
     Cache results. Only re-scan if:
         - City founded/captured nearby
         - Improvement built on strait plot (fort/citadel)

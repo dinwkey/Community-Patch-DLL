@@ -2,10 +2,10 @@
 
 > Historical note: This backup-branch comparison was written for earlier `feature/copilot` states. The maintained branch is now `custom/ai-gameplay-enhancements`; comparison labels below are dated context.
 
-**Generated:** 2026-01-13  
-**Purpose:** Analyze citizen management improvements in backup branch  
-**Comparison:** feature/copilot vs feature/copilot-backup  
-**File:** CvCityCitizens.cpp  
+**Generated:** 2026-01-13
+**Purpose:** Analyze citizen management improvements in backup branch
+**Comparison:** feature/copilot vs feature/copilot-backup
+**File:** CvCityCitizens.cpp
 **Net Lines:** +36/-13 (net +23 lines)
 
 ---
@@ -31,19 +31,19 @@ The backup branch contains **4 distinct improvements** to citizen management and
 
 ## Enhancement 1: Small City Growth Priority
 
-**Type:** Balance improvement  
-**Location:** ScoreYieldChange() method (~line 1283)  
+**Type:** Balance improvement
+**Location:** ScoreYieldChange() method (~line 1283)
 **Impact:** Better growth in tiny cities
 
 ### The Change
 
 ```cpp
 // BEFORE: 100 food units = ~1 food/turn
-int iAssumedStagnationThreshold = (m_pCity->getPopulation() <= 3 && (eFocus == NO_CITY_AI_FOCUS_TYPE || ...)) 
+int iAssumedStagnationThreshold = (m_pCity->getPopulation() <= 3 && (eFocus == NO_CITY_AI_FOCUS_TYPE || ...))
     ? 100 : 0;
 
 // AFTER: 200 food units = ~2 food/turn (doubled priority)
-int iAssumedStagnationThreshold = (m_pCity->getPopulation() <= 3 && (eFocus == NO_CITY_AI_FOCUS_TYPE || ...)) 
+int iAssumedStagnationThreshold = (m_pCity->getPopulation() <= 3 && (eFocus == NO_CITY_AI_FOCUS_TYPE || ...))
     ? 200 : 0;
 ```
 
@@ -66,8 +66,8 @@ This ensures tiny cities reliably grow instead of stagnating.
 
 ## Enhancement 2: Specialist Removal Logic Fix
 
-**Type:** Bug fix  
-**Location:** DoRemoveWorstCitizen() method (~line 1773)  
+**Type:** Bug fix
+**Location:** DoRemoveWorstCitizen() method (~line 1773)
 **Impact:** Correct citizen consistency when forced specialists are removed
 
 ### The Problem
@@ -112,7 +112,7 @@ if (GetNumDefaultSpecialists() > iCurrentCityPopulation)
 ### Changes
 
 1. **Cache population at start:** `int iCurrentCityPopulation = GetCity()->getPopulation(true);`
-2. **Check consistency instead of forced status:** `if (GetNumDefaultSpecialists() > iCurrentCityPopulation)` 
+2. **Check consistency instead of forced status:** `if (GetNumDefaultSpecialists() > iCurrentCityPopulation)`
 3. **Conditional return:** Return false if can't remove and forced removal not allowed
 4. **Better error handling:** Three separate checks instead of compound condition
 
@@ -120,8 +120,8 @@ if (GetNumDefaultSpecialists() > iCurrentCityPopulation)
 
 ## Enhancement 3: Growth Threshold Scaling
 
-**Type:** Balance improvement  
-**Location:** GetExcessFoodThreshold100() method (~line 1979)  
+**Type:** Balance improvement
+**Location:** GetExcessFoodThreshold100() method (~line 1979)
 **Impact:** Prevents growth cliff effects at very high population
 
 ### The Problem
@@ -169,8 +169,8 @@ This ensures:
 
 ## Enhancement 4: Sorting Optimization for Large Cities
 
-**Type:** Performance optimization  
-**Location:** GetBestOptionsQuick() method (~line 1507)  
+**Type:** Performance optimization
+**Location:** GetBestOptionsQuick() method (~line 1507)
 **Impact:** 5-10x faster citizen assignment in large cities
 
 ### The Problem
@@ -196,7 +196,7 @@ if (!vScoredOptions.empty())
     int iCandidateLimit = max(10, iNumOptions * 4 + 4);
     // Can't use more options than available
     int iLimit = min(static_cast<int>(vScoredOptions.size()), iCandidateLimit);
-    
+
     if (iLimit < static_cast<int>(vScoredOptions.size()))
     {
         // Partition: moves top candidates to beginning
@@ -241,8 +241,8 @@ if (!vScoredOptions.empty())
 
 ## Enhancement 5: Variable Initialization Fix
 
-**Type:** Bug fix  
-**Location:** SPrecomputedExpensiveNumbers::update() method (~line 3789)  
+**Type:** Bug fix
+**Location:** SPrecomputedExpensiveNumbers::update() method (~line 3789)
 **Impact:** Fixes undefined variable usage bug
 
 ### The Problem
@@ -371,9 +371,9 @@ Would you like me to:
 
 ---
 
-**Generated:** 2026-01-13  
-**Analysis Status:** COMPLETE  
-**Recommendation:** IMPLEMENT  
-**Risk Level:** ✅ MINIMAL  
-**Performance Impact:** ⭐⭐⭐⭐⭐ (2-10x faster in large cities)  
+**Generated:** 2026-01-13
+**Analysis Status:** COMPLETE
+**Recommendation:** IMPLEMENT
+**Risk Level:** ✅ MINIMAL
+**Performance Impact:** ⭐⭐⭐⭐⭐ (2-10x faster in large cities)
 **Bug Prevention:** ⭐⭐⭐⭐⭐ (Fixes critical undefined variable usage)

@@ -310,4 +310,3 @@ Scoring considers:
 - **How to fix an issue:** See [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)
 - **Current known issues:** See [ISSUES_AND_FIXES.md](./ISSUES_AND_FIXES.md)
 - **Game mechanics details:** See [IMPROVEMENTS_WORKERS_REVIEW.md](./IMPROVEMENTS_WORKERS_REVIEW.md) Section 3-4
-

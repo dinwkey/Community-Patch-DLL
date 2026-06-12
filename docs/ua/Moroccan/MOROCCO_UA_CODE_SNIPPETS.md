@@ -6,8 +6,8 @@ This document contains ready-to-use code snippets for fixing the Moroccan UA tra
 
 ## File 1: CvUnit.cpp - canPlunderTradeRoute() Fix
 
-**Location:** `CvGameCoreDLL_Expansion2/CvUnit.cpp`  
-**Lines:** 9103-9180 (approximate)  
+**Location:** `CvGameCoreDLL_Expansion2/CvUnit.cpp`
+**Lines:** 9103-9180 (approximate)
 **Function:** `CvUnit::canPlunderTradeRoute()`
 
 ### FIND THIS (old code to replace):
@@ -156,7 +156,7 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 						// NEW: Check diplomatic status before allowing plunder without war
 						TeamTypes eMoroccoTeam = m_eOwner;
 						TeamTypes eOwnerTeam = eTeam;
-						
+
 						// Do NOT plunder allied nations
 						if (GET_TEAM(eMoroccoTeam).IsAtPeace(eOwnerTeam) &&
 							GET_TEAM(eMoroccoTeam).GetAllianceStrength(eOwnerTeam) >= ALLIANCE_LEVEL_DEFENSIVE_PACT)
@@ -164,7 +164,7 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 							bShowTooltip = true;
 							continue;  // Skip this route - cannot plunder
 						}
-						
+
 						// Do NOT plunder vassals or overlords
 						if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
 							GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
@@ -172,14 +172,14 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 							bShowTooltip = true;
 							continue;  // Skip this route - cannot plunder
 						}
-						
+
 						// Do NOT plunder civs we're afraid of
 						if (GET_PLAYER(m_eOwner).GetDiplomacyAI()->IsAfraidOf(eTradeUnitOwner))
 						{
 							bShowTooltip = true;
 							continue;  // Skip this route - cannot plunder
 						}
-						
+
 						// All checks passed - can plunder
 						return true;
 					}
@@ -202,8 +202,8 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 
 ## File 2: CvUnit.cpp - plunderTradeRoute() Fix
 
-**Location:** `CvGameCoreDLL_Expansion2/CvUnit.cpp`  
-**Lines:** 9180-9238 (approximate)  
+**Location:** `CvGameCoreDLL_Expansion2/CvUnit.cpp`
+**Lines:** 9180-9238 (approximate)
 **Function:** `CvUnit::plunderTradeRoute()`
 
 ### FIND THIS (old code to replace):
@@ -241,27 +241,27 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 			// NEW: Check diplomatic status before allowing plunder without war
 			TeamTypes eMoroccoTeam = m_eOwner;
 			TeamTypes eOwnerTeam = eTeam;
-			
+
 			// Do NOT plunder allied nations
 			if (GET_TEAM(eMoroccoTeam).IsAtPeace(eOwnerTeam) &&
 				GET_TEAM(eMoroccoTeam).GetAllianceStrength(eOwnerTeam) >= ALLIANCE_LEVEL_DEFENSIVE_PACT)
 			{
 				continue;  // Skip this route - cannot plunder
 			}
-			
+
 			// Do NOT plunder vassals or overlords
 			if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
 				GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
 			{
 				continue;  // Skip this route - cannot plunder
 			}
-			
+
 			// Do NOT plunder civs we're afraid of
 			if (GET_PLAYER(m_eOwner).GetDiplomacyAI()->IsAfraidOf(eTradeUnitOwner))
 			{
 				continue;  // Skip this route - cannot plunder
 			}
-			
+
 			// All checks passed - can plunder
 			bValidTarget = true;
 		}
@@ -273,7 +273,7 @@ bool CvUnit::canPlunderTradeRoute(const CvPlot* pPlot, bool bOnlyTestVisibility)
 
 ## File 3: SQL - Localization Strings
 
-**Location:** Create new file or add to existing:  
+**Location:** Create new file or add to existing:
 `(2) Vox Populi/Database Changes/Text/en_US/Units/MoroccoUAFixes.sql`
 
 ```sql
@@ -287,8 +287,8 @@ SET Text = 'Cannot plunder trade route of allied nation.'
 WHERE Tag = 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED';
 
 INSERT OR IGNORE INTO Locale_en_US (Language, Tag, Text)
-VALUES 
-('en_US', 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED', 
+VALUES
+('en_US', 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED',
     'Cannot plunder trade route of allied nation.'),
 ('en_US', 'TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_VASSAL',
     'Cannot plunder trade route of vassal or overlord.'),
@@ -314,9 +314,9 @@ Or if using XML format (in `Text/en_US/UI/NewUIText.xml` or similar):
 
 ## File 4: CvLuaPlayer.cpp - Tooltip Update (Optional)
 
-**Location:** `CvGameCoreDLL_Expansion2/Lua/CvLuaPlayer.cpp`  
-**Function:** `lGetReasonPlunderTradeRouteDisabled()`  
-**Lines:** ~10870-10900  
+**Location:** `CvGameCoreDLL_Expansion2/Lua/CvLuaPlayer.cpp`
+**Function:** `lGetReasonPlunderTradeRouteDisabled()`
+**Lines:** ~10870-10900
 
 ### ADD THIS CODE (before the final return statement):
 
@@ -327,16 +327,16 @@ if (pkPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
 	CvGameTrade* pGameTrade = GC.getGame().GetGameTrade();
 	std::vector<int> aiTradeUnitsAtPlot;
 	aiTradeUnitsAtPlot = pkPlayer->GetTrade()->GetOpposingTradeUnitsAtPlot(pPlot, false);
-	
+
 	for (uint uiTradeRoute = 0; uiTradeRoute < aiTradeUnitsAtPlot.size(); uiTradeRoute++)
 	{
 		PlayerTypes eTradeUnitOwner = pGameTrade->GetOwnerFromID(aiTradeUnitsAtPlot[uiTradeRoute]);
 		if (eTradeUnitOwner == NO_PLAYER)
 			continue;
-		
+
 		TeamTypes eMoroccoTeam = pkPlayer->getTeam();
 		TeamTypes eOwnerTeam = GET_PLAYER(eTradeUnitOwner).getTeam();
-		
+
 		// Check alliance
 		if (GET_TEAM(eMoroccoTeam).IsAtPeace(eOwnerTeam) &&
 			GET_TEAM(eMoroccoTeam).GetAllianceStrength(eOwnerTeam) >= ALLIANCE_LEVEL_DEFENSIVE_PACT)
@@ -344,7 +344,7 @@ if (pkPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
 			lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_ALLIED");
 			return 1;
 		}
-		
+
 		// Check vassal
 		if (GET_TEAM(eMoroccoTeam).IsVassal(eOwnerTeam) ||
 			GET_TEAM(eOwnerTeam).IsVassal(eMoroccoTeam))
@@ -352,7 +352,7 @@ if (pkPlayer->GetPlayerTraits()->IsCanPlunderWithoutWar())
 			lua_pushstring(L, "TXT_KEY_MISSION_PLUNDER_TRADE_ROUTE_DISABLED_VASSAL");
 			return 1;
 		}
-		
+
 		// Check afraid
 		if (pkPlayer->GetDiplomacyAI()->IsAfraidOf(eTradeUnitOwner))
 		{
@@ -468,15 +468,14 @@ if (Test-Path .\clang-output\Debug\CvGameCore_Expansion2.dll) {
 
 ## Troubleshooting
 
-**Q: Build fails with "error: cannot find GetAllianceStrength"**  
+**Q: Build fails with "error: cannot find GetAllianceStrength"**
 A: Check that CvTeam.h includes alliance strength methods. May need to use different API depending on VP version.
 
-**Q: Plundering still works for allies**  
+**Q: Plundering still works for allies**
 A: Verify code was inserted in BOTH `canPlunderTradeRoute()` AND `plunderTradeRoute()` functions.
 
-**Q: Tooltip still shows old message**  
+**Q: Tooltip still shows old message**
 A: Lua cache needs to be cleared. Delete `C:\Users\YourName\Documents\My Games\Civilization 5\Cache` and restart.
 
-**Q: "ALLIANCE_LEVEL_DEFENSIVE_PACT" not found**  
+**Q: "ALLIANCE_LEVEL_DEFENSIVE_PACT" not found**
 A: Check CvEnums.h for correct enum name. May be `ALLIANCE_LEVEL_DEFENSE_PACT` or similar.
-

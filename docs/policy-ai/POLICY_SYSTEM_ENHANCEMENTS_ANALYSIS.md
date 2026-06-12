@@ -2,9 +2,9 @@
 
 > Historical note: This backup-branch comparison was written for earlier `feature/copilot` states. The maintained branch is now `custom/ai-gameplay-enhancements`; comparison labels below are dated context.
 
-**Generated:** 2026-01-13  
-**Purpose:** Analyze policy system improvements in backup branch beyond Phase 2D  
-**Comparison:** feature/copilot vs feature/copilot-backup  
+**Generated:** 2026-01-13
+**Purpose:** Analyze policy system improvements in backup branch beyond Phase 2D
+**Comparison:** feature/copilot vs feature/copilot-backup
 **Net Lines:** +28/-5 (net +23 lines)
 
 ---
@@ -28,11 +28,11 @@ This optimization addresses a **performance bottleneck** in ideology tenet selec
 
 ## The Enhancement: Tenet Availability Caching
 
-**File:** `CvPolicyClasses.cpp` and `CvPolicyClasses.h`  
-**Type:** Performance optimization  
-**Impact:** Eliminates redundant calculations during ideology tenet selection  
-**Lines Added:** 28  
-**Lines Removed:** 5 (cleanup of unused member variables)  
+**File:** `CvPolicyClasses.cpp` and `CvPolicyClasses.h`
+**Type:** Performance optimization
+**Impact:** Eliminates redundant calculations during ideology tenet selection
+**Lines Added:** 28
+**Lines Removed:** 5 (cleanup of unused member variables)
 **Net:** +23 lines
 
 ### What It Does
@@ -61,7 +61,7 @@ Adds a caching layer to the `GetAvailableTenets()` function that is called frequ
 ```cpp
 // In CvPlayerPolicies class:
 bool m_bTenetCacheDirty;  // Flag: cache needs refresh
-std::map<std::pair<PolicyBranchTypes, int>, 
+std::map<std::pair<PolicyBranchTypes, int>,
          std::vector<PolicyTypes> > m_cachedAvailableTenets;  // Cache storage
 ```
 
@@ -112,7 +112,7 @@ void CvPlayerPolicies::Reset()
 void CvPlayerPolicies::Read(FDataStream& kStream)
 {
     Serialize(*this, serialVisitor);
-    
+
     UpdateModifierCache();
     InvalidateTenetCache();  // NEW: Clear cache after loading
 }
@@ -143,9 +143,9 @@ std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(
     PolicyBranchTypes eBranch, int iLevel)
 {
     std::vector<PolicyTypes> availableTenets;
-    
+
     CvPolicyXMLEntries* pkPolicies = GC.GetGamePolicies();
-    
+
     for (int iPolicyLoop = 0; iPolicyLoop < pkPolicies->GetNumPolicies(); iPolicyLoop++)
     {
         CvPolicyEntry* pEntry = pkPolicies->GetPolicyEntry(iPolicyLoop);
@@ -154,7 +154,7 @@ std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(
             availableTenets.push_back((PolicyTypes)iPolicyLoop);
         }
     }
-    
+
     return availableTenets;
 }
 ```
@@ -168,19 +168,19 @@ std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(
     std::pair<PolicyBranchTypes, int> cacheKey(eBranch, iLevel);
     if (!m_bTenetCacheDirty)
     {
-        std::map<std::pair<PolicyBranchTypes, int>, 
-                 std::vector<PolicyTypes> >::iterator it = 
+        std::map<std::pair<PolicyBranchTypes, int>,
+                 std::vector<PolicyTypes> >::iterator it =
             m_cachedAvailableTenets.find(cacheKey);
         if (it != m_cachedAvailableTenets.end())
         {
             return it->second;  // Return cached result
         }
     }
-    
+
     std::vector<PolicyTypes> availableTenets;
-    
+
     CvPolicyXMLEntries* pkPolicies = GC.GetGamePolicies();
-    
+
     for (int iPolicyLoop = 0; iPolicyLoop < pkPolicies->GetNumPolicies(); iPolicyLoop++)
     {
         CvPolicyEntry* pEntry = pkPolicies->GetPolicyEntry(iPolicyLoop);
@@ -189,11 +189,11 @@ std::vector<PolicyTypes> CvPlayerPolicies::GetAvailableTenets(
             availableTenets.push_back((PolicyTypes)iPolicyLoop);
         }
     }
-    
+
     // Cache result (NEW)
     m_cachedAvailableTenets[cacheKey] = availableTenets;
     m_bTenetCacheDirty = false;
-    
+
     return availableTenets;
 }
 ```
@@ -219,7 +219,7 @@ When policies change (SetPolicy, SetPolicyBranchUnlocked, Load):
     Call InvalidateTenetCache()
     - Set m_bTenetCacheDirty = true
     - Clear m_cachedAvailableTenets map
-    
+
 Next call to GetAvailableTenets():
     - Check passes m_bTenetCacheDirty flag check
     - Recalculates all results
@@ -354,8 +354,8 @@ Implement all changes in one commit:
 - Remove unused member variables
 ```
 
-**Estimated effort:** 15 minutes  
-**Build verification:** 1-2 minutes  
+**Estimated effort:** 15 minutes
+**Build verification:** 1-2 minutes
 **Risk:** ✅ MINIMAL
 
 ---
@@ -376,8 +376,8 @@ Would you like me to:
 
 ---
 
-**Generated:** 2026-01-13  
-**Analysis Status:** COMPLETE  
-**Recommendation:** IMPLEMENT  
-**Risk Level:** ✅ MINIMAL  
+**Generated:** 2026-01-13
+**Analysis Status:** COMPLETE
+**Recommendation:** IMPLEMENT
+**Risk Level:** ✅ MINIMAL
 **Performance Impact:** ⭐⭐⭐⭐⭐ (100x improvement on repeated calls)

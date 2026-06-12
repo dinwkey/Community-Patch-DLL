@@ -116,7 +116,7 @@ static int GetCostsForMove(
 **File:** [CvUnitMovement.cpp](../../CvGameCoreDLL_Expansion2/CvUnitMovement.cpp:354)
 
 ```cpp
-static int MovementCost(const CvUnit* pUnit, const CvPlot* pFromPlot, const CvPlot* pToPlot, 
+static int MovementCost(const CvUnit* pUnit, const CvPlot* pFromPlot, const CvPlot* pToPlot,
                         int iMovesRemaining, int iMaxMoves, ...);
 static int MovementCostSelectiveZOC(...);  // With ZOC exemption list
 static int MovementCostNoZOC(...);         // No zone of control checks
@@ -334,9 +334,9 @@ void changeNumResource(int iChange);
 **File:** [CvPlot.cpp](../../CvGameCoreDLL_Expansion2/CvPlot.cpp) (various yield functions)
 
 ```cpp
-int CvPlot::calculateNatureYield(YieldTypes eYield, PlayerTypes ePlayer, 
-                                 FeatureTypes eFeature, ResourceTypes eResource, 
-                                 ImprovementTypes eImprovement, const CvCity* pOwningCity, 
+int CvPlot::calculateNatureYield(YieldTypes eYield, PlayerTypes ePlayer,
+                                 FeatureTypes eFeature, ResourceTypes eResource,
+                                 ImprovementTypes eImprovement, const CvCity* pOwningCity,
                                  bool bDisplay = false) const;
 ```
 
@@ -374,11 +374,11 @@ ResourceTypes CvPlot::getResourceType(TeamTypes eTeam, bool bIgnoreTechPrereq) c
 {
     if (bIgnoreTechPrereq)
         return m_eResourceType;  // Return unconditionally
-    
+
     // Check if team has tech to see this resource
     if (!GET_TEAM(eTeam).hasFoundResource(m_eResourceType))
         return NO_RESOURCE;  // Hidden until tech researched
-    
+
     return m_eResourceType;
 }
 ```
@@ -489,8 +489,8 @@ Unit idle on a resource tile
 ---
 
 ### TTE-001: Feature Cost Override Inconsistency
-**Status:** ⚠️ PARTIAL  
-**Priority:** MEDIUM  
+**Status:** ⚠️ PARTIAL
+**Priority:** MEDIUM
 **Category:** Movement Cost
 
 **Problem:**
@@ -521,8 +521,8 @@ if (eToFeature != NO_FEATURE) {
 ---
 
 ### TTE-002: Promotion-Based Terrain Modifiers May Double-Stack in Defense
-**Status:** 📋 OPEN  
-**Priority:** MEDIUM  
+**Status:** 📋 OPEN
+**Priority:** MEDIUM
 **Category:** Defensive Modifiers
 
 **Problem:**
@@ -547,8 +547,8 @@ Is this intentional stacking (unit can get +15% from terrain + 15% from promotio
 ---
 
 ### TTE-003: Feature + Hill Defense Interaction Unclear
-**Status:** ⚠️ PARTIAL  
-**Priority:** MEDIUM  
+**Status:** ⚠️ PARTIAL
+**Priority:** MEDIUM
 **Category:** Defensive Modifiers
 
 **Problem:**
@@ -574,8 +574,8 @@ When a unit is on a tile with both a feature and hills:
 ---
 
 ### TTE-004: Resource Visibility Tech Logic Not Centralized
-**Status:** 📋 OPEN  
-**Priority:** LOW  
+**Status:** 📋 OPEN
+**Priority:** LOW
 **Category:** Resources on Tiles
 
 **Problem:**
@@ -601,8 +601,8 @@ There's no single "canonical" resource visibility check. This makes it hard to:
 ---
 
 ### TTE-005: Resource Yield Aggregation Lacks Documentation
-**Status:** 📋 OPEN  
-**Priority:** MEDIUM  
+**Status:** 📋 OPEN
+**Priority:** MEDIUM
 **Category:** Resources on Tiles
 
 **Problem:**
@@ -634,7 +634,7 @@ There's no single place to see all applicable modifiers for a given resource. Co
       int otherBonus;
       int total() const { return baseYield + ... + otherBonus; }
   };
-  ResourceYieldModifier GetResourceYieldModifiers(ResourceTypes eResource, 
+  ResourceYieldModifier GetResourceYieldModifiers(ResourceTypes eResource,
                                                    const CvPlot* pPlot,
                                                    const CvCity* pCity);
   ```
@@ -644,8 +644,8 @@ There's no single place to see all applicable modifiers for a given resource. Co
 ---
 
 ### TTE-006: Embark Cost Hierarchy Lacks Coverage Testing
-**Status:** ⚠️ PARTIAL  
-**Priority:** MEDIUM  
+**Status:** ⚠️ PARTIAL
+**Priority:** MEDIUM
 **Category:** Movement Costs
 
 **Problem:**
@@ -676,8 +676,8 @@ No comprehensive unit test covering all combinations of:
 ---
 
 ### TTE-007: Rough Ground vs. Open Ground Modifier Unclear
-**Status:** 📋 OPEN  
-**Priority:** LOW  
+**Status:** 📋 OPEN
+**Priority:** LOW
 **Category:** Defensive Modifiers
 
 **Problem:**
@@ -703,8 +703,8 @@ These are **separate from** terrain and feature modifiers, but:
 ---
 
 ### TTE-008: Tile Damage (Terrain Damage, Extra Feature Damage)
-**Status:** ⚠️ PARTIAL  
-**Priority:** MEDIUM  
+**Status:** ⚠️ PARTIAL
+**Priority:** MEDIUM
 **Category:** Terrain & Tile Effects (Not Fully Covered)
 
 **Problem:**
@@ -860,4 +860,3 @@ The current implementation is generally sound, but several areas lack clarity (f
 2. Document terrain cost stacking rules
 3. Add comprehensive test suite for embark costs and terrain combinations
 4. Consider balance pass on feature defense interactions
-

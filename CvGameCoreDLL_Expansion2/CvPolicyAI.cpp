@@ -792,10 +792,10 @@ void CvPolicyAI::DoConsiderIdeologySwitch(CvPlayer* pPlayer)
 	// Would switching cure our happiness problems?
 	bool bVUnhappy = pPlayer->IsEmpireVeryUnhappy();
 	bool bSUnhappy = pPlayer->IsEmpireSuperUnhappy();
-	
+
 	// Pre-compute hypothetical unhappiness once (performance optimization)
 	int iNewUnhappiness = pPlayer->GetCulture()->ComputeHypotheticalPublicOpinionUnhappiness(ePreferredIdeology);
-	
+
 	if (bSUnhappy)
 	{
 		if (!MOD_BALANCE_VP)

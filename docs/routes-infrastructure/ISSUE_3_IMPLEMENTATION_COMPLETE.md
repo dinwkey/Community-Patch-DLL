@@ -1,7 +1,7 @@
 # Implementation Complete: Issue 3 - Route Maintenance & Strategic Value Scoring
 
-**Date:** January 11, 2026  
-**Status:** ✅ COMPLETE  
+**Date:** January 11, 2026
+**Status:** ✅ COMPLETE
 **Build Status:** Running (clang-output/debug expected in ~15-30 minutes)
 
 ## Summary of Changes
@@ -48,7 +48,7 @@ iRailroadValue -= iRailroadTotalMaintenance;  // Subtract maintenance (preserved
 // Add movement speed bonus (NEW)
 int iMovementSpeedBonus = 500;
 // Scale by wealth
-if (iGoldPerTurnTimes100 > 5000) 
+if (iGoldPerTurnTimes100 > 5000)
     iMovementSpeedBonus = 200;  // Wealthy → less bonus needed
 else if (iGoldPerTurnTimes100 > 2500)
     iMovementSpeedBonus = 350;  // Moderate
@@ -149,9 +149,9 @@ Community-Patch-DLL/
 
 ## Build Status Tracking
 
-**Command:** `python build_vp_clang.py --config debug`  
-**Expected Duration:** 15-30 minutes  
-**Output Location:** `clang-output/debug/CvGameCore_Expansion2.dll`  
+**Command:** `python build_vp_clang.py --config debug`
+**Expected Duration:** 15-30 minutes
+**Output Location:** `clang-output/debug/CvGameCore_Expansion2.dll`
 **Log Location:** `clang-output/debug/build.log`
 
 ### Success Indicators
@@ -197,12 +197,12 @@ IMPROVEMENT: Issue 3 - Add strategic value weighting to railroad scoring
 
 Builder AI now considers military value alongside economic yield when scoring routes:
 - Movement speed bonus: +500 pts (2x faster unit movement)
-- Wealth-scaled bonus: 200-500 pts depending on empire GPT  
+- Wealth-scaled bonus: 200-500 pts depending on empire GPT
 - Treasury constraint: prevents bankruptcy from unprofitable routes
 - War pressure weighting: ×1.5 multiplier during high threat
 
 This allows AI to build railroads for strategic positioning during war preparation,
-even if initial economic yield is negative. Movement bonus (~500 pts) = ~5 GPT 
+even if initial economic yield is negative. Movement bonus (~500 pts) = ~5 GPT
 maintenance, making strategic routes viable.
 
 Files: CvGameCoreDLL_Expansion2/CvBuilderTaskingAI.cpp (GetRouteDirectives)
@@ -214,5 +214,5 @@ Addresses: Issue #3 "Route maintenance not included in builder AI scoring"
 
 ---
 
-**Status:** Implementation complete and ready for testing.  
+**Status:** Implementation complete and ready for testing.
 **Next Action:** Await build completion, then execute test cases.

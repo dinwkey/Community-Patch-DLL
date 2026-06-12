@@ -1,6 +1,6 @@
 # Routes & Infrastructure Review — Documentation Index
 
-**Review Date:** January 11, 2026  
+**Review Date:** January 11, 2026
 **Scope:** Roads, railroads, city connections, trade routes, maintenance, route-based yields, unit movement on infrastructure
 
 ---
@@ -215,13 +215,13 @@ These reviews cover adjacent systems and provide context:
 
 ```
          Low Effort | High Effort
-         
+
 High    Issue 2    | Issue 6
 Impact  Issue 4    | Issue 3
         Issue 1    | Issue 5
-        
+
 Low     (none)     | (none)
-Impact  
+Impact
 ```
 
 **Recommended Order:** 1 → 2 → 3 → 4 → 5 → 6
@@ -308,8 +308,7 @@ A: Issues 4-5 yes (SQL/comments). Issues 1-3, 6 require C++ recompilation.
 
 ---
 
-**Repository:** Community-Patch-DLL  
-**Review Date:** January 11, 2026  
-**Status:** Ready for Developer Review  
+**Repository:** Community-Patch-DLL
+**Review Date:** January 11, 2026
+**Status:** Ready for Developer Review
 **Next Step:** Prioritize Phase 1 fixes (Issues 1-2)
-

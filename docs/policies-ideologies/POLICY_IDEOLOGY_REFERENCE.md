@@ -1,7 +1,7 @@
 # Policy & Ideology Systems — Quick Reference & Decision Trees
 
-**Format:** Visual guides and decision flowcharts  
-**Audience:** Developers, reviewers, QA testers  
+**Format:** Visual guides and decision flowcharts
+**Audience:** Developers, reviewers, QA testers
 
 ---
 

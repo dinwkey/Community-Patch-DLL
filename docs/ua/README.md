@@ -21,12 +21,12 @@ docs/ua/
 ## Current Reviews
 
 ### Moroccan UA - Trade Plundering Issue
-**Status:** ✅ Complete & Ready for Implementation  
-**Location:** `Moroccan/`  
-**Issue:** Morocco's `CanPlunderWithoutWar` trait allows plundering allied/vassal trade routes  
-**Solution:** Add diplomatic status checks  
-**Effort:** 2-4 hours  
-**Risk:** LOW  
+**Status:** ✅ Complete & Ready for Implementation
+**Location:** `Moroccan/`
+**Issue:** Morocco's `CanPlunderWithoutWar` trait allows plundering allied/vassal trade routes
+**Solution:** Add diplomatic status checks
+**Effort:** 2-4 hours
+**Risk:** LOW
 
 **Quick Start:** Read `Moroccan/MOROCCO_UA_INDEX.md`
 

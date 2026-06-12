@@ -10,8 +10,8 @@ The backup branch wants to REVERT the upstream minidump improvements back to the
 ---
 
 ## Upstream Approach (Currently in feature/copilot) ✅
-**Commit:** 2d4eff77fb691bb51dfbc8e9113c8c9a21cca722  
-**Author:** JohnsterID  
+**Commit:** 2d4eff77fb691bb51dfbc8e9113c8c9a21cca722
+**Author:** JohnsterID
 **Date:** Sun Jan 11 08:56:40 2026
 
 ### Philosophy

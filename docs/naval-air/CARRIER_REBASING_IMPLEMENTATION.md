@@ -17,7 +17,7 @@ Carriers with air cargo capability are now included in the potential bases list 
 else if (pLoopUnit->domainCargo() == DOMAIN_AIR)
 {
     nSlotsInCarriers += pLoopUnit->cargoSpace();
-    
+
     // Attach carrier to nearest city for multi-step pathfinding support
     CvCity* pRefCity = m_pPlayer->GetClosestCityByPlots(pLoopUnit->plot());
     if (pRefCity)
@@ -25,7 +25,7 @@ else if (pLoopUnit->domainCargo() == DOMAIN_AIR)
         pRefCity->AttachUnit(pLoopUnit);
         // Logging...
     }
-    
+
     int iScore = HomelandAIHelpers::ScoreAirBase(pLoopUnitPlot, m_pPlayer->GetID(), false, iAssumedRange);
     vPotentialBases.push_back(SPlotWithScore(pLoopUnitPlot, iScore));
     scoreLookup[pLoopUnitPlot->GetPlotIndex()] = iScore;

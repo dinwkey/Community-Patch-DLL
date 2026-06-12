@@ -2,7 +2,7 @@
 
 **Purpose:** Detailed specification for implementing a multi-turn memory system that enables the AI to detect patterns, track unit movements, and make decisions based on historical context rather than just current turn state.
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **Status:** Phase 4 Complete; City Defense Integration done
 
 **Related:**
@@ -154,7 +154,7 @@ enum UnitPredictedIntent
     UNIT_INTENT_PATROL,
     UNIT_INTENT_REINFORCE,
     UNIT_INTENT_EXPLORE,
-    
+
     NUM_UNIT_INTENTS
 };
 
@@ -183,7 +183,7 @@ struct TurnSnapshot
 {
     // === Validity & Timestamp ===
     int16   turn;                                   // 2B — 0 = invalid/empty slot
-    
+
     // === Per-Civ Arrays (sized by MAX_MAJOR_CIVS: 43 default, 62 extended) ===
     int8    warState[MAX_MAJOR_CIVS];               // 43-62B — WarStateTypes enum
     int8    approach[MAX_MAJOR_CIVS];               // 43-62B — CivApproachTypes enum
@@ -192,7 +192,7 @@ struct TurnSnapshot
     uint8   proximity[MAX_MAJOR_CIVS];              // 43-62B — PlayerProximityTypes enum
     uint8   siegeUnitsNearUs[MAX_MAJOR_CIVS];       // 43-62B — Siege = attack signal
     uint8   navalUnitsNearUs[MAX_MAJOR_CIVS];       // 43-62B — Coastal threat
-    
+
     // === Our State (Scalars) ===
     uint8   militaryRank;                           // 1B — Our rank 1-43/62 (1 = strongest)
     uint8   numCities;                              // 1B — Our city count
@@ -201,7 +201,7 @@ struct TurnSnapshot
     uint8   numWars;                                // 1B — How many wars we're fighting
     uint8   flags;                                  // 1B — SnapshotFlags bitfield
     uint8   padding;                                // 1B — Alignment
-    
+
     // === Helpers ===
     bool IsValid() const { return turn > 0; }
 };
@@ -216,32 +216,32 @@ struct CivMemory
     TurnSnapshot history[AI_MEMORY_DEPTH];  // 10 turns × 312B = 3.12 KB (43 civs)
     uint8        currentIndex;              // Which slot is "newest" (0-9)
     uint8        validCount;                // How many slots are populated (0-10)
-    
+
     // === Accessors ===
-    
+
     // Get snapshot from N turns ago (0 = current, 9 = oldest)
     // Returns nullptr if that far back isn't valid yet
     TurnSnapshot* GetTurnsAgo(int iTurnsAgo)
     {
         if (iTurnsAgo >= validCount || iTurnsAgo >= AI_MEMORY_DEPTH)
             return nullptr;
-        
+
         int index = (currentIndex - iTurnsAgo + AI_MEMORY_DEPTH) % AI_MEMORY_DEPTH;
         TurnSnapshot* pSnapshot = &history[index];
-        
+
         return pSnapshot->IsValid() ? pSnapshot : nullptr;
     }
-    
+
     // Get current turn's snapshot
     TurnSnapshot* GetCurrent() { return GetTurnsAgo(0); }
-    
+
     // Advance to next slot (called at start of DoTurn)
     TurnSnapshot* AdvanceAndGetNew()
     {
         currentIndex = (currentIndex + 1) % AI_MEMORY_DEPTH;
         if (validCount < AI_MEMORY_DEPTH)
             validCount++;
-        
+
         // Clear the new slot
         memset(&history[currentIndex], 0, sizeof(TurnSnapshot));
         return &history[currentIndex];
@@ -258,53 +258,53 @@ void CvDiplomacyAI::CaptureMemorySnapshot()
     PlayerTypes eMyPlayer = GetID();
     CvPlayer* pMyPlayer = &GET_PLAYER(eMyPlayer);
     int iCurrentTurn = GC.getGame().getGameTurn();
-    
+
     // Advance circular buffer
     TurnSnapshot* pSnap = m_Memory.AdvanceAndGetNew();
     pSnap->turn = (int16)iCurrentTurn;
-    
+
     // === Capture per-civ data ===
     int iNumWars = 0;
-    
+
     for (int iPlayer = 0; iPlayer < MAX_MAJOR_CIVS; iPlayer++)
     {
         PlayerTypes eOther = (PlayerTypes)iPlayer;
         if (!GET_PLAYER(eOther).isAlive() || eOther == eMyPlayer)
             continue;
-        
+
         // War state
         pSnap->warState[iPlayer] = (int8)GetWarState(eOther);
         if (IsAtWarWith(eOther))
             iNumWars++;
-        
+
         // Approach
         pSnap->approach[iPlayer] = (int8)GetCivApproach(eOther);
-        
+
         // Military near us (raw combat unit count; intent filtering happens in detection)
         pSnap->theirMilitaryNearUs[iPlayer] = (uint8)min(255, CountCombatUnitsNearUs(eOther));
-        
+
         // Their military strength (scaled to 0-255)
         int iTheirStrength = GET_PLAYER(eOther).GetMilitaryMight();
         int iMaxStrength = 10000;  // Reasonable cap
         pSnap->theirMilitaryStrength[iPlayer] = (uint8)(min(255, (iTheirStrength * 255) / iMaxStrength));
-        
+
         // Proximity
         pSnap->proximity[iPlayer] = (uint8)GetPlayer()->GetProximityToPlayer(eOther);
-        
+
         // Siege units near us
         pSnap->siegeUnitsNearUs[iPlayer] = (uint8)min(255, CountEnemySiegeUnitsNearUs(eOther));
-        
+
         // Naval units near us
         pSnap->navalUnitsNearUs[iPlayer] = (uint8)min(255, CountEnemyNavalUnitsNearUs(eOther));
     }
-    
+
     // === Capture our state ===
     pSnap->militaryRank = (uint8)CalculateMilitaryRank(eMyPlayer);
     pSnap->numCities = (uint8)min(255, pMyPlayer->getNumCities());
     pSnap->goldPerTurn = (int16)pMyPlayer->calculateGoldRate();
     pSnap->numUnitsNearBorders = (uint8)min(255, GetTotalEnemyUnitsNearBorders());
     pSnap->numWars = (uint8)iNumWars;
-    
+
     // === Flags ===
     pSnap->flags = 0;
     if (iNumWars > 0) pSnap->flags |= SNAPSHOT_FLAG_AT_WAR;
@@ -327,32 +327,32 @@ struct UnitSighting
     uint16  unitId;             // 2B — Unit's ID (for tracking same unit)
     uint8   unitType;           // 1B — UnitTypes enum (warrior, catapult, etc.)
     uint8   owner;              // 1B — PlayerTypes — which civ owns it
-    
+
     // === Position ===
     int16   x, y;               // 4B — Last confirmed position
     int16   lastSeenTurn;       // 2B — When we last SAW this unit
-    
+
     // === State ===
     uint8   health;             // 1B — Health percentage (0-100)
     uint8   flags;              // 1B — Embarked, fortified, etc.
-    
+
     // === Fog Prediction ===
     int8    lastDeltaX;         // 1B — Last movement X direction
     int8    lastDeltaY;         // 1B — Last movement Y direction
     uint8   movementPoints;     // 1B — Unit's movement capability
     uint8   predictedIntent;    // 1B — UnitPredictedIntent enum
-    
+
     // === Helpers ===
-    bool IsConfirmed(int currentTurn) const 
-    { 
-        return lastSeenTurn == currentTurn; 
+    bool IsConfirmed(int currentTurn) const
+    {
+        return lastSeenTurn == currentTurn;
     }
-    
-    bool IsExpired(int currentTurn) const 
-    { 
-        return (currentTurn - lastSeenTurn) > AI_FOG_GHOST_EXPIRY_TURNS; 
+
+    bool IsExpired(int currentTurn) const
+    {
+        return (currentTurn - lastSeenTurn) > AI_FOG_GHOST_EXPIRY_TURNS;
     }
-    
+
     int GetUncertaintyRadius(int currentTurn) const
     {
         int turnsMissing = currentTurn - lastSeenTurn;
@@ -390,26 +390,26 @@ public:
     void OnUnitDestroyed(CvUnit* pUnit);
     void UpdateGhosts(int currentTurn);
     void CleanupExpired(int currentTurn);
-    
+
     // === Queries ===
     UnitSighting* GetSighting(PlayerTypes eOwner, int iUnitId);
     std::vector<UnitSighting*> GetHostileSightingsNearPlot(CvPlot* pPlot, int iRadius);
     std::vector<UnitSighting*> GetGhostsInSearchCone(int centerX, int centerY, int dirX, int dirY, int maxDist);
     int CountSiegeUnitsNearCity(CvCity* pCity, int iRadius);
-    
+
     // === Serialization ===
     void Read(FDataStream& kStream);
     void Write(FDataStream& kStream) const;
-    
+
 private:
     std::vector<UnitSighting> m_Sightings;
-    
+
     // Fast lookup by (owner, unitId)
     std::map<uint32, int> m_SightingIndex;  // Key = (owner << 16) | unitId
-    
-    uint32 MakeKey(PlayerTypes eOwner, int iUnitId) const 
-    { 
-        return ((uint32)eOwner << 16) | (uint32)(iUnitId & 0xFFFF); 
+
+    uint32 MakeKey(PlayerTypes eOwner, int iUnitId) const
+    {
+        return ((uint32)eOwner << 16) | (uint32)(iUnitId & 0xFFFF);
     }
 };
 ```
@@ -425,17 +425,17 @@ private:
 void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pTo)
 {
     PlayerTypes eObserver = m_pPlayer->GetID();
-    
+
     // Was unit visible at start of move?
     if (!pFrom->isVisible(eObserver))
         return;
-    
+
     UnitSighting* pSighting = GetOrCreateSighting(pUnit);
-    
+
     // Capture movement direction (EVEN if destination is fog)
     pSighting->lastDeltaX = pTo->getX() - pFrom->getX();
     pSighting->lastDeltaY = pTo->getY() - pFrom->getY();
-    
+
     // Is destination visible?
     if (pTo->isVisible(eObserver))
     {
@@ -450,7 +450,7 @@ void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pT
         // Keep last confirmed position, but we captured the direction!
         // lastSeenTurn stays as previous turn
     }
-    
+
     // Infer intent from context
     pSighting->predictedIntent = InferUnitIntent(pSighting, pUnit);
 }
@@ -462,29 +462,29 @@ void CvUnitSightingManager::OnUnitMoved(CvUnit* pUnit, CvPlot* pFrom, CvPlot* pT
 UnitPredictedIntent CvUnitSightingManager::InferUnitIntent(UnitSighting* pSighting, CvUnit* pUnit)
 {
     PlayerTypes eOwner = (PlayerTypes)pSighting->owner;
-    
+
     // Damaged units likely retreating
     if (pSighting->health < 50)
         return UNIT_INTENT_RETREAT;
-    
+
     // Siege units are for city attacks
     if (pSighting->flags & SIGHTING_FLAG_SIEGE)
         return UNIT_INTENT_ATTACK_CITY;
-    
+
     // Check war state
     WarStateTypes eWarState = GetPlayer()->GetDiplomacyAI()->GetWarState(eOwner);
-    
+
     if (eWarState == WAR_STATE_NEARLY_DEFEATED || eWarState == WAR_STATE_DEFENSIVE)
         return UNIT_INTENT_RETREAT;
-    
+
     if (eWarState == WAR_STATE_OFFENSIVE || eWarState == WAR_STATE_NEARLY_WON)
         return UNIT_INTENT_ATTACK_CITY;
-    
+
     // Check if heading toward our city
     CvCity* pNearestCity = FindNearestCityInDirection(pSighting);
     if (pNearestCity && pNearestCity->getOwner() == m_pPlayer->GetID())
         return UNIT_INTENT_ATTACK_CITY;
-    
+
     return UNIT_INTENT_UNKNOWN;
 }
 ```
@@ -499,24 +499,24 @@ bool CvUnitSightingManager::IsPlotInSearchCone(UnitSighting* pGhost, int plotX, 
     int dx = plotX - pGhost->x;
     int dy = plotY - pGhost->y;
     int dist = plotDistance(pGhost->x, pGhost->y, plotX, plotY);
-    
+
     int uncertainty = pGhost->GetUncertaintyRadius(currentTurn);
     if (dist > uncertainty)
         return false;
-    
+
     // If unit was stationary, search all directions
     if (pGhost->lastDeltaX == 0 && pGhost->lastDeltaY == 0)
         return true;
-    
+
     // Direction check — dot product
     // Positive if query plot is in same general direction as movement
     int dot = dx * pGhost->lastDeltaX + dy * pGhost->lastDeltaY;
-    
+
     // Determine cone width based on unit type
     // Naval = tight cone (90°), land = wider cone (120-180°)
     bool isNaval = (pGhost->flags & SIGHTING_FLAG_NAVAL);
     bool isFastLand = (pGhost->movementPoints >= 4);
-    
+
     if (isNaval || isFastLand)
     {
         // 90° cone — only forward direction
@@ -537,10 +537,10 @@ bool CvUnitSightingManager::CouldGhostThreatenCity(UnitSighting* pGhost, CvCity*
     int turnsMissing = currentTurn - pGhost->lastSeenTurn;
     int projectedX = pGhost->x + pGhost->lastDeltaX * turnsMissing;
     int projectedY = pGhost->y + pGhost->lastDeltaY * turnsMissing;
-    
+
     // Distance from projected position to city
     int distToCity = plotDistance(projectedX, projectedY, pCity->getX(), pCity->getY());
-    
+
     // Within strike range?
     int strikeRange = pGhost->movementPoints + 2;  // +2 for attack range
     return distToCity <= strikeRange;
@@ -574,20 +574,20 @@ bool CvDiplomacyAI::IsPlayerBuildingUpNearUs(PlayerTypes ePlayer)
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     TurnSnapshot* p3Ago = m_Memory.GetTurnsAgo(3);
     TurnSnapshot* p6Ago = m_Memory.GetTurnsAgo(6);
-    
+
     if (!pNow || !p3Ago) return false;  // Not enough history
-    
+
     int iNow = pNow->theirMilitaryNearUs[ePlayer];
     int i3Ago = p3Ago->theirMilitaryNearUs[ePlayer];
     int i6Ago = p6Ago ? p6Ago->theirMilitaryNearUs[ePlayer] : 0;
-    
+
     // Trend: consistently increasing
     bool bRising3 = (iNow > i3Ago);
     bool bRising6 = p6Ago ? (i3Ago > i6Ago) : true;
-    
+
     // Threshold: at least 5 more units than 6 turns ago
     bool bSignificant = (iNow - i6Ago >= 5);
-    
+
     return bRising3 && bRising6 && bSignificant;
 }
 ```
@@ -600,7 +600,7 @@ bool CvDiplomacyAI::IsSiegeWarningActive(PlayerTypes ePlayer)
 {
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     if (!pNow) return false;
-    
+
     // Any siege near us is a red flag
     return pNow->siegeUnitsNearUs[ePlayer] >= 2;
 }
@@ -614,9 +614,9 @@ bool CvDiplomacyAI::IsPlayerCreepingCloser(PlayerTypes ePlayer)
 {
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     TurnSnapshot* p10Ago = m_Memory.GetTurnsAgo(9);  // ~10 turns back
-    
+
     if (!pNow || !p10Ago) return false;
-    
+
     // Proximity increased (FAR → CLOSE, or CLOSE → NEIGHBORS)
     return (pNow->proximity[ePlayer] > p10Ago->proximity[ePlayer]);
 }
@@ -630,16 +630,16 @@ bool CvDiplomacyAI::HasApproachChangedRecently(PlayerTypes ePlayer, int iWithinT
 {
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     if (!pNow) return false;
-    
+
     int iCurrentApproach = pNow->approach[ePlayer];
-    
+
     for (int i = 1; i <= iWithinTurns && i < AI_MEMORY_DEPTH; i++)
     {
         TurnSnapshot* pPast = m_Memory.GetTurnsAgo(i);
         if (pPast && pPast->approach[ePlayer] != iCurrentApproach)
             return true;
     }
-    
+
     return false;
 }
 
@@ -648,13 +648,13 @@ bool CvDiplomacyAI::HasTurnedHostileRecently(PlayerTypes ePlayer, int iWithinTur
 {
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     if (!pNow) return false;
-    
+
     CivApproachTypes eNowApproach = (CivApproachTypes)pNow->approach[ePlayer];
-    
+
     // Current must be hostile/war
     if (eNowApproach != CIV_APPROACH_HOSTILE && eNowApproach != CIV_APPROACH_WAR)
         return false;
-    
+
     // Check if it was friendlier before
     for (int i = 1; i <= iWithinTurns && i < AI_MEMORY_DEPTH; i++)
     {
@@ -662,12 +662,12 @@ bool CvDiplomacyAI::HasTurnedHostileRecently(PlayerTypes ePlayer, int iWithinTur
         if (pPast)
         {
             CivApproachTypes ePastApproach = (CivApproachTypes)pPast->approach[ePlayer];
-            if (ePastApproach == CIV_APPROACH_FRIENDLY || 
+            if (ePastApproach == CIV_APPROACH_FRIENDLY ||
                 ePastApproach == CIV_APPROACH_NEUTRAL)
                 return true;
         }
     }
-    
+
     return false;
 }
 ```
@@ -680,7 +680,7 @@ bool CvDiplomacyAI::AmIOverextended()
 {
     TurnSnapshot* pNow = m_Memory.GetTurnsAgo(0);
     if (!pNow) return false;
-    
+
     // More than 2 wars AND we're not strong
     return (pNow->numWars >= 2 && pNow->militaryRank > 20);
 }
@@ -694,26 +694,26 @@ int CvDiplomacyAI::GetHistoricalThreat(PlayerTypes ePlayer, int iTurnsAgo)
 {
     TurnSnapshot* pSnap = m_Memory.GetTurnsAgo(iTurnsAgo);
     if (!pSnap) return 0;
-    
+
     int iThreat = 0;
-    
+
     // Their military strength (major factor)
     iThreat += pSnap->theirMilitaryStrength[ePlayer] * 2;
-    
+
     // Units near our borders (major factor)
     iThreat += pSnap->theirMilitaryNearUs[ePlayer] * 15;
-    
+
     // Siege units (huge red flag)
     iThreat += pSnap->siegeUnitsNearUs[ePlayer] * 30;
-    
+
     // Proximity
     iThreat += pSnap->proximity[ePlayer] * 10;
-    
+
     // Hostile approach
     CivApproachTypes eApproach = (CivApproachTypes)pSnap->approach[ePlayer];
     if (eApproach == CIV_APPROACH_HOSTILE) iThreat += 50;
     if (eApproach == CIV_APPROACH_WAR) iThreat += 100;
-    
+
     return iThreat;
 }
 
@@ -722,7 +722,7 @@ bool CvDiplomacyAI::IsThreatRising(PlayerTypes ePlayer)
 {
     int iNow = GetHistoricalThreat(ePlayer, 0);
     int i5Ago = GetHistoricalThreat(ePlayer, 5);
-    
+
     // 30% increase is concerning
     return (iNow > i5Ago * 130 / 100);
 }
@@ -735,27 +735,27 @@ bool CvDiplomacyAI::IsThreatRising(PlayerTypes ePlayer)
 bool CvDiplomacyAI::IsAttackLikelyImminent(PlayerTypes ePlayer)
 {
     int iWarningSignals = 0;
-    
+
     // Buildup near borders
     if (IsPlayerBuildingUpNearUs(ePlayer))
         iWarningSignals += 2;
-    
+
     // Siege units present
     if (IsSiegeWarningActive(ePlayer))
         iWarningSignals += 3;  // Very strong signal
-    
+
     // Recently turned hostile
     if (HasTurnedHostileRecently(ePlayer, 5))
         iWarningSignals += 2;
-    
+
     // Getting closer via cities
     if (IsPlayerCreepingCloser(ePlayer))
         iWarningSignals += 1;
-    
+
     // Threat level rising
     if (IsThreatRising(ePlayer))
         iWarningSignals += 1;
-    
+
     // 4+ signals = high confidence
     return iWarningSignals >= 4;
 }
@@ -782,7 +782,7 @@ void CivMemory::Serialize(Visitor& visitor)
 {
     visitor(currentIndex);
     visitor(validCount);
-    
+
     for (int i = 0; i < AI_MEMORY_DEPTH; i++)
     {
         visitor(history[i].turn);
@@ -810,10 +810,10 @@ void CvUnitSightingManager::Read(FDataStream& kStream)
 {
     uint32 uiCount;
     kStream >> uiCount;
-    
+
     m_Sightings.resize(uiCount);
     m_SightingIndex.clear();
-    
+
     for (uint32 i = 0; i < uiCount; i++)
     {
         UnitSighting& s = m_Sightings[i];
@@ -827,7 +827,7 @@ void CvUnitSightingManager::Read(FDataStream& kStream)
         kStream >> s.lastDeltaX >> s.lastDeltaY;
         kStream >> s.movementPoints;
         kStream >> s.predictedIntent;
-        
+
         m_SightingIndex[MakeKey((PlayerTypes)s.owner, s.unitId)] = i;
     }
 }
@@ -836,7 +836,7 @@ void CvUnitSightingManager::Write(FDataStream& kStream) const
 {
     uint32 uiCount = (uint32)m_Sightings.size();
     kStream << uiCount;
-    
+
     for (uint32 i = 0; i < uiCount; i++)
     {
         const UnitSighting& s = m_Sightings[i];
@@ -1065,7 +1065,7 @@ TacticalAIHelpers::PerformRangedOpportunityAttack()
    - Whether the unit has ranged capability
    - Group composition (lone scout vs. army stack)
    - Promotion/experience level
-   
+
    The city-aware variant `InferUnitIntentNearCity()` improves further with directional analysis (now EMA-smoothed) but still can't detect flanking or multi-unit coordination.
 
 4. **~~No multi-unit pattern detection~~ (PARTIALLY FIXED)**: The sighting manager now has query-time aggregation functions that scan existing per-unit sightings to detect convergence patterns:

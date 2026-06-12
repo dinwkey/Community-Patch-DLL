@@ -9,7 +9,7 @@
 ### Experience System
 
 - **XP Accumulation & Level Calculation:** Units gain experience (stored as `m_iExperienceTimes100` to avoid floating-point precision loss) after combat, and level up when `getExperienceTimes100() / 100 >= experienceNeeded()`. The experience requirement grows quadratically: each level *L* requires `(1+2+...+L) * EXPERIENCE_PER_LEVEL * GameSpeedFactor` XP. Modifiers from traits (e.g., `getLevelExperienceModifier()`) scale the base cost. The system uses an integer accumulator (`changeExperienceTimes100()`) to preserve fractional XP without floating-point arithmetic ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L17717-L17750]).
-  
+
 - **Promotion Ready & Level Up Flow:** After any XP gain or combat outcome, `testPromotionReady()` checks if a unit has enough XP and is not out of attacks; if so, it sets `m_bPromotionReady = true`, which triggers a UI notification and halts automation. Human players then choose a promotion via UI; AI is routed through lua callbacks. Level-up grants an instant yield via `doInstantYield(INSTANT_YIELD_TYPE_LEVEL_UP)` to the origin city or capital ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L25171-L25186]).
 
 - **Promotion Eligibility:** A promotion is available if:
@@ -114,4 +114,3 @@
 7. **Explicit Warlord Coverage Documentation:** Add a comment in `giveExperience()` noting that the function only grants XP to units on the same plot as the warlord. If multi-plot stacks are intended to benefit, consider a revised implementation that iterates adjacent plots or uses a radius check ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L13689-L13710]).
 
 8. **Simplify Prerequisite Resolution:** The current prerequisite system (1 required + up to 9 OR-options) is powerful but complex. Consider documenting or refactoring the promotion eligibility check in `canPromote()` to make the logic more transparent, perhaps with a dedicated function `GetAvailablePromotions()` that returns a list of eligible promotions for UI or AI purposes ([CvGameCoreDLL_Expansion2/CvUnit.cpp#L13470-L13480]).
-

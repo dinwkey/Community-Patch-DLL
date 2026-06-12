@@ -1,8 +1,8 @@
 # City-States / Minor Civs System Review
 **Community-Patch-DLL (Civilization V)**
 
-**System Analyzed**: CvMinorCivAI.cpp (19,165 lines), CvMinorCivAI.h, and supporting code  
-**Analysis Date**: January 2026  
+**System Analyzed**: CvMinorCivAI.cpp (19,165 lines), CvMinorCivAI.h, and supporting code
+**Analysis Date**: January 2026
 **Scope**: Influence mechanics, quest system, suzerainty/ally system, bullying, and minor AI behavior
 
 ---
@@ -28,8 +28,8 @@ The City-States system is a sophisticated subsystem managing:
 ## 2. Influence Mechanics Issues & Gaps
 
 ### Issue #1: Friendship Decay Only Subtracts to Neutral Threshold
-**Location**: Friendship decay logic (lines 4800+)  
-**Severity**: MEDIUM  
+**Location**: Friendship decay logic (lines 4800+)
+**Severity**: MEDIUM
 **Problem**:
 ```cpp
 // Friendship naturally decays but never drops below neutral/resting point
@@ -46,15 +46,15 @@ The system has a "resting point" based on bonuses (traits, religions, policies).
 ---
 
 ### Issue #2: Influence Bonuses Stack Multiplicatively Without Caps
-**Location**: Lines 14900-15100 (bonus calculations)  
-**Severity**: MEDIUM-HIGH  
+**Location**: Lines 14900-15100 (bonus calculations)
+**Severity**: MEDIUM-HIGH
 **Problem**:
 Multiple modifiers stack multiplicatively without caps:
 ```cpp
 // GetCurrentScienceFlatBonus (lines 14900+)
 iModifier += GET_PLAYER(ePlayer).GetPlayerTraits()->GetCityStateBonusModifier();
 iModifier += GET_PLAYER(ePlayer).GetCSYieldBonusModifier();
-iModifier += IsSameReligionAsMajor(ePlayer) ? 
+iModifier += IsSameReligionAsMajor(ePlayer) ?
     GET_PLAYER(ePlayer).GetReligions()->GetCityStateYieldModifier(ePlayer) : 0;
 if (iModifier > 0) {
     iAmount *= 100 + iModifier;
@@ -70,8 +70,8 @@ if (iModifier > 0) {
 ---
 
 ### Issue #3: Quest Influence Rewards Not Scaled by Difficulty or Rarity
-**Location**: `GetQuestRewardModifier()` (lines 4720-4745)  
-**Severity**: LOW-MEDIUM  
+**Location**: `GetQuestRewardModifier()` (lines 4720-4745)
+**Severity**: LOW-MEDIUM
 **Problem**:
 All quests grant same base influence regardless of:
 - Time required (1-turn wonder vs 30-turn exploration)
@@ -90,8 +90,8 @@ The "quest copies" system weights some quest types higher (10 base, up to 80 for
 ---
 
 ### Issue #4: Friendship Thresholds Not Documented Clearly
-**Location**: Throughout code with `FRIENDSHIP_*` constants  
-**Severity**: LOW  
+**Location**: Throughout code with `FRIENDSHIP_*` constants
+**Severity**: LOW
 **Problem**:
 Multiple friendship tiers exist but are XML-driven and scattered:
 - `FRIENDSHIP_THRESHOLD_ALLIES` – uncertain (probably 60)
@@ -108,8 +108,8 @@ No UI tooltip explains exact thresholds to players.
 ## 3. Quest System Issues & Design Gaps
 
 ### Issue #5: Personal Quest Countdown Too Restrictive (VP vs CP Gap)
-**Location**: Lines 9220-9290 (quest countdown seeding)  
-**Severity**: MEDIUM  
+**Location**: Lines 9220-9290 (quest countdown seeding)
+**Severity**: MEDIUM
 **Problem**:
 ```cpp
 // Community Patch
@@ -130,7 +130,7 @@ iRand += /*20*/ GD_INT_GET(MINOR_CIV_PERSONAL_QUEST_RAND_TURNS_BETWEEN);
 
 **Root cause**: The countdown only seeds when a quest ENDS. If a minor completes a quest quickly, but player was slow to complete it, no new quest seeds until countdown expires.
 
-**Recommendation**: 
+**Recommendation**:
 1. Seed next quest countdown when current quest is GIVEN (not completed)
 2. Reduce minimum to 5-10 turns (let personality/hostility vary it more)
 3. Hostile minors should have 30-40% shorter countdown (they do, see lines 9271-9276)
@@ -138,8 +138,8 @@ iRand += /*20*/ GD_INT_GET(MINOR_CIV_PERSONAL_QUEST_RAND_TURNS_BETWEEN);
 ---
 
 ### Issue #6: Quest Validity Checks Missing Context
-**Location**: `IsValidQuestForPlayer()`, `DoTestStartPersonalQuest()` (lines 6066-6090)  
-**Severity**: MEDIUM  
+**Location**: `IsValidQuestForPlayer()`, `DoTestStartPersonalQuest()` (lines 6066-6090)
+**Severity**: MEDIUM
 **Problem**:
 Quest selection uses simple validation:
 ```cpp
@@ -165,8 +165,8 @@ But doesn't consider:
 ---
 
 ### Issue #7: Global Quest Cooldown Causes "Quest Droughts" for Early Players
-**Location**: Lines 9198-9220  
-**Severity**: MEDIUM  
+**Location**: Lines 9198-9220
+**Severity**: MEDIUM
 **Problem**:
 ```cpp
 // First global quest can appear on turn 4-30 (VP) or 30-90 (CP)
@@ -183,7 +183,7 @@ When global quests are rare (CP), and first contact happens late (turn 30+), joi
 
 **Root cause**: Only 1 global quest active at a time (`GetMaxActiveGlobalQuests()` = 1, line 6049).
 
-**Recommendation**: 
+**Recommendation**:
 1. Increase max global quests to 2 (different types)
 2. Or: Give each new major civ joining a random active global quest immediately
 3. Or: Reduce global quest cooldown to match personal quest pacing
@@ -191,8 +191,8 @@ When global quests are rare (CP), and first contact happens late (turn 30+), joi
 ---
 
 ### Issue #8: Quest Reward Inflation in Later Eras (VP Only)
-**Location**: Lines 17020-17070 (election rigging bonus scaling)  
-**Severity**: LOW-MEDIUM  
+**Location**: Lines 17020-17070 (election rigging bonus scaling)
+**Severity**: LOW-MEDIUM
 **Problem**:
 VP scales certain quest rewards (like election rigging) by era:
 ```cpp
@@ -213,8 +213,8 @@ By Atomic Era, a single election rig gives 200+ influence points (industrial sca
 ## 4. Suzerainty & Ally System Issues
 
 ### Issue #9: Ally Election Can Trigger Rapid Cycles
-**Location**: `DoElection()` (lines 17045-17150)  
-**Severity**: MEDIUM  
+**Location**: `DoElection()` (lines 17045-17150)
+**Severity**: MEDIUM
 **Problem**:
 Election rigging success grants influence (+20 to +200 in VP). If player has multiple spies, they can rig elections multiple times per minor, causing rapid ally swaps.
 
@@ -228,12 +228,12 @@ The system checks: "if all players have spies, count consecutive riggings" (line
 ---
 
 ### Issue #10: Pledge to Protect Cancellation Lacks Smooth Degradation
-**Location**: `TestChangeProtectionFromMajor()` (lines 13332-13480)  
-**Severity**: LOW-MEDIUM  
+**Location**: `TestChangeProtectionFromMajor()` (lines 13332-13480)
+**Severity**: LOW-MEDIUM
 **Problem**:
 PTP ends immediately and abruptly when conditions fail:
 ```cpp
-if (GetEffectiveFriendshipWithMajor(eMajor) < /*0*/ 
+if (GetEffectiveFriendshipWithMajor(eMajor) < /*0*/
     GD_INT_GET(FRIENDSHIP_THRESHOLD_CAN_PLEDGE_TO_PROTECT))
 {
     DoChangeProtectionFromMajor(eMajor, false, true, true);  // INSTANT END
@@ -252,17 +252,17 @@ Players can lose PTP unexpectedly mid-turn if influence decays below threshold.
 ---
 
 ### Issue #11: Military Strength Evaluation for PTP Uses Broken Median Calculation
-**Location**: Lines 13378-13388  
-**Severity**: LOW  
+**Location**: Lines 13378-13388
+**Severity**: LOW
 **Problem**:
 ```cpp
-std::nth_element(viMilitaryStrengths.begin(), 
-                 viMilitaryStrengths.begin() + MedianElement, 
+std::nth_element(viMilitaryStrengths.begin(),
+                 viMilitaryStrengths.begin() + MedianElement,
                  viMilitaryStrengths.end());
 // MedianElement = size / 2 (integer division = wrong for even-length arrays)
 ```
 
-For 5 civs: MedianElement = 2 (correct middle)  
+For 5 civs: MedianElement = 2 (correct middle)
 For 6 civs: MedianElement = 3 (skips actual median, should be 2.5)
 
 This causes PTP cancellation to use slightly biased thresholds (favors lower on even-player counts).
@@ -274,8 +274,8 @@ This causes PTP cancellation to use slightly biased thresholds (favors lower on 
 ## 5. Bullying System Issues
 
 ### Issue #12: Bullying Cooldown Interval is Hardcoded (Not XML)
-**Location**: Lines 17020-17025  
-**Severity**: LOW  
+**Location**: Lines 17020-17025
+**Severity**: LOW
 **Problem**:
 ```cpp
 const int iRecentlyBulliedTurnInterval = 20; //antonjs: todo: constant/XML
@@ -290,8 +290,8 @@ If developer wants to adjust bullying frequency (e.g., 10 turns on Deity, 30 on 
 ---
 
 ### Issue #13: Bully Score Calculation Uses Different Metrics for CP vs VP
-**Location**: Lines 15950-16050 (CalculateBullyScore)  
-**Severity**: MEDIUM  
+**Location**: Lines 15950-16050 (CalculateBullyScore)
+**Severity**: MEDIUM
 **Problem**:
 ```cpp
 // Community Patch
@@ -302,7 +302,7 @@ int iMilitaryMightPercent = 100 * GetMilitaryMight() / max(1, iTotalMilitaryMigh
 iGlobalMilitaryScore = iMilitaryMightPercent * 50 / 100;  // 0-50 based on % of total
 ```
 
-CP uses relative ranking (fair across game states).  
+CP uses relative ranking (fair across game states).
 VP uses absolute percentage (heavily favors strong civs, penalizes on multiplayer).
 
 This creates inconsistent difficulty: a civ with 25% of world military can bully much easier in VP than CP.
@@ -312,8 +312,8 @@ This creates inconsistent difficulty: a civ with 25% of world military can bully
 ---
 
 ### Issue #14: Bully Gold Scaling Missing Player Count Consideration
-**Location**: Lines 15870-15920  
-**Severity**: LOW  
+**Location**: Lines 15870-15920
+**Severity**: LOW
 **Problem**:
 ```cpp
 int iGold = /*50*/ GD_INT_GET(MINOR_BULLY_GOLD);
@@ -322,7 +322,7 @@ float fGameProgressFactor = iElapsedTurns / iEstimateEndTurn;
 iGold += (int)(fGameProgressFactor * iGoldGrowthFactor);  // Scales with era, not players
 ```
 
-On 2-player map: gold per bully = 100-200 (late game)  
+On 2-player map: gold per bully = 100-200 (late game)
 On 8-player map: gold per bully = 100-200 (SAME!)
 
 But 8-player map has 7 other civs bullying too. This allows snowballing where strong civ bullies all neighbors for steady gold income.
@@ -334,8 +334,8 @@ But 8-player map has 7 other civs bullying too. This allows snowballing where st
 ## 6. Unit Spawning & Militaristic Minor Issues
 
 ### Issue #15: Unit Spawn Cooldown Not Validated Against Actual Spawn Timing
-**Location**: Lines 14660-14700  
-**Severity**: LOW  
+**Location**: Lines 14660-14700
+**Severity**: LOW
 **Problem**:
 ```cpp
 // Unit spawns when counter reaches 0
@@ -357,8 +357,8 @@ Minor issue: No emergency despawn if unit is stuck in spawn queue for 100+ turns
 ---
 
 ### Issue #16: Unique Unit Selection Biased by Map Generation Seed
-**Location**: `DoPickUniqueUnit()` (lines 4705-4750)  
-**Severity**: LOW  
+**Location**: `DoPickUniqueUnit()` (lines 4705-4750)
+**Severity**: LOW
 **Problem**:
 ```cpp
 m_eUniqueUnit = GC.getGame().GetRandomUniqueUnitType(
@@ -381,8 +381,8 @@ Uses starting plot XY as seed. On multiplayer, two minors starting near each oth
 ## 7. Quest Data & State Management Issues
 
 ### Issue #17: Quest Handlers Marked as "Handled" But Not Cleaned
-**Location**: Lines 9113-9127  
-**Severity**: LOW (revised from LOW-MEDIUM)  
+**Location**: Lines 9113-9127
+**Severity**: LOW (revised from LOW-MEDIUM)
 **Problem**:
 ```cpp
 void DeleteQuest(PlayerTypes ePlayer, MinorCivQuestTypes eType) {
@@ -405,15 +405,15 @@ Quests are marked `IsHandled()` but never removed from vector. Over 2000 turns, 
 
 **Revised assessment**: This is a **code hygiene issue** more than a performance problem. Worth fixing for save file cleanliness, but not urgent.
 
-**Recommendation**: 
+**Recommendation**:
 1. Implement `DoQuestsCleanup()` to remove handled quests periodically (every 100 turns)
 2. Consider: limit vector to keep only last 20 quests per player
 
 ---
 
 ### Issue #18: Quest Tracking Doesn't Prevent Duplicate Data Fields
-**Location**: `CvMinorCivQuest` (lines 39-87 in header)  
-**Severity**: LOW  
+**Location**: `CvMinorCivQuest` (lines 39-87 in header)
+**Severity**: LOW
 **Problem**:
 ```cpp
 // Quest stores both:
@@ -437,8 +437,8 @@ This creates redundancy: some quests store reward data in `m_iInfluence`, others
 ## 8. Minor AI Behavior Issues
 
 ### Issue #19: No AI Preference for Quest Type Based on Minor Trait Synergies
-**Location**: `DoTestStartPersonalQuest()` (lines 6066-6090)  
-**Severity**: MEDIUM  
+**Location**: `DoTestStartPersonalQuest()` (lines 6066-6090)
+**Severity**: MEDIUM
 **Problem**:
 Quest selection is purely random weighted by "quest copies" (the 10-80 biases in XML). But no consideration of:
 - Militaristic minor should prefer "Gift Unit" over "Build X Buildings"
@@ -452,8 +452,8 @@ Instead, all traits can get any quest with equal base probability (modified only
 ---
 
 ### Issue #20: No Personality Influence on Ally Stability
-**Location**: Throughout friendship calculations  
-**Severity**: MEDIUM  
+**Location**: Throughout friendship calculations
+**Severity**: MEDIUM
 **Problem**:
 Personality (Friendly/Hostile/Irrational) affects:
 - Quest reward modifiers (friendly +25%, hostile -25%)
@@ -467,7 +467,7 @@ But does NOT affect:
 
 A hostile minor will ask you to declare war, but then decays friendship just as fast as a friendly minor. This feels inconsistent.
 
-**Recommendation**: 
+**Recommendation**:
 - Hostile minors: faster friendship decay (1.5x), higher ally threshold (+20)
 - Friendly minors: slower decay (0.8x), lower ally threshold (-10)
 - Irrational minors: random decay swing (0.8x to 1.5x each turn)
@@ -477,8 +477,8 @@ A hostile minor will ask you to declare war, but then decays friendship just as 
 ## 9. System Performance & Efficiency Issues
 
 ### Issue #21: DoElection() Iterates ALL Cities for EVERY Major Every Turn
-**Location**: Lines 17045-17120  
-**Severity**: **TRIVIAL** (revised from LOW)  
+**Location**: Lines 17045-17120
+**Severity**: **TRIVIAL** (revised from LOW)
 **Problem**:
 ```cpp
 for(uint ui = 0; ui < MAX_MAJOR_CIVS; ui++) {
@@ -501,8 +501,8 @@ for(uint ui = 0; ui < MAX_MAJOR_CIVS; ui++) {
 ---
 
 ### Issue #22: Quest Validity Check Loops Are Inefficient
-**Location**: `IsValidQuestForPlayer()` (many quest types)  
-**Severity**: **TRIVIAL** (revised from LOW)  
+**Location**: `IsValidQuestForPlayer()` (many quest types)
+**Severity**: **TRIVIAL** (revised from LOW)
 **Problem**:
 ```cpp
 // Each quest type does its own IsValidQuestForPlayer check
@@ -668,8 +668,8 @@ The City-States system is **feature-rich and generally well-designed**, with str
 
 Implementing the **Critical and High Priority** improvements would address ~80% of gameplay concerns. The system would then be robust enough for long-term content.
 
-**Estimated total effort for Critical + High Priority items**: 5-7 developer days  
-**Estimated gameplay improvement**: +10-15% balance/consistency  
+**Estimated total effort for Critical + High Priority items**: 5-7 developer days
+**Estimated gameplay improvement**: +10-15% balance/consistency
 **Estimated performance gain**: Negligible (minors already optimized by single-city constraint)
 
 **Note**: Issues #21 and #22 were originally flagged as performance concerns but revised to TRIVIAL upon analysis—minors' single-city design makes them non-issues. Focus effort on **gameplay and balance improvements** instead.

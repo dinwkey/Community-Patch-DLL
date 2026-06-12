@@ -32,43 +32,43 @@ int CvMilitaryAI::CalculateProximityWeightedThreat(DomainTypes eDomain)
     const int PROXIMITY_CLOSE_RANGE = 5;
     const int RANGED_UNIT_MULTIPLIER = 150; // Ranged units worth 1.5x (150%)
     const int SIEGE_UNIT_MULTIPLIER = 200; // Siege units worth 2x (200%)
-    
+
     TeamTypes eTeam = m_pPlayer->getTeam();
-    
+
     // Loop through all enemy civs and count weighted threat
     for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
     {
         PlayerTypes eLoopPlayer = (PlayerTypes)iI;
         CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
-        
+
         // Skip invalid/friendly players
         if(!kLoopPlayer.isAlive()) continue;
         if(GET_TEAM(eLoopPlayer).isMinorCiv()) continue;
         if(GET_TEAM(eTeam).isFriendlyTerritory(eLoopPlayer)) continue;
-        
+
         int iNumUnits = 0;
         int iCloseUnits = 0;
-        
+
         // Scan all units from this player
         for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
         {
             CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
             if(!pLoopUnit) continue;
-            
+
             // Only count units in specified domain
             if(pLoopUnit->getDomainType() != eDomain) continue;
             if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
-            
+
             int iUnitStrength = pLoopUnit->GetPower();
-            
+
             // Adjust threat based on unit type composition
             if(pLoopUnit->isRanged())
                 iUnitStrength = (iUnitStrength * RANGED_UNIT_MULTIPLIER) / 100;
             else if(pLoopUnit->isSiegeUnit())
                 iUnitStrength = (iUnitStrength * SIEGE_UNIT_MULTIPLIER) / 100;
-            
+
             iNumUnits += iUnitStrength;
-            
+
             // Check proximity to our cities (double-count if close)
             int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
             if(iClosestCityDistance >= 0 && iClosestCityDistance <= PROXIMITY_CLOSE_RANGE)
@@ -76,10 +76,10 @@ int CvMilitaryAI::CalculateProximityWeightedThreat(DomainTypes eDomain)
                 iCloseUnits += iUnitStrength * PROXIMITY_MULTIPLIER_CLOSE;
             }
         }
-        
+
         iProximityThreat += max(iNumUnits, iCloseUnits);
     }
-    
+
     return iProximityThreat;
 }
 ```
@@ -92,23 +92,23 @@ bool CvMilitaryAI::AreEnemiesMovingTowardUs(DomainTypes eDomain)
 {
     TeamTypes eTeam = m_pPlayer->getTeam();
     const int THREAT_RANGE = 8;
-    
+
     for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
     {
         PlayerTypes eLoopPlayer = (PlayerTypes)iI;
         CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
-        
+
         if(!kLoopPlayer.isAlive()) continue;
         if(GET_TEAM(eLoopPlayer).isMinorCiv()) continue;
         if(GET_TEAM(eTeam).isFriendlyTerritory(eLoopPlayer)) continue;
-        
+
         for(int iUnitLoop = 0; iUnitLoop < kLoopPlayer.getNumUnits(); iUnitLoop++)
         {
             CvUnit* pLoopUnit = kLoopPlayer.getUnit(iUnitLoop);
             if(!pLoopUnit) continue;
             if(pLoopUnit->getDomainType() != eDomain) continue;
             if(!pLoopUnit->plot()->isRevealed(eTeam)) continue;
-            
+
             // Check if unit is moving toward our territory
             int iClosestCityDistance = m_pPlayer->GetCityDistancePathLength(pLoopUnit->plot());
             if(iClosestCityDistance >= 0 && iClosestCityDistance <= THREAT_RANGE)
@@ -117,7 +117,7 @@ bool CvMilitaryAI::AreEnemiesMovingTowardUs(DomainTypes eDomain)
             }
         }
     }
-    
+
     return false;
 }
 ```
@@ -130,26 +130,26 @@ int CvMilitaryAI::GetAlliedThreatMultiplier()
 {
     int iMultiplier = 100;
     TeamTypes eTeam = m_pPlayer->getTeam();
-    
+
     // Check if any allies are under heavy threat
     for(int iI = 0; iI < MAX_CIV_PLAYERS; iI++)
     {
         PlayerTypes eLoopPlayer = (PlayerTypes)iI;
         if(eLoopPlayer == m_pPlayer->GetID()) continue;
-        
+
         if(!GET_TEAM(eTeam).IsHasMet(GET_PLAYER(eLoopPlayer).getTeam())) continue;
         if(!GET_TEAM(eTeam).IsAllowsOpenBordersToTeam(GET_PLAYER(eLoopPlayer).getTeam())) continue;
-        
+
         CvPlayer& kLoopPlayer = GET_PLAYER(eLoopPlayer);
         if(!kLoopPlayer.isAlive()) continue;
-        
+
         // If ally is under attack, slightly boost our defense priority
         if(GET_TEAM(eLoopPlayer.getTeam()).getAtWarCount(false) > 0)
         {
             iMultiplier += 10; // Boost by 10% per ally at war
         }
     }
-    
+
     return min(150, iMultiplier); // Cap at 150% max
 }
 ```
@@ -176,13 +176,13 @@ void CvMilitaryAI::UpdateDefenseState()
     // Calculate proximity-weighted threat (Issue 4.1)
     int iLandThreat = CalculateProximityWeightedThreat(DOMAIN_LAND);
     int iNavalThreat = CalculateProximityWeightedThreat(DOMAIN_SEA);
-    
+
     // Get allied threat multiplier (Issue 4.1)
     int iAlliedMultiplier = GetAlliedThreatMultiplier();
-    
+
     // Predict if enemies moving toward us (Issue 4.1)
     bool bEnemiesMovingTowardUs = AreEnemiesMovingTowardUs(DOMAIN_LAND);
-    
+
     if(m_iNumLandUnits < m_iRecLandUnits)
     {
         m_eLandDefenseState = DEFENSE_STATE_CRITICAL;
@@ -212,14 +212,14 @@ void CvMilitaryAI::UpdateDefenseState()
                 break;
             }
         }
-        
+
         // Boost if enemies moving toward us (Issue 4.1: predict enemy movements)
         if(bEnemiesMovingTowardUs && m_eLandDefenseState < DEFENSE_STATE_NEEDED)
         {
             m_eLandDefenseState = DEFENSE_STATE_NEEDED;
         }
     }
-    
+
     // Apply allied threat multiplier (Issue 4.1)
     if(iAlliedMultiplier > 100)
     {
@@ -263,24 +263,24 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 {
     if(vUnits.empty())
         return false;
-    
+
     const int RETREAT_DAMAGE_THRESHOLD = 20; // Retreat if losing > 20% of army
-    
+
     int iTotalHealth = 0;
     int iTotalMaxHealth = 0;
-    
+
     for(const CvUnit* pUnit : vUnits)
     {
         if(!pUnit) continue;
         iTotalHealth += pUnit->GetCurrHitPoints();
         iTotalMaxHealth += pUnit->GetMaxHitPoints();
     }
-    
+
     if(iTotalMaxHealth == 0)
         return false;
-    
+
     int iHealthPercent = (iTotalHealth * 100) / iTotalMaxHealth;
-    
+
     // If army has lost > 20% health and no allies nearby, retreat (Issue 4.2)
     if(iHealthPercent < (100 - RETREAT_DAMAGE_THRESHOLD))
     {
@@ -291,13 +291,13 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
             if(!pUnit) continue;
             iAlliedSupport += FindNearbyAlliedUnits(const_cast<CvUnit*>(pUnit), 5, pUnit->getDomainType());
         }
-        
+
         if(iAlliedSupport == 0)
         {
             return true; // Retreat
         }
     }
-    
+
     return false;
 }
 ```
@@ -309,17 +309,17 @@ bool CvTacticalAI::ShouldRetreatDueToLosses(const vector<CvUnit*>& vUnits)
 int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainTypes eDomain)
 {
     if(!pUnit) return 0;
-    
+
     int iAlliedCount = 0;
     CvPlot* pPlot = pUnit->plot();
     if(!pPlot) return 0;
-    
+
     PlayerTypes eOwner = pUnit->getOwner();
     TeamTypes eTeam = GET_PLAYER(eOwner).getTeam();
-    
+
     int iPlotX = pPlot->getX();
     int iPlotY = pPlot->getY();
-    
+
     // Search nearby plots for allied units (Issue 4.2: army coordination)
     for(int iDX = -iMaxDistance; iDX <= iMaxDistance; iDX++)
     {
@@ -327,10 +327,10 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
         {
             CvPlot* pLoopPlot = GC.getMap().plot(iPlotX + iDX, iPlotY + iDY);
             if(!pLoopPlot) continue;
-            
+
             if(plotDistance(iPlotX, iPlotY, pLoopPlot->getX(), pLoopPlot->getY()) > iMaxDistance)
                 continue;
-            
+
             for(int iUnitLoop = 0; iUnitLoop < pLoopPlot->getNumUnits(); iUnitLoop++)
             {
                 CvUnit* pLoopUnit = pLoopPlot->getUnitByIndex(iUnitLoop);
@@ -338,16 +338,16 @@ int CvTacticalAI::FindNearbyAlliedUnits(CvUnit* pUnit, int iMaxDistance, DomainT
                 if(pLoopUnit->getOwner() != eOwner) continue;
                 if(pLoopUnit->getDomainType() != eDomain) continue;
                 if(pLoopUnit->isDelayedDeath()) continue;
-                
+
                 // Count units that can fight (not civilians)
                 if(!pLoopUnit->isCombatUnit())
                     continue;
-                
+
                 iAlliedCount++;
             }
         }
     }
-    
+
     return iAlliedCount;
 }
 ```
@@ -360,22 +360,22 @@ bool CvTacticalAI::FindCoordinatedAttackOpportunity(CvPlot* pTargetPlot, const v
 {
     if(!pTargetPlot || vAlliedUnits.empty())
         return false;
-    
+
     const int COORDINATION_RANGE = 6; // Units within 6 tiles can coordinate
-    
+
     // Count friendly units that can reach target
     int iFriendlyNearby = 0;
     for(const CvUnit* pUnit : vAlliedUnits)
     {
         if(!pUnit) continue;
-        
+
         int iDistance = plotDistance(pUnit->getX(), pUnit->getY(), pTargetPlot->getX(), pTargetPlot->getY());
         if(iDistance <= COORDINATION_RANGE && pUnit->canMoveInto(*pTargetPlot))
         {
             iFriendlyNearby++;
         }
     }
-    
+
     // If multiple units can coordinate, proceed with attack (Issue 4.2: multi-unit planning)
     return (iFriendlyNearby >= 2);
 }
