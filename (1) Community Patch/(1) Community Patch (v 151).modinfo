@@ -510,7 +510,8 @@
     <File md5="F61707422D4D58CC960B62B9AF1EF312" import="1">Core Files/VPUI/VPUI_common_small.xml</File>
     <File md5="6D2C03A7BDCE9042DE2845DCBCF5BBC6" import="1">Core Files/VPUI/VPUI_common.lua</File>
     <File md5="5679D1B7085D138381A8F646BC8366F2" import="1">Core Files/VPUI/VPUI_common.xml</File>
-    <File md5="9B2473A02E44E30D7015F8EEF582D2F2" import="1">Core Files/VPUI/VPUI_core.lua</File>
+    <File md5="5705ADCEBF21894040BC01E9AC44945D" import="1">Core Files/VPUI/VPUI_core.lua</File>
+    <File md5="198C3DE70C95FCCC24C420BD28527B52" import="1">Core Files/VPUI/VPUI_loader.lua</File>
     <File md5="1B82A864CABF73D1D0402A9064F18628" import="1">CvGameCore_Expansion2.dll</File>
     <File md5="D0BFB3F71AFB183457D538EE3B0D771F" import="0">Database Changes/AddTableIndexes.sql</File>
     <File md5="CF1628DC6A82C749A951A27DF13D0BF0" import="0">Database Changes/CommunityTables.xml</File>
