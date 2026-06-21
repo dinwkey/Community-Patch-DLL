@@ -2317,6 +2317,28 @@ void setCivilization(PlayerTypes p, CivilizationTypes c)
 			ClearGUID(s_civilizationPackageID[p]);
 			s_civilizationKeysAvailable[p] = true;	// If the key is empty, we assume the selection is in the 'random' state, so it is available.
 			s_civilizationKeysPlayable[p] = true;
+			setLeaderHead(p, NO_LEADER);
+		}
+		else if(c == NO_CIVILIZATION)
+		{
+			setLeaderHead(p, NO_LEADER);
+		}
+		else
+		{
+			LeaderHeadTypes eAssignedLeader = NO_LEADER;
+			CvCivilizationInfo* pkCivilization = GC.getCivilizationInfo(c);
+			if(pkCivilization != NULL)
+			{
+				Database::Results kResults;
+				if(DB.Execute(kResults, "SELECT Leaders.ID FROM Leaders INNER JOIN Civilization_Leaders ON Leaders.Type = Civilization_Leaders.LeaderheadType WHERE Civilization_Leaders.CivilizationType = ? LIMIT 1"))
+				{
+					kResults.Bind(1, pkCivilization->GetType());
+					if(kResults.Step())
+						eAssignedLeader = static_cast<LeaderHeadTypes>(kResults.GetInt(0));
+				}
+			}
+
+			setLeaderHead(p, eAssignedLeader);
 		}
 	}
 }
