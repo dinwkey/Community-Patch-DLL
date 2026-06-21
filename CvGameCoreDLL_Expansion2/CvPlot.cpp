@@ -38,6 +38,24 @@
 // Include this after all other headers.
 #include "LintFree.h"
 
+namespace
+{
+bool ShouldTrackImprovementCount(ImprovementTypes eImprovement)
+{
+	if (eImprovement == NO_IMPROVEMENT)
+		return false;
+
+	CvImprovementEntry* pkImprovementInfo = GC.getImprovementInfo(eImprovement);
+	if (pkImprovementInfo == NULL)
+		return false;
+
+	if (pkImprovementInfo->IsGoody())
+		return false;
+
+	return eImprovement != GD_INT_GET(BARBARIAN_CAMP_IMPROVEMENT);
+}
+}
+
 // Public Functions...
 
 //	--------------------------------------------------------------------------------
@@ -6746,7 +6764,7 @@ void CvPlot::setOwner(PlayerTypes eNewValue, int iAcquiringCityID, bool bCheckUn
 			}
 
 			// Improvement is here
-			if (eImprovement != NO_IMPROVEMENT)
+			if (ShouldTrackImprovementCount(eImprovement))
 			{
 				GET_PLAYER(eOldOwner).changeImprovementCount(eImprovement, -1, eOldOwner == eBuilder);
 				// Note: City improvement count is handled in setOwningCity()
@@ -6952,7 +6970,7 @@ void CvPlot::setOwner(PlayerTypes eNewValue, int iAcquiringCityID, bool bCheckUn
 			}
 
 			// Improvement is here
-			if(eImprovement != NO_IMPROVEMENT)
+			if(ShouldTrackImprovementCount(eImprovement))
 			{
 				GET_PLAYER(eNewValue).changeImprovementCount(eImprovement, 1, getOwner() == eBuilder);
 				// Note: City improvement count is handled in setOwningCity()
@@ -8383,8 +8401,11 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 			if (isOwned())
 			{
 				CvPlayer& owningPlayer = GET_PLAYER(owningPlayerID);
-				owningPlayer.changeImprovementCount(eOldImprovement, -1, eOldBuilder == owningPlayerID);
-				pOwningCity->ChangeImprovementCount(eOldImprovement, -1);
+				if (ShouldTrackImprovementCount(eOldImprovement))
+				{
+					owningPlayer.changeImprovementCount(eOldImprovement, -1, eOldBuilder == owningPlayerID);
+					pOwningCity->ChangeImprovementCount(eOldImprovement, -1);
+				}
 
 				// Siphon resource changes
 				if (oldImprovementEntry.GetLuxuryCopiesSiphonedFromMinor() > 0 && eOldBuilder != NO_PLAYER)
@@ -8779,8 +8800,11 @@ void CvPlot::setImprovementType(ImprovementTypes eNewValue, PlayerTypes eBuilder
 			if(isOwned())
 			{
 				CvPlayer& owningPlayer = GET_PLAYER(owningPlayerID);
-				owningPlayer.changeImprovementCount(eNewValue, 1, eBuilder == owningPlayerID);
-				pOwningCity->ChangeImprovementCount(eNewValue, 1);
+				if (ShouldTrackImprovementCount(eNewValue))
+				{
+					owningPlayer.changeImprovementCount(eNewValue, 1, eBuilder == owningPlayerID);
+					pOwningCity->ChangeImprovementCount(eNewValue, 1);
+				}
 
 				//DLC_04 Achievement
 				if (MOD_ENABLE_ACHIEVEMENTS)
@@ -9875,7 +9899,7 @@ void CvPlot::setOwningCity(PlayerTypes ePlayer, int iCityID)
 
 	// change improvement ownership
 	ImprovementTypes eImprovement = getImprovementType();
-	if (eImprovement != NO_IMPROVEMENT)
+	if (ShouldTrackImprovementCount(eImprovement))
 	{
 		// improvement counts of override city are updated in setOwningCityOverride()
 		if (!pOldCityOverride && pOldCity)
@@ -10026,7 +10050,7 @@ void CvPlot::setOwningCityOverride(CvCity* pNewValue)
 		}
 
 		ImprovementTypes eImprovement = getImprovementType();
-		if (eImprovement != NO_IMPROVEMENT)
+		if (ShouldTrackImprovementCount(eImprovement))
 		{
 			if (pCurrentCity != NULL)
 				pCurrentCity->ChangeImprovementCount(eImprovement, -1);
