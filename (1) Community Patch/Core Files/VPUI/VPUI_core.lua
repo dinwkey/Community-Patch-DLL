@@ -8,8 +8,10 @@ if not VP and not (MapModData and MapModData.VP) then
 	local GameInfoTypes = GameInfoTypes;
 	local MapModData = MapModData;
 	local table = table;
+	local type = type;
 
 	local ipairs = ipairs;
+	local pairs = pairs;
 	local print = print;
 	local error = error;
 	local setmetatable = setmetatable;
@@ -20,20 +22,39 @@ if not VP and not (MapModData and MapModData.VP) then
 
 	print("VPUI - Populating VP core library");
 
+	local function GetYieldCountFallback()
+		if DB and DB.Query then
+			for row in DB.Query("SELECT COUNT(*) AS Count FROM Yields;") do
+				if row and row.Count then
+					return row.Count;
+				end
+			end
+		end
+
+		local yields = GameInfo and GameInfo.Yields;
+		local iCount = 0;
+		while yields and yields[iCount] do
+			iCount = iCount + 1;
+		end
+		if iCount > 0 then
+			return iCount;
+		end
+
+		local iMaxYieldId = -1;
+		if yields then
+			for _, info in pairs(yields) do
+				if type(info) == "table" and info.ID and info.ID > iMaxYieldId then
+					iMaxYieldId = info.ID;
+				end
+			end
+		end
+
+		return iMaxYieldId >= 0 and (iMaxYieldId + 1) or 6;
+	end
+
 	local iNumYields = Game and Game.GetNumYieldTypes();
 	if not iNumYields then
-		-- It's possible that this script is run while mods are being unloaded.
-		if GameInfo.CustomModOptions then
-			local iNumCoreYields = GameInfo.Yields.YIELD_CULTURE_LOCAL.ID + 1;
-			local kSovereigntyYield = GameInfo.Yields.YIELD_JFD_SOVEREIGNTY;
-			if MOD_BALANCE_CORE_JFD and kSovereigntyYield then
-				iNumYields = kSovereigntyYield.ID + 1;
-			else
-				iNumYields = iNumCoreYields;
-			end
-		else
-			iNumYields = 6;
-		end
+		iNumYields = GetYieldCountFallback();
 	end
 
 	--- Get the number of yield types in this game
