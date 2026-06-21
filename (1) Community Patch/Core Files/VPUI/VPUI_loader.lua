@@ -1,0 +1,3 @@
+-- Bootstrap context for the DLL-side VP_LUAAPI loader.
+-- The embedded loader only needs this file to exist so the engine creates
+-- a VPUI_loader context and exposes its globals back to the shared API.
