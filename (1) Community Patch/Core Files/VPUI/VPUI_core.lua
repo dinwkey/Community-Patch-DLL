@@ -1,11 +1,18 @@
 -- Check both context global and MapModData for VP object
 if not VP and not (MapModData and MapModData.VP) then
 	-- Need to localize all globals to circumvent their disappearance when entering leader screen
+	local ContextPtr = ContextPtr;
+	local DB = DB;
+	local Game = Game;
 	local GameInfo = GameInfo;
+	local GameInfoTypes = GameInfoTypes;
+	local MapModData = MapModData;
 	local table = table;
 
+	local ipairs = ipairs;
 	local print = print;
 	local error = error;
+	local setmetatable = setmetatable;
 	local table_insert = table.insert;
 	local math_floor = math.floor;
 
@@ -17,9 +24,13 @@ if not VP and not (MapModData and MapModData.VP) then
 	if not iNumYields then
 		-- It's possible that this script is run while mods are being unloaded.
 		if GameInfo.CustomModOptions then
-			local iNumJFDYields = GameInfo.Yields.YIELD_JFD_SOVEREIGNTY.ID + 1;
 			local iNumCoreYields = GameInfo.Yields.YIELD_CULTURE_LOCAL.ID + 1;
-			iNumYields = MOD_BALANCE_CORE_JFD and iNumJFDYields or iNumCoreYields;
+			local kSovereigntyYield = GameInfo.Yields.YIELD_JFD_SOVEREIGNTY;
+			if MOD_BALANCE_CORE_JFD and kSovereigntyYield then
+				iNumYields = kSovereigntyYield.ID + 1;
+			else
+				iNumYields = iNumCoreYields;
+			end
 		else
 			iNumYields = 6;
 		end
@@ -123,7 +134,7 @@ if not VP and not (MapModData and MapModData.VP) then
 				error("Default icon is missing!");
 			end
 			print("The specified icon doesn't exist; using default icon instead.");
-			IconHookupOrDefault(23, iIconSize, "CIV_COLOR_ATLAS", imageControl);
+			return IconHookupOrDefault(23, iIconSize, "CIV_COLOR_ATLAS", imageControl);
 		end
 
 		local iX = iPortraitIndex % tAtlas.Columns;
@@ -148,22 +159,73 @@ if not VP and not (MapModData and MapModData.VP) then
 				-- This basically replicates what CvDllDatabaseUtility::CacheGameDatabaseData() does
 				local GameInfoTypes = {};
 
-				for row in DB.Query("SELECT tbl_name FROM sqlite_master WHERE type = 'table'") do
-					local strTable = row.tbl_name;
-					local bHasID = false;
-					local bHasType = false;
-					for row2 in DB.Query("PRAGMA table_info(" .. strTable .. ")") do
-						if row2.name == "ID" then
-							bHasID = true;
-						elseif row2.name == "Type" then
-							bHasType = true;
+				if DB and DB.Query then
+					for row in DB.Query("SELECT tbl_name FROM sqlite_master WHERE type = 'table'") do
+						local strTable = row.tbl_name;
+						local bHasID = false;
+						local bHasType = false;
+						for row2 in DB.Query("PRAGMA table_info(" .. strTable .. ")") do
+							if row2.name == "ID" then
+								bHasID = true;
+							elseif row2.name == "Type" then
+								bHasType = true;
+							end
+						end
+						if bHasID and bHasType then
+							for eIndex, kInfo in GameInfoCache(strTable) do
+								GameInfoTypes[kInfo.Type] = eIndex;
+							end
 						end
 					end
-					if bHasID and bHasType then
-						for eIndex, kInfo in GameInfoCache(strTable) do
-							GameInfoTypes[kInfo.Type] = eIndex;
-						end
-					end
+				else
+					local tFallbackGameInfoTables = {
+						"Builds",
+						"BuildingClasses",
+						"Buildings",
+						"Civilizations",
+						"Colors",
+						"Controls",
+						"Domains",
+						"Eras",
+						"Features",
+						"GameSpeeds",
+						"Improvements",
+						"InterfaceModes",
+						"Leaders",
+						"Missions",
+						"Orders",
+						"PolicyBranchTypes",
+						"Processes",
+						"Projects",
+						"Regions",
+						"Religions",
+						"Resources",
+						"Routes",
+						"Specialists",
+						"Techs",
+						"Terrains",
+						"UnitAITypes",
+						"UnitClasses",
+						"UnitCombatInfos",
+						"UnitPromotions",
+						"Units",
+						"Victories",
+						"Worlds",
+						"Yields",
+					};
+
+					setmetatable(GameInfoTypes, {
+						__index = function(gameInfoTypesTable, typeKey)
+							for _, strTable in ipairs(tFallbackGameInfoTables) do
+								local kPrimaryTable = GameInfo[strTable];
+								local kInfo = kPrimaryTable and kPrimaryTable[typeKey];
+								if kInfo and kInfo.ID ~= nil then
+									gameInfoTypesTable[typeKey] = kInfo.ID;
+									return kInfo.ID;
+								end
+							end
+						end,
+					});
 				end
 
 				t[key] = GameInfoTypes;

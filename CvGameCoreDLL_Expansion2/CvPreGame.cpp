@@ -2586,7 +2586,7 @@ void onGameStarted()
 				else if (vAICivs.size() > 0)
 				{
 					uint uRand = GC.getGame().urandLimitExclusive(vAICivs.size(), CvSeeder::fromRaw(0x52094553).mix(iCounter));
-					eRandomCiv = static_cast<CivilizationTypes>(vHumanCivs[uRand]);
+					eRandomCiv = static_cast<CivilizationTypes>(vAICivs[uRand]);
 				}
 				else
 					UNREACHABLE();
