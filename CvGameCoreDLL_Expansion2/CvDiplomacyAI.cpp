@@ -32650,8 +32650,11 @@ bool CvDiplomacyAI::IsLuxuryRequest(PlayerTypes ePlayer, CvDeal* pDeal, int& iWe
 	iWeightBias = 0;
 
 	ResourceTypes eLuxuryToAskFor = NO_RESOURCE;
+	ResourceTypes eFallbackLuxuryToAskFor = NO_RESOURCE;
+	int iBestGiftLuxuryValue = 0;
 
 	int iResourceLoop = 0;
+	int iDuration = GC.getGame().GetDealDuration();
 
 	// See if the other player has a Resource to trade
 	for(iResourceLoop = 0; iResourceLoop < GC.getNumResourceInfos(); iResourceLoop++)
@@ -32673,10 +32676,22 @@ bool CvDiplomacyAI::IsLuxuryRequest(PlayerTypes ePlayer, CvDeal* pDeal, int& iWe
 			if(!pDeal->IsPossibleToTradeItem(ePlayer, GetID(), TRADE_ITEM_RESOURCES, eResource, 1))
 				continue;
 
-			eLuxuryToAskFor = eResource;
-			break;
+			if (eFallbackLuxuryToAskFor == NO_RESOURCE)
+				eFallbackLuxuryToAskFor = eResource;
+
+			// Prefer requested luxuries that we want, but that don't make sense as paid trade offers.
+			int iRawValue = GetPlayer()->GetDealAI()->GetTradeItemValue(TRADE_ITEM_RESOURCES, /*bFromMe*/ false, ePlayer, eResource, 1, -1, false, iDuration, /*bIsAIOffer*/ true, /*bEqualize*/ false);
+			int iEqualizedValue = GetPlayer()->GetDealAI()->GetTradeItemValue(TRADE_ITEM_RESOURCES, /*bFromMe*/ false, ePlayer, eResource, 1, -1, false, iDuration, /*bIsAIOffer*/ true, /*bEqualize*/ true);
+			if (iRawValue != INT_MAX && iRawValue > iBestGiftLuxuryValue && iEqualizedValue <= 0)
+			{
+				eLuxuryToAskFor = eResource;
+				iBestGiftLuxuryValue = iRawValue;
+			}
 		}
 	}
+
+	if (eLuxuryToAskFor == NO_RESOURCE)
+		eLuxuryToAskFor = eFallbackLuxuryToAskFor;
 
 	// Didn't find something they could give us?
 	if(eLuxuryToAskFor == NO_RESOURCE)
@@ -32710,9 +32725,11 @@ bool CvDiplomacyAI::IsLuxuryRequest(PlayerTypes ePlayer, CvDeal* pDeal, int& iWe
 	// Add a little something extra since we're in dire straits
 	if(GetPlayer()->IsEmpireUnhappy())
 		iWeightBias += 5;
+	if (iBestGiftLuxuryValue > 0)
+		iWeightBias += 3;
 
 	// Now seed the deal
-	pDeal->AddResourceTrade(ePlayer, eLuxuryToAskFor, 1, GC.getGame().GetDealDuration());
+	pDeal->AddResourceTrade(ePlayer, eLuxuryToAskFor, 1, iDuration);
 
 	return true;
 }
