@@ -1466,6 +1466,9 @@ int CvDealAI::GetLuxuryResourceValue(ResourceTypes eResource, int iNumTurns, boo
 
 				int iEraScaler = max(1, static_cast<int>(GET_TEAM(GetTeam()).GetCurrentEra()));
 				iItemValue -= (iYieldBonusFromExport * OneGPT * iEraScaler);
+				// Export bonuses can make a player willing to sell cheaply, but an extra luxury has no holding cost.
+				// Don't let normal luxury valuation become a subsidy to the buyer.
+				iItemValue = max(0, iItemValue);
 			}
 		}
 		// We are buying!
@@ -6212,11 +6215,20 @@ bool CvDealAI::IsMakeOfferForLuxuryResource(PlayerTypes eOtherPlayer, CvDeal* pD
 			continue;
 
 		// Can we strike a deal with the other AI?
-		if (GetTradeItemValue(TRADE_ITEM_RESOURCES, false, eOtherPlayer, eResource, 1, -1, false, iDuration, /* bIsAIOffer*/ true, /*bEqualize*/ true) == INT_MAX)
+		int iEqualizedValue = GetTradeItemValue(TRADE_ITEM_RESOURCES, false, eOtherPlayer, eResource, 1, -1, false, iDuration, /* bIsAIOffer*/ true, /*bEqualize*/ true);
+		if (iEqualizedValue == INT_MAX)
 			continue;
 
 		// Let's try to get the resource that's most valuable to us (do not do bEqualize here)
 		int iItemValue = GetTradeItemValue(TRADE_ITEM_RESOURCES, false, eOtherPlayer, eResource, 1, -1, false, iDuration, /* bIsAIOffer*/ true, /*bEqualize*/ false);
+
+		// If the fair trade value is non-positive, don't turn this into a paid offer.
+		// Friendly gift requests are handled by CvDiplomacyAI::IsLuxuryRequest().
+		if (iEqualizedValue <= 0)
+		{
+			continue;
+		}
+
 		if (iItemValue != INT_MAX && iItemValue > iBestValue)
 		{
 			eLuxuryFromThem = eResource;
