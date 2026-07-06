@@ -3286,10 +3286,6 @@ void CvDeal::AddGoldPerTurnTrade(PlayerTypes eFrom, int iAmount, int iDuration, 
 		item.m_bDoNotRemove = bDoNotRemove;
 		m_TradedItems.push_back(item);
 	}
-	else
-	{
-		ASSERT(false, "DEAL: Trying to add an invalid GPT amount to a deal");
-	}
 }
 
 /// Insert a map trade
