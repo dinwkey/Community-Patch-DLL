@@ -4763,11 +4763,17 @@ void CvDealAI::DoAddGPTToThem(CvDeal* pDeal, PlayerTypes eThem, int& iTotalValue
 			{
 				int iNumGPT = GetGPTForForValueExchange(iValueNeeded, /*bNumGPTFromValue*/ true, iDealDuration, /*bFromMe*/ false, eThem);
 
-				if (iNumGPT < 0)
+				if (iNumGPT <= 0)
 					return;
 
 				iNumGPT += iNumGPTAlreadyInTrade;
 				iNumGPT = min(iNumGPT, iGoldRate);
+
+				if (iNumGPT <= 0)
+					return;
+
+				if (!pDeal->IsPossibleToTradeItem(eThem, eMyPlayer, TRADE_ITEM_GOLD_PER_TURN, iNumGPT, iDealDuration))
+					return;
 
 				if (iNumGPT != iNumGPTAlreadyInTrade && !pDeal->ChangeGoldPerTurnTrade(eThem, iNumGPT, iDealDuration))
 				{
@@ -4827,11 +4833,17 @@ void CvDealAI::DoAddGPTToUs(CvDeal* pDeal, PlayerTypes eThem, int& iTotalValue)
 			{
 				int iNumGPT = GetGPTForForValueExchange(iTotalValue, /*bNumGPTFromValue*/ true, iDealDuration, /*bFromMe*/ true, eThem);
 
-				if (iNumGPT < 0)
+				if (iNumGPT <= 0)
 					return;
 					
 				iNumGPT += iNumGPTAlreadyInTrade;
 				iNumGPT = min(iNumGPT, iGoldRate);
+
+				if (iNumGPT <= 0)
+					return;
+
+				if (!pDeal->IsPossibleToTradeItem(eMyPlayer, eThem, TRADE_ITEM_GOLD_PER_TURN, iNumGPT, iDealDuration))
+					return;
 
 				if(iNumGPT != iNumGPTAlreadyInTrade && !pDeal->ChangeGoldPerTurnTrade(eMyPlayer, iNumGPT, iDealDuration))
 				{
