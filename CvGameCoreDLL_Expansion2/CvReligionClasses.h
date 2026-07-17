@@ -241,6 +241,7 @@ public:
 
 	int GetAdjacentCityReligiousPressure(ReligionTypes eReligion, CvCity *pFromCity, CvCity *pToCity, int& iNumTradeRoutesInfluencing, bool bActualValue, 
 		bool bPretendTradeConnection, bool bConnectedWithTrade, int iRelativeDistancePercent);
+	int GetTradeRouteReligiousPressureDelta(ReligionTypes eReligion, CvCity* pFromCity, CvCity* pToCity, bool bConnectedWithTrade, int iRelativeDistancePercent);
 
 	// Great Prophet/Person information functions
 	int GetFaithGreatProphetNumber(int iNum) const;

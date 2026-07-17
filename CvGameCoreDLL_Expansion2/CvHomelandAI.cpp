@@ -294,30 +294,44 @@ void CvHomelandAI::Update(bool bUpdateImprovements)
 	}
 
 	if (m_pPlayer->isHuman(ISHUMAN_AI_UNITS))
+	{
 		FindAutomatedUnits();
+	}
 	else
+	{
 		RecruitUnits();
+	}
 
 	// If we've already done planning during this turn, don't do it again (e.g. if we just turned on automation for a worker).
 	if (bUpdateImprovements)
 	{
-		PlanImprovements();
-		PlanWorkerDistribution();
+		{
+			PlanImprovements();
+		}
+		{
+			PlanWorkerDistribution();
+		}
 	}
 
 	// Make sure we have a unit to handle
 	if(!m_CurrentTurnUnits.empty())
 	{
 		// Put together lists of places we may want to move toward
-		FindHomelandTargets();
+		{
+			FindHomelandTargets();
+		}
 
 		// Loop through each move assigning units when available
-		AssignHomelandMoves();
+		{
+			AssignHomelandMoves();
+		}
 	}
 	else
 	{
 		// Make sure non-automated human workers still know what to do
-		ExecuteWorkerMoves();
+		{
+			ExecuteWorkerMoves();
+		}
 	}
 
 	m_bNeedsUpdate = false;
@@ -863,62 +877,132 @@ void CvHomelandAI::FindHomelandTargets()
 void CvHomelandAI::AssignHomelandMoves()
 {
 	//get this out of the way, do not flee
-	PlotFirstTurnSettlerMoves();
+	{
+		PlotFirstTurnSettlerMoves();
+	}
 
 	//most of these functions are very specific, so their order is not so important ...
 	//CS Quest Gift
-	ExecuteUnitGift();
+	{
+		ExecuteUnitGift();
+	}
 
 	//civilian and military
-	PlotHealMoves(true);
+	{
+		PlotHealMoves(true);
+	}
 
-	PlotOpportunisticSettlementMoves();
-	PlotExplorerMoves();
+	{
+		PlotOpportunisticSettlementMoves();
+	}
+	{
+		PlotExplorerMoves();
+	}
 
 	//military
-	PlotAircraftRebase();
+	{
+		PlotAircraftRebase();
+	}
 
 	//civilians
-	PlotWriterMoves();
-	PlotArtistMoves();
-	PlotMusicianMoves();
-	PlotScientistMoves();
-	PlotEngineerMoves();
-	PlotMerchantMoves();
-	PlotGeneralMoves();
-	PlotAdmiralMoves();
-	PlotProphetMoves();
-	PlotWorkerMoves();
-	PlotMissionaryMoves();
-	PlotInquisitorMoves();
+	{
+		PlotWriterMoves();
+	}
+	{
+		PlotArtistMoves();
+	}
+	{
+		PlotMusicianMoves();
+	}
+	{
+		PlotScientistMoves();
+	}
+	{
+		PlotEngineerMoves();
+	}
+	{
+		PlotMerchantMoves();
+	}
+	{
+		PlotGeneralMoves();
+	}
+	{
+		PlotAdmiralMoves();
+	}
+	{
+		PlotProphetMoves();
+	}
+	{
+		PlotWorkerMoves();
+	}
+	{
+		PlotMissionaryMoves();
+	}
+	{
+		PlotInquisitorMoves();
+	}
 
 	// Flee if in danger
-	PlotMovesToSafety();
+	{
+		PlotMovesToSafety();
+	}
 
 	// Workers can now add sentry targets (themselves), so do post-processing here
-	EliminateAdjacentSentryPoints();
-	EliminateAdjacentNavalSentryPoints();
+	{
+		EliminateAdjacentSentryPoints();
+	}
+	{
+		EliminateAdjacentNavalSentryPoints();
+	}
 
 	//military again
-	PlotUpgradeMoves();
-	PlotOpportunityAttacks();
-	PlotGarrisonMoves();
-	PlotHealMoves(false);
-	PlotSentryMoves();
-	PlotSentryNavalMoves();
-	PlotPatrolMoves();
+	{
+		PlotUpgradeMoves();
+	}
+	{
+		PlotOpportunityAttacks();
+	}
+	{
+		PlotGarrisonMoves();
+	}
+	{
+		PlotHealMoves(false);
+	}
+	{
+		PlotSentryMoves();
+	}
+	{
+		PlotSentryNavalMoves();
+	}
+	{
+		PlotPatrolMoves();
+	}
 
 	//this is for embassies - diplomatic missions are handled via AI operation
-	PlotDiplomatMoves();
-	PlotMessengerMoves();
+	{
+		PlotDiplomatMoves();
+	}
+	{
+		PlotMessengerMoves();
+	}
 
-	PlotSSPartMoves();
+	{
+		PlotSSPartMoves();
+	}
 
-	PlotTreasureMoves();
-	PlotTradeUnitMoves();
-	PlotArchaeologistMoves();
+	{
+		PlotTreasureMoves();
+	}
+	{
+		PlotTradeUnitMoves();
+	}
+	{
+		PlotArchaeologistMoves();
+	}
 
-	ReviewUnassignedUnits();
+	{
+		ReviewUnassignedUnits();
+	}
 }
 
 /// Get units with explore AI and plan their moves
