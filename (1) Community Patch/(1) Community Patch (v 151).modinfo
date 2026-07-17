@@ -453,10 +453,10 @@
     <File md5="046884A5BD06F3345F3D0CAA314D676F" import="1">Core Files/Overrides/DiploCurrentDeals.xml</File>
     <File md5="7CFCE3F0603744E8C1CB52619E8BA3AC" import="1">Core Files/Overrides/DiploGlobalRelationships.lua</File>
     <File md5="30184A5EA67A61EEA1E0ED661B0DFCDF" import="1">Core Files/Overrides/DiploTrade.xml</File>
-    <File md5="B6548BC0A0910B210BC181F1A960E392" import="1">Core Files/Overrides/DiscussionDialog.lua</File>
-    <File md5="D708ADD4055DD571EDBDC2588DF0DC0E" import="1">Core Files/Overrides/DiscussionDialog.xml</File>
+    <File md5="7D05E2BF7083600DB4E7C59151D32B6D" import="1">Core Files/Overrides/DiscussionDialog.lua</File>
+    <File md5="3E08D96C0469941EBEFD18B6AF76E619" import="1">Core Files/Overrides/DiscussionDialog.xml</File>
     <File md5="84BFB770105BC337EDA75283091F39C5" import="1">Core Files/Overrides/EconomicGeneralInfo.lua</File>
-    <File md5="B4BA6BDBBF884DCBA10866F8CB25073C" import="1">Core Files/Overrides/EnemyUnitPanel.lua</File>
+    <File md5="243F43B0CEBC08C18D8989153F540E7D" import="1">Core Files/Overrides/EnemyUnitPanel.lua</File>
     <File md5="77C539014E863414A8F59B62E2CFB7BB" import="1">Core Files/Overrides/EnemyUnitPanel.xml</File>
     <File md5="F24584C3F7D166B5E799DDCEFEBBD6B5" import="1">Core Files/Overrides/EnemyUnitPanel_small.xml</File>
     <File md5="20D0863DB17ED978E5ED9E42664A3F8C" import="1">Core Files/Overrides/EspionageOverview.lua</File>
@@ -465,7 +465,7 @@
     <File md5="A0B9DBA07F98E3B8D050AAD5A247EFCB" import="1">Core Files/Overrides/HappinessInfo.lua</File>
     <File md5="3F0909308CAEA0B4F8CD7073E4DF6047" import="1">Core Files/Overrides/HappinessInfo.xml</File>
     <File md5="4835BCD74F2D08517B7002E4B6069624" import="1">Core Files/Overrides/Includes/FLuaVector.lua</File>
-    <File md5="EAA0C60F301E9E6A4E8472E1DB96C473" import="1">Core Files/Overrides/InGame.lua</File>
+    <File md5="1E5667252FEE014A64B6EB4069A7477A" import="1">Core Files/Overrides/InGame.lua</File>
     <File md5="7DF4AF6E9D5F16CD06D0CD576615869F" import="1">Core Files/Overrides/LeagueOverview.lua</File>
     <File md5="D1B2B6362725A779E49BAD0C8366DE6A" import="1">Core Files/Overrides/LeagueOverview.xml</File>
     <File md5="FCBA9A871A83657144E1A62F332C95A2" import="1">Core Files/Overrides/MiniMapPanel.lua</File>
@@ -494,7 +494,7 @@
     <File md5="F95F5B373DB01636427DAA7C40343462" import="1">Core Files/Overrides/TechPanel.xml</File>
     <File md5="1B08CA6F85DC650A6872FC71BD259FC7" import="1">Core Files/Overrides/WonderPopup.lua</File>
     <File md5="F5AB9BBAD63869CA12E11710D48CD064" import="1">Core Files/Overrides/WonderPopup.xml</File>
-    <File md5="C572C8883D6C7EBFE099569F6D5A5BE5" import="1">Core Files/Overrides/WorldView.lua</File>
+    <File md5="FD9235E0FF920DA386C3A659C10313CF" import="1">Core Files/Overrides/WorldView.lua</File>
     <File md5="B95F2F22A828EE429EB7D4EDCE9A28D2" import="1">Core Files/Overrides/WorldView.xml</File>
     <File md5="D7D86391D7546EC89D493DF4790A8743" import="1">Core Files/Overrides/YieldIconManager.lua</File>
     <File md5="8024171C92685B855E0AD88CEE1C8296" import="1">Core Files/Overrides/YieldIconManager.xml</File>
@@ -542,7 +542,7 @@
     <File md5="ADA827DBA636B941D883FE233EDDA91B" import="0">Database Changes/AI/CoreLeaderPersonalityChanges.sql</File>
     <File md5="D90E9A6E3F9369E5957A6961E0E577C7" import="0">Database Changes/AI/CoreNewCitySpecializations.xml</File>
     <File md5="C9BA87CCD20929E1F36744B884339961" import="0">Database Changes/AI/CoreNewDiplomacyResponses.sql</File>
-    <File md5="E1FFFF6B6CEE747227AF25C4AC5ACAF7" import="0">Database Changes/AI/CoreNewDiplomacyResponses.xml</File>
+    <File md5="B26ADFE77C9FE64DBF952F79B1C1A26E" import="0">Database Changes/AI/CoreNewDiplomacyResponses.xml</File>
     <File md5="9C92503FEA5317718CFE36553E478098" import="0">Database Changes/AI/CoreNewStrategies.xml</File>
     <File md5="3B14EEF8B19DBEB2F04B8E32FBAFF0E6" import="0">Database Changes/AI/CoreStrategyChanges.sql</File>
     <File md5="620B84C6CA1B160FEC6F80BE2BDAA32C" import="0">Database Changes/AI/FlavorChanges.sql</File>
@@ -615,7 +615,7 @@
     <File md5="1DF8C30E1317455CEEB7FDAE1A26A9D7" import="0">Database Changes/Text/en_US/CoreNewGameOptionText.xml</File>
     <File md5="9B07290761EF50F6B18D3B3C163D3F07" import="0">Database Changes/Text/en_US/CoreNewReplayDataSetText.xml</File>
     <File md5="0FE6B115634BF464D3764753F238BEC9" import="0">Database Changes/Text/en_US/AI/CoreDiplomacyResponseTextChanges.sql</File>
-    <File md5="99F66B9034653D8BD69A28E8D4A760CC" import="0">Database Changes/Text/en_US/AI/CoreNewDiplomacyResponseText.xml</File>
+    <File md5="9A478F881243B3AEC18152E3AC9E4337" import="0">Database Changes/Text/en_US/AI/CoreNewDiplomacyResponseText.xml</File>
     <File md5="65C451A9D80617FA678FADA4BE928EC7" import="0">Database Changes/Text/en_US/AI/CoreStrategyTextChanges.sql</File>
     <File md5="DD8821CF2B946AE0AD9ED4AE498053AA" import="0">Database Changes/Text/en_US/City/CoreBuildingTextChanges.sql</File>
     <File md5="FB01A599C375DCF4223845744DB321FA" import="0">Database Changes/Text/en_US/City/CoreNewGreatWorkText.xml</File>

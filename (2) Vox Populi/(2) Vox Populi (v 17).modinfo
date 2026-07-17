@@ -1088,8 +1088,8 @@
     <File md5="9BB3DE9762718BC2911493B265DEF24B" import="1">Core Files/Overrides/DiploGlobalRelationships.lua</File>
     <File md5="96E1610DF1E21361B521C0F9C3DB0EA0" import="1">Core Files/Overrides/DiploGlobalRelationships.xml</File>
     <File md5="E39E93CD1F55DCB32C7829AE87F45EA4" import="1">Core Files/Overrides/DiploRelationships.lua</File>
-    <File md5="D773117CAB28D8ECCFED0DA6567132D7" import="1">Core Files/Overrides/DiscussionDialog.lua</File>
-    <File md5="D708ADD4055DD571EDBDC2588DF0DC0E" import="1">Core Files/Overrides/DiscussionDialog.xml</File>
+    <File md5="88ED3F79D6A5ABFDA785165EF309618A" import="1">Core Files/Overrides/DiscussionDialog.lua</File>
+    <File md5="3E08D96C0469941EBEFD18B6AF76E619" import="1">Core Files/Overrides/DiscussionDialog.xml</File>
     <File md5="D83B6F1C668EDCECDC098619036928B8" import="1">Core Files/Overrides/EconomicGeneralInfo.lua</File>
     <File md5="3A73B221D228BD6508038FCA62239692" import="1">Core Files/Overrides/EconomicGeneralInfo.xml</File>
     <File md5="16B07AAA25EB4AA80C4FAEAD0AC32D02" import="1">Core Files/Overrides/EconomicOverview.lua</File>
@@ -1119,7 +1119,7 @@
     <File md5="FCFC1D78C16242F2FACFDE27FF45976A" import="1">Core Files/Overrides/VictoryProgress.lua</File>
     <File md5="1789009F209A70B6EBE6CB940152CCF4" import="1">Core Files/Overrides/VictoryProgress.xml</File>
     <File md5="BC174D7E8CBD73F3B962BC1409BD0A67" import="1">Core Files/Overrides/WhosWinningPopup.lua</File>
-    <File md5="7BE13F5850CCAE290717C9717AA8C0D2" import="1">Core Files/Overrides/WorldView.lua</File>
+    <File md5="75266E6D5578B8A7BA7DA4A08878A6C0" import="1">Core Files/Overrides/WorldView.lua</File>
     <File md5="CF4B84581BC67E37768641715D43499B" import="0">Database Changes/CustomModOptionChanges.sql</File>
     <File md5="DDE5DBD184A7031F4CAEF269C2E7C89C" import="0">Database Changes/DefineChanges.sql</File>
     <File md5="A322479D143AD2C3204DA3103B7AEB72" import="0">Database Changes/GameOptionChanges.sql</File>
@@ -1299,7 +1299,7 @@
     <File md5="0F7FA7A5B4A7208E6D443ADB8E3C1D5D" import="0">Database Changes/Text/en_US/UnitPromotions/PromotionTextChanges.sql</File>
     <File md5="DDA7CA65AFBAC78647BE27D28C01203E" import="0">Database Changes/Text/en_US/Units/PreUnitTextChanges.sql</File>
     <File md5="615A8F84B28E30BEEF1C9624EE9BC68B" import="0">Database Changes/Text/en_US/Units/MissionTextChanges.sql</File>
-    <File md5="A6725FFB3A17460C433585F4F8E41AB4" import="0">Database Changes/Text/en_US/Units/MoroccoUAFixes.sql</File>
+    <File md5="349A66941B58780D0A9C5C7A6DE36B3D" import="0">Database Changes/Text/en_US/Units/MoroccoUAFixes.sql</File>
     <File md5="E44B069F8ED6698D11B89240DCAC6F38" import="0">Database Changes/Text/en_US/Units/NewMissionText.xml</File>
     <File md5="D2EFE53DFE4412953E6A1B9F8C72DFD6" import="0">Database Changes/Text/en_US/Units/NewUnitText.xml</File>
     <File md5="7F6897296013D2AEFC1246A55590B077" import="0">Database Changes/Text/en_US/Units/UnitTextChanges.sql</File>

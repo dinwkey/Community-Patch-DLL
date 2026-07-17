@@ -30,7 +30,7 @@
     <File md5="9AE69E7FD299CA9C0CD4E574C5D2DE3B" import="1">EUI/DC45_UnitPromotions.dds</File>
     <File md5="CD9F2334872FB51C97AD44078F851621" import="1">EUI/DC45_VassalOverview.dds</File>
     <File md5="8338C80D226B371AC67ADF6072052753" import="0">EUI/EUI_text_en_us.xml</File>
-    <File md5="380CF56EF401BF6AD030C2CD698C822F" import="0">EUI/NeededText.xml</File>
+    <File md5="20E1C33197A7496273BC91EED80145A9" import="0">EUI/NeededText.xml</File>
     <File md5="4827BF80196628DB2A18C2014A5EB9A7" import="1">LUA/CityBannerManager.lua</File>
     <File md5="BE222471702C77558501A74F37B5E2D4" import="1">LUA/CityBannerManager.xml</File>
     <File md5="CCE2D0B1EF5E2DB537DEC7B8C1B896DA" import="1">LUA/CityStateDiploPopup.lua</File>
@@ -54,18 +54,18 @@
     <File md5="52E682B47359A59132BFD2A853CADD5B" import="1">LUA/MonopoliesInfo.xml</File>
     <File md5="C552A7F377FFFC9D57D04DD383B59878" import="1">LUA/NotificationPanel.lua</File>
     <File md5="55E88523B0E22CF8E425321957273D6D" import="1">LUA/NotificationPanel.xml</File>
-    <File md5="E19F256307ABF391EC3854A665A31886" import="1">LUA/PlotHelpManager.lua</File>
+    <File md5="9E91BC9A4B192AC4BF9ACC45B02E73E3" import="1">LUA/PlotHelpManager.lua</File>
     <File md5="0E9108AF8925A518134DDE3A230777AE" import="1">LUA/PopulateUniques.lua</File>
     <File md5="58B15BE7BDE12D658FD48153616665A6" import="1">LUA/SocialPolicyPopup.lua</File>
     <File md5="832EDED992BD95DCFA1A062AD4FBD8A5" import="1">LUA/SocialPolicyPopup.xml</File>
     <File md5="0FB1B222735AD9E10ECF49A22882AF45" import="1">LUA/TradeLogic.lua</File>
     <File md5="23FFEF0619E89F87FED6F82ACBBDEB70" import="1">LUA/UnitFlagManager.lua</File>
     <File md5="C9640C05F6EDAA4ADF5E67E5D17FC01A" import="1">LUA/UnitFlagManager.xml</File>
-    <File md5="6FA1F79B6867CD0603AC411DC240F3C9" import="1">LUA/UnitPanel.lua</File>
+    <File md5="2E7071C75E6A8E0E1D4B1243F11E248F" import="1">LUA/UnitPanel.lua</File>
     <File md5="72BE225BBB8B757302AC7653198DA646" import="1">LUA/UnitPanel.xml</File>
     <File md5="BAEAE4CE4E8B8BEAA2267E1E89EB6D2E" import="1">LUA/UnitPanel_small.xml</File>
     <File md5="55909A9DD5774FA7137CAA99141A5D2B" import="0">ImprovedTopPanel/Text.xml</File>
-    <File md5="12DB9CB3DD4B27713B08C5808CEF332A" import="1">ImprovedTopPanel/TopPanel.lua</File>
+    <File md5="3C18C05C34D805C6621942A03B484F3C" import="1">ImprovedTopPanel/TopPanel.lua</File>
     <File md5="A832E556B1146BB64409DD813B700ECF" import="1">ImprovedTopPanel/TopPanel.xml</File>
     <File md5="89DFD821D1490765D53497CDD3DB3FC0" import="1">ImprovedTechTree/TechTree.lua</File>
     <File md5="C702A3B952BEA1E8D6F98BB0F178D789" import="1">ImprovedTechTree/TechTree.xml</File>
