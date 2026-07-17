@@ -6476,9 +6476,10 @@ void CvTradeAI::GetPrioritizedTradeRoutes(TradeConnectionList& aTradeConnectionL
 	bool bHaveTourism = (m_pPlayer->GetCulture()->GetTourism() / 100 > 0);
 
 	// GOLD GOLD GOLD GOLD
+	map<__int64, int> aReligionDeltaCache;
 	for (uint ui = 0; ui < aTradeConnectionList.size(); ui++)
 	{
-		TRSortElement kElement = ScoreInternationalTR(aTradeConnectionList[ui], bHaveTourism);
+		TRSortElement kElement = ScoreInternationalTR(aTradeConnectionList[ui], bHaveTourism, &aReligionDeltaCache);
 		if (kElement.m_iScore > 0)
 			aGoldSortedTR.push_back(kElement);
 	}
@@ -6784,7 +6785,7 @@ void CvTradeAI::GetAvailableTR(TradeConnectionList& aTradeConnectionList, bool b
 }
 
 /// Score International TR
-CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& kTradeConnection, bool bHaveTourism) const
+CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& kTradeConnection, bool bHaveTourism, map<__int64, int>* pReligionDeltaCache) const
 {
 	TRSortElement ret;
 	ret.m_kTradeConnection = kTradeConnection;
@@ -6805,6 +6806,12 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 
 	CvCity* pToCity = CvGameTrade::GetDestCity(kTradeConnection);
 	CvCity* pFromCity = CvGameTrade::GetOriginCity(kTradeConnection);
+
+	if (!pToCity || !pFromCity)
+		return ret;
+
+	CvGameTrade* pGameTrade = GC.getGame().GetGameTrade();
+	int iTurnsToComplete = -1;
 
 	// War near our origin city?
 	if (pFromCity->isUnderSiege())
@@ -6867,7 +6874,8 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	// instant gold when the trade route ends?
 	if (pFromCity->GetYieldFromInternationalTREnd(YIELD_GOLD) > 0)
 	{
-		int iTurnsToComplete = GC.getGame().GetGameTrade()->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
+		if (iTurnsToComplete < 0)
+			iTurnsToComplete = pGameTrade->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
 		ASSERT(iTurnsToComplete > 0);
 		iGoldAmount += pFromCity->GetYieldFromInternationalTREnd(YIELD_GOLD) / iTurnsToComplete;
 	}
@@ -7009,7 +7017,8 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	// instant science when the trade route ends?
 	if (pFromCity->GetYieldFromInternationalTREnd(YIELD_SCIENCE) > 0)
 	{
-		int iTurnsToComplete = GC.getGame().GetGameTrade()->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
+		if (iTurnsToComplete < 0)
+			iTurnsToComplete = pGameTrade->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
 		ASSERT(iTurnsToComplete > 0);
 		iAdjustedTechDifferenceP1fromP2 += pFromCity->GetYieldFromInternationalTREnd(YIELD_SCIENCE) / iTurnsToComplete;
 	}
@@ -7098,12 +7107,16 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	// instant culture when the trade route ends?
 	if (pFromCity->GetYieldFromInternationalTREnd(YIELD_CULTURE) > 0)
 	{
-		int iTurnsToComplete = GC.getGame().GetGameTrade()->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
+		if (iTurnsToComplete < 0)
+			iTurnsToComplete = pGameTrade->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
 		ASSERT(iTurnsToComplete > 0);
 		iAdjustedCultureDifferenceP1fromP2 += pFromCity->GetYieldFromInternationalTREnd(YIELD_CULTURE) / iTurnsToComplete;
 	}
 
-	int iCultureDifferenceP2fromP1 = GC.getGame().GetGameTrade()->GetPolicyDifference(kTradeConnection.m_eDestOwner, kTradeConnection.m_eOriginOwner);
+	int iCultureDifferenceP2fromP1 = 0;
+	{
+		iCultureDifferenceP2fromP1 = pGameTrade->GetPolicyDifference(kTradeConnection.m_eDestOwner, kTradeConnection.m_eOriginOwner);
+	}
 	int iAdjustedCultureDifferenceP2fromP1 = 0;
 	if (iCultureDifferenceP2fromP1 > 0)
 	{
@@ -7141,40 +7154,58 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	int iCultureDelta = iAdjustedCultureDifferenceP1fromP2 - iAdjustedCultureDifferenceP2fromP1;
 
 	// religion
-	ReligionTypes eOwnerStateReligion = m_pPlayer->GetReligions()->GetStateReligion();
 	int iReligionDelta = 0;
-	if (eOwnerStateReligion != NO_RELIGION)
+	bool bReligionCacheHit = false;
+	__int64 iReligionCacheKey = 0;
+	if (pReligionDeltaCache)
 	{
-		ReligionTypes eToReligion = NO_RELIGION;
-		int iToPressure = 0;
-		ReligionTypes eFromReligion = NO_RELIGION;
-		int iFromPressure = 0;
-		bool bAnyFromCityPressure = pFromCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pToCity, eToReligion, iToPressure);
-		bool bAnyToCityPressure = pToCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pFromCity, eFromReligion, iFromPressure);
-
-		// Internally pressure is now 10 times greater than what is shown to user
-		iToPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
-		iFromPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
-
-		// if anyone is exerting pressure
-		if (bAnyFromCityPressure || bAnyToCityPressure)
+		iReligionCacheKey = ((__int64)pFromCity->plot()->GetPlotIndex() << 32) | (unsigned int)pToCity->plot()->GetPlotIndex();
+		map<__int64, int>::const_iterator it = pReligionDeltaCache->find(iReligionCacheKey);
+		if (it != pReligionDeltaCache->end())
 		{
-			// "to" and "from" religions need to be different for us to care
+			iReligionDelta = it->second;
+			bReligionCacheHit = true;
+		}
+	}
+
+	if (!bReligionCacheHit)
+	{
+		ReligionTypes eOwnerStateReligion = m_pPlayer->GetReligions()->GetStateReligion();
+		if (eOwnerStateReligion != NO_RELIGION)
+		{
+			ReligionTypes eToReligion = pFromCity->GetCityReligions()->GetReligiousMajority();
+			ReligionTypes eFromReligion = pToCity->GetCityReligions()->GetReligiousMajority();
+			int iToPressure = 0;
+			int iFromPressure = 0;
 			if (eToReligion != eFromReligion)
 			{
-				int iExistingToPressureAtFrom = pFromCity->GetCityReligions()->GetPressureAccumulated(eFromReligion);
-				int iExistingGoodPressureAtTo = pToCity->GetCityReligions()->GetPressureAccumulated(eOwnerStateReligion);
-				if (eToReligion != eOwnerStateReligion)
-					iToPressure = 0;
-				if (eFromReligion == eOwnerStateReligion)
-					iFromPressure = 0;
-				double dExistingPressureModFrom = sqrt(log((double)max(1, iExistingToPressureAtFrom + iFromPressure) / (double)max(1, iExistingToPressureAtFrom)) / log(2.));
-				double dExistingPressureModTo = sqrt(log((double)max(1, iExistingGoodPressureAtTo + iToPressure) / (double)max(1, iExistingGoodPressureAtTo)) / log(2.));
+				bool bAnyFromCityPressure = pFromCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pToCity, eToReligion, iToPressure);
+				bool bAnyToCityPressure = pToCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pFromCity, eFromReligion, iFromPressure);
 
-				iReligionDelta += int(iToPressure * dExistingPressureModTo / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
-				iReligionDelta -= int(iFromPressure * dExistingPressureModFrom / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
+				// Internally pressure is now 10 times greater than what is shown to user
+				iToPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
+				iFromPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
+
+				// if anyone is exerting pressure
+				if (bAnyFromCityPressure || bAnyToCityPressure)
+				{
+					int iExistingToPressureAtFrom = pFromCity->GetCityReligions()->GetPressureAccumulated(eFromReligion);
+					int iExistingGoodPressureAtTo = pToCity->GetCityReligions()->GetPressureAccumulated(eOwnerStateReligion);
+					if (eToReligion != eOwnerStateReligion)
+						iToPressure = 0;
+					if (eFromReligion == eOwnerStateReligion)
+						iFromPressure = 0;
+					double dExistingPressureModFrom = sqrt(log((double)MAX(1, iExistingToPressureAtFrom + iFromPressure) / (double)MAX(1, iExistingToPressureAtFrom)) / log(2.));
+					double dExistingPressureModTo = sqrt(log((double)MAX(1, iExistingGoodPressureAtTo + iToPressure) / (double)MAX(1, iExistingGoodPressureAtTo)) / log(2.));
+
+					iReligionDelta += int(iToPressure * dExistingPressureModTo / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
+					iReligionDelta -= int(iFromPressure * dExistingPressureModFrom / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
+				}
 			}
 		}
+
+		if (pReligionDeltaCache)
+			(*pReligionDeltaCache)[iReligionCacheKey] = iReligionDelta;
 	}
 
 	__int64 iFlavorGold = m_pPlayer->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
@@ -7189,7 +7220,10 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	//add it all up
 	__int64 iScore = iGoldScore + iScienceScore + iCultureScore + iReligionScore;
 
-	const STradePathInfo* pPathInfo = GC.getGame().GetGameTrade()->GetCachedTradePathInfo(pFromCity, pToCity, kTradeConnection.m_eDomain);
+	const STradePathInfo* pPathInfo = NULL;
+	{
+		pPathInfo = pGameTrade->GetCachedTradePathInfo(pFromCity, pToCity, kTradeConnection.m_eDomain);
+	}
 	ASSERT(pPathInfo, "Trade route path valid, but no path found in cache");
 
 	iScore += pPathInfo ? pPathInfo->iScoreFromPassingTR : 0;
@@ -7221,7 +7255,8 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 			// instant yields when the trade route ends?
 			if (pFromCity->GetYieldFromInternationalTREnd(eYieldLoop) > 0)
 			{
-				int iTurnsToComplete = GC.getGame().GetGameTrade()->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
+				if (iTurnsToComplete < 0)
+					iTurnsToComplete = pGameTrade->GetTradeRouteTurns(pFromCity, pToCity, kTradeConnection.m_eDomain, NULL);
 				ASSERT(iTurnsToComplete > 0);
 				iScore += pFromCity->GetYieldFromInternationalTREnd(eYieldLoop) / iTurnsToComplete;
 			}
@@ -7243,146 +7278,150 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 	int iEra = max(1, (int)m_pPlayer->GetCurrentEra()); // More international trade late game, please.
 	iScore *= iEra;
 
-	//Let's encourage TRs to feitorias.
-	if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMinorCiv() && GET_PLAYER(kTradeConnection.m_eDestOwner).GetMinorCivAI()->IsSiphoned(m_pPlayer->GetID()))
 	{
-		iScore *= 10;
-	}
-
-	if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv())
-	{
-		// if we have any tourism and we're not connected to a player, multiply by 5 if going for Culture Victory
-		if (bHaveTourism && !GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
+		//Let's encourage TRs to feitorias.
+		if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMinorCiv() && GET_PLAYER(kTradeConnection.m_eDestOwner).GetMinorCivAI()->IsSiphoned(m_pPlayer->GetID()))
 		{
-			if (m_pPlayer->GetDiplomacyAI()->IsGoingForCultureVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToCultureVictory())
-			{
-				iScore *= 5;
-			}
-		}
-		// if Diplo AI has identified a major as a strategic trade partner, double the value of this route
-		if (bStrategicTradePartner)
-		{
-			iScore *= 2;
+			iScore *= 10;
 		}
 
-		// Grand Strategy: Science/Spaceship Victory - boost routes that give us science
-		if (m_pPlayer->GetDiplomacyAI()->IsGoingForSpaceshipVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToSpaceshipVictory())
+		const bool bConnectedToDestPlayer = pGameTrade->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner);
+		const bool bConnectedToDestPlayerByOrigin = pGameTrade->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner, true);
+
+		if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv())
 		{
-			// Boost based on science score - we want tech from trade routes
-			if (iScienceScore > 0)
+			// if we have any tourism and we're not connected to a player, multiply by 5 if going for Culture Victory
+			if (bHaveTourism && !bConnectedToDestPlayer)
 			{
-				iScore += iScienceScore * 2; // Extra emphasis on science-yielding routes
+				if (m_pPlayer->GetDiplomacyAI()->IsGoingForCultureVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToCultureVictory())
+				{
+					iScore *= 5;
+				}
 			}
-			// Penalize routes that give the other player more science than us (they might be competing)
-			if (iTechDelta < 0)
+			// if Diplo AI has identified a major as a strategic trade partner, double the value of this route
+			if (bStrategicTradePartner)
 			{
-				iScore /= 2;
+				iScore *= 2;
+			}
+
+			// Grand Strategy: Science/Spaceship Victory - boost routes that give us science
+			if (m_pPlayer->GetDiplomacyAI()->IsGoingForSpaceshipVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToSpaceshipVictory())
+			{
+				// Boost based on science score - we want tech from trade routes
+				if (iScienceScore > 0)
+				{
+					iScore += iScienceScore * 2; // Extra emphasis on science-yielding routes
+				}
+				// Penalize routes that give the other player more science than us (they might be competing)
+				if (iTechDelta < 0)
+				{
+					iScore /= 2;
+				}
+			}
+
+			// Grand Strategy: Domination Victory - prioritize gold for military, avoid helping rivals
+			if (m_pPlayer->GetDiplomacyAI()->IsGoingForWorldConquest() || m_pPlayer->GetDiplomacyAI()->IsCloseToWorldConquest())
+			{
+				// Boost gold routes - we need money for our military
+				if (iGoldScore > 0)
+				{
+					iScore += iGoldScore;
+				}
+				// Strongly penalize routes that benefit potential rivals significantly
+				if (!bFriendOrAlly && !bStrategicTradePartner && iOtherGoldAmount > iGoldAmount)
+				{
+					iScore /= 3;
+				}
 			}
 		}
 
-		// Grand Strategy: Domination Victory - prioritize gold for military, avoid helping rivals
-		if (m_pPlayer->GetDiplomacyAI()->IsGoingForWorldConquest() || m_pPlayer->GetDiplomacyAI()->IsCloseToWorldConquest())
+		//If we aren't connected to a player, and we benefit from this, ramp up the score!
+		if (!bConnectedToDestPlayer)
 		{
-			// Boost gold routes - we need money for our military
-			if (iGoldScore > 0)
+			for (int iYieldLoop = 0; iYieldLoop < NUM_YIELD_TYPES; iYieldLoop++)
 			{
-				iScore += iGoldScore;
-			}
-			// Strongly penalize routes that benefit potential rivals significantly
-			if (!bFriendOrAlly && !bStrategicTradePartner && iOtherGoldAmount > iGoldAmount)
-			{
-				iScore /= 3;
+				if(m_pPlayer->GetPlayerTraits()->GetYieldChangePerTradePartner((YieldTypes)iYieldLoop) > 0)
+				{
+					iScore *= 10;
+					break;
+				}
 			}
 		}
-	}
-
-	//If we aren't connected to a player, and we benefit from this, ramp up the score!
-	if (!GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
-	{
-		for (int iYieldLoop = 0; iYieldLoop < NUM_YIELD_TYPES; iYieldLoop++)
+		if (m_pPlayer->GetPlayerTraits()->IsNoOpenTrade() && GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv())
 		{
-			if(m_pPlayer->GetPlayerTraits()->GetYieldChangePerTradePartner((YieldTypes)iYieldLoop) > 0)
+			if (GET_PLAYER(kTradeConnection.m_eDestOwner).GetDiplomacyAI()->IsCloseToCultureVictory())
 			{
-				iScore *= 10;
-				break;
-			}
-		}
-	}
-	if (m_pPlayer->GetPlayerTraits()->IsNoOpenTrade() && GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv())
-	{
-		if (GET_PLAYER(kTradeConnection.m_eDestOwner).GetDiplomacyAI()->IsCloseToCultureVictory())
-		{
-			iScore /= 10;
-		}
-		else
-		{
-			if (m_pPlayer->GetTrade()->GetNumDifferentMajorCivTradingPartners() <= 0)
-			{
-				iScore *= 10;
+				iScore /= 10;
 			}
 			else
 			{
-				if (GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner, true))
+				if (m_pPlayer->GetTrade()->GetNumDifferentMajorCivTradingPartners() <= 0)
 				{
 					iScore *= 10;
 				}
 				else
 				{
-					iScore /= 10;
+					if (bConnectedToDestPlayerByOrigin)
+					{
+						iScore *= 10;
+					}
+					else
+					{
+						iScore /= 10;
+					}
 				}
 			}
 		}
-	}
-	if(GET_PLAYER(kTradeConnection.m_eDestOwner).isMinorCiv())
-	{
-		if (!GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
-		// Grand Strategy: Diplomatic Victory - strongly boost trade routes to city-states
-		if (m_pPlayer->GetDiplomacyAI()->IsGoingForDiploVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToDiploVictory())
+		if(GET_PLAYER(kTradeConnection.m_eDestOwner).isMinorCiv())
 		{
-			CvMinorCivAI* pMinorCivAI = GET_PLAYER(kTradeConnection.m_eDestOwner).GetMinorCivAI();
-
-			// Big bonus for city-states we're not yet allied with (need more influence)
-			if (!pMinorCivAI->IsAllies(m_pPlayer->GetID()))
+			if (!bConnectedToDestPlayer)
+			// Grand Strategy: Diplomatic Victory - strongly boost trade routes to city-states
+			if (m_pPlayer->GetDiplomacyAI()->IsGoingForDiploVictory() || m_pPlayer->GetDiplomacyAI()->IsCloseToDiploVictory())
 			{
-				// Even bigger bonus if we're friends but not allies - close to securing their vote
-				if (pMinorCivAI->IsFriends(m_pPlayer->GetID()))
+				CvMinorCivAI* pMinorCivAI = GET_PLAYER(kTradeConnection.m_eDestOwner).GetMinorCivAI();
+
+				// Big bonus for city-states we're not yet allied with (need more influence)
+				if (!pMinorCivAI->IsAllies(m_pPlayer->GetID()))
 				{
-					iScore *= 4;
+					// Even bigger bonus if we're friends but not allies - close to securing their vote
+					if (pMinorCivAI->IsFriends(m_pPlayer->GetID()))
+					{
+						iScore *= 4;
+					}
+					else
+					{
+						iScore *= 3;
+					}
 				}
 				else
 				{
-					iScore *= 3;
+					// Still boost routes to allies to maintain influence
+					iScore *= 2;
 				}
-			}
-			else
-			{
-				// Still boost routes to allies to maintain influence
-				iScore *= 2;
-			}
 
-			// Extra bonus if this is a new connection (first trade route to this city-state)
-			if (!GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
-			{
-				iScore *= 2;
-			}
-		}
-
-		if (!GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
-		{
-			int iCityLoop = 0;
-			for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
-			{
-				if (pLoopCity->GetCityBuildings()->GetCityStateTradeRouteProductionModifier() > 0)
+				// Extra bonus if this is a new connection (first trade route to this city-state)
+				if (!bConnectedToDestPlayer)
 				{
-					iScore *= 25;
-					break;
+					iScore *= 2;
 				}
 			}
-		}
-		if(m_pPlayer->GetEventTourismCS() > 0)
-		{
-			iScore *= (m_pPlayer->GetEventTourismCS() + m_pPlayer->GetEventTourismCS());
-		}
+
+			if (!bConnectedToDestPlayer)
+			{
+				int iCityLoop = 0;
+				for (CvCity* pLoopCity = m_pPlayer->firstCity(&iCityLoop); pLoopCity != NULL; pLoopCity = m_pPlayer->nextCity(&iCityLoop))
+				{
+					if (pLoopCity->GetCityBuildings()->GetCityStateTradeRouteProductionModifier() > 0)
+					{
+						iScore *= 25;
+						break;
+					}
+				}
+			}
+			if(m_pPlayer->GetEventTourismCS() > 0)
+			{
+				iScore *= (m_pPlayer->GetEventTourismCS() + m_pPlayer->GetEventTourismCS());
+			}
 
 		int iTradeRouteMod = m_pPlayer->GetPlayerPolicies()->GetNumericModifier(POLICYMOD_PROTECTED_MINOR_INFLUENCE);
 		if (iTradeRouteMod > 0 && !GC.getGame().GetGameTrade()->IsPlayerConnectedToPlayer(m_pPlayer->GetID(), kTradeConnection.m_eDestOwner))
@@ -7476,15 +7515,28 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 		iScore *= 5;
 	}
 
+	// Avoid helping major civs who are close to winning (unless they're our friends)
+	if (GET_PLAYER(kTradeConnection.m_eDestOwner).isMajorCiv() && !bFriendOrAlly && !bStrategicTradePartner)
+	{
+		CvDiplomacyAI* pTheirDiploAI = GET_PLAYER(kTradeConnection.m_eDestOwner).GetDiplomacyAI();
+
+		// Heavily penalize routes to civs close to any victory
+		if (pTheirDiploAI->IsCloseToWorldConquest() || pTheirDiploAI->IsCloseToDiploVictory() ||
+			pTheirDiploAI->IsCloseToSpaceshipVictory() || pTheirDiploAI->IsCloseToCultureVictory())
+		{
+			iScore /= 5;
+		}
+	}
+
 	// Account for danger along the path
 	int iDangerScore = pPathInfo ? pPathInfo->iDangerScore : 0;
 	iScore = ApplyTradeRouteModifier(iScore, iDangerScore, /*bDanger*/ true);
 
-	ret.m_iScore = (int)min(iScore, (long long)INT_MAX);
-	ret.m_iCultureScore = iCultureScore;
-	ret.m_iGoldScore = iGoldScore;
-	ret.m_iScienceScore = iScienceScore;
-	ret.m_iReligionScore = iReligionScore;
+	ret.m_iScore = (iScore > INT_MAX) ? INT_MAX : ((iScore < INT_MIN) ? INT_MIN : (int)iScore);
+	ret.m_iCultureScore = (iCultureScore > INT_MAX) ? INT_MAX : ((iCultureScore < INT_MIN) ? INT_MIN : (int)iCultureScore);
+	ret.m_iGoldScore = (iGoldScore > INT_MAX) ? INT_MAX : ((iGoldScore < INT_MIN) ? INT_MIN : (int)iGoldScore);
+	ret.m_iScienceScore = (iScienceScore > INT_MAX) ? INT_MAX : ((iScienceScore < INT_MIN) ? INT_MIN : (int)iScienceScore);
+	ret.m_iReligionScore = (iReligionScore > INT_MAX) ? INT_MAX : ((iReligionScore < INT_MIN) ? INT_MIN : (int)iReligionScore);
 	return ret;
 }
 
@@ -7596,22 +7648,21 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreGoldInternalTR(const TradeConnection& k
 	int iReligionDelta = 0;
 	if (eOwnerStateReligion != NO_RELIGION)
 	{
-		ReligionTypes eToReligion = NO_RELIGION;
+		ReligionTypes eToReligion = pFromCity->GetCityReligions()->GetReligiousMajority();
+		ReligionTypes eFromReligion = pToCity->GetCityReligions()->GetReligiousMajority();
 		int iToPressure = 0;
-		ReligionTypes eFromReligion = NO_RELIGION;
 		int iFromPressure = 0;
-		bool bAnyFromCityPressure = pFromCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pToCity, eToReligion, iToPressure);
-		bool bAnyToCityPressure = pToCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pFromCity, eFromReligion, iFromPressure);
-
-		// Internally pressure is now 10 times greater than what is shown to user
-		iToPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
-		iFromPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
-
-		// if anyone is exerting pressure
-		if (bAnyFromCityPressure || bAnyToCityPressure)
+		if (eToReligion != eFromReligion)
 		{
-			// "to" and "from" religions need to be different for us to care
-			if (eToReligion != eFromReligion)
+			bool bAnyFromCityPressure = pFromCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pToCity, eToReligion, iToPressure);
+			bool bAnyToCityPressure = pToCity->GetCityReligions()->WouldExertTradeRoutePressureToward(pFromCity, eFromReligion, iFromPressure);
+
+			// Internally pressure is now 10 times greater than what is shown to user
+			iToPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
+			iFromPressure /= /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER);
+
+			// if anyone is exerting pressure
+			if (bAnyFromCityPressure || bAnyToCityPressure)
 			{
 				int iExistingToPressureAtFrom = pFromCity->GetCityReligions()->GetPressureAccumulated(eFromReligion);
 				int iExistingGoodPressureAtTo = pToCity->GetCityReligions()->GetPressureAccumulated(eOwnerStateReligion);
@@ -7624,7 +7675,7 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreGoldInternalTR(const TradeConnection& k
 
 				iReligionDelta += int(iToPressure * dExistingPressureModTo / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
 				iReligionDelta -= int(iFromPressure * dExistingPressureModFrom / /*10*/ GD_INT_GET(RELIGION_MISSIONARY_PRESSURE_MULTIPLIER) + 0.5);
-		}
+			}
 		}
 	}
 
@@ -7857,7 +7908,6 @@ int CvTradeAI::ScoreInternalTR(const TradeConnection& kTradeConnection, const st
 		{
 			iScore += m_pPlayer->GetGoldInternalTrade() * 10;
 		}
-	}
 
 	iScore += pPathInfo ? pPathInfo->iScoreFromTerrain : 0;
 

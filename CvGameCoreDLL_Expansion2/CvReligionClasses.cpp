@@ -2953,6 +2953,149 @@ int CvGameReligions::GetAdjacentCityReligiousPressure(ReligionTypes eReligion, C
 	return max(0, iPressure / 100);
 }
 
+/// How much extra pressure would be added by a new trade route between these cities?
+int CvGameReligions::GetTradeRouteReligiousPressureDelta(ReligionTypes eReligion, CvCity* pFromCity, CvCity* pToCity, bool bConnectedWithTrade, int iRelativeDistancePercent)
+{
+	// Existing trade connections already use the trade-route pressure path, so a new route does not add pressure.
+	if (bConnectedWithTrade)
+	{
+		return 0;
+	}
+
+	//no pressure from pantheons
+	if (eReligion <= RELIGION_PANTHEON)
+	{
+		return 0;
+	}
+
+	const CvReligion* pReligion = GetReligion(eReligion, pFromCity->getOwner());
+	if (!pReligion)
+	{
+		return 0;
+	}
+
+	// Does this city have a majority religion?
+	ReligionTypes eMajorityReligion = pFromCity->GetCityReligions()->GetReligiousMajority();
+	if (eMajorityReligion != eReligion)
+	{
+		return 0;
+	}
+
+	int iBasePressure = GC.getGame().getGameSpeedInfo().getReligiousPressureAdjacentCity();
+	int iBasePressureMod = 0;
+	int iPressureMod = 0;
+
+	// India: +10% base pressure per follower
+	if (GET_PLAYER(pFromCity->getOwner()).GetPlayerTraits()->IsPopulationBoostReligion())
+	{
+		if (eReligion == GET_PLAYER(pFromCity->getOwner()).GetReligions()->GetStateReligion(true))
+		{
+			int iPopExtraPressure = pFromCity->GetCityReligions()->GetNumFollowers(eReligion);
+			iBasePressureMod += min(35, iPopExtraPressure) * 10;
+		}
+	}
+
+	// Global base pressure modifier from buildings
+	int iPlayerBasePressureMod = GET_PLAYER(pFromCity->getOwner()).GetBasePressureModifier();
+	if (iPlayerBasePressureMod != 0)
+	{
+		if (eReligion == GET_PLAYER(pFromCity->getOwner()).GetReligions()->GetStateReligion(true))
+		{
+			iBasePressureMod += iPlayerBasePressureMod;
+		}
+	}
+
+	if (iBasePressureMod != 0)
+	{
+		iBasePressure *= 100 + iBasePressureMod;
+		iBasePressure /= 100;
+	}
+
+	int iTradeReligionModifer = GET_PLAYER(pFromCity->getOwner()).GetPlayerTraits()->GetTradeReligionModifier();
+	iTradeReligionModifer += GET_PLAYER(pFromCity->getOwner()).GetTradeReligionModifier();
+	iTradeReligionModifer += pFromCity->GetReligiousTradeModifier();
+	iTradeReligionModifer += pReligion->m_Beliefs.GetPressureChangeTradeRoute(pFromCity->getOwner());
+
+	// If we are spreading to a friendly city state, increase the effectiveness if we have the right belief
+	if(IsCityStateFriendOfReligionFounder(eReligion, pToCity->getOwner()))
+	{
+		iPressureMod += pReligion->m_Beliefs.GetFriendlyCityStateSpreadModifier(pFromCity->getOwner());
+	}
+
+	// Have a belief that always strengthens spread?
+	int iStrengthMod = pReligion->m_Beliefs.GetSpreadStrengthModifier(pFromCity->getOwner());
+	if(iStrengthMod > 0)
+	{
+		TechTypes eDoublingTech = pReligion->m_Beliefs.GetSpreadModifierDoublingTech(pFromCity->getOwner());
+		if(eDoublingTech != NO_TECH)
+		{
+			CvPlayer& kPlayer = GET_PLAYER(pReligion->m_eFounder);
+			if(GET_TEAM(kPlayer.getTeam()).GetTeamTechs()->HasTech(eDoublingTech))
+			{
+				iStrengthMod *= 2;
+			}
+		}
+
+		iPressureMod += iStrengthMod;
+	}
+
+	int iPolicyMod = GET_PLAYER(pFromCity->getOwner()).GetPressureMod();
+	if (iPolicyMod != 0)
+	{
+		//If the faith being spread is our founded faith, or our adopted faith, we get the bonus.
+		if (eReligion == GET_PLAYER(pFromCity->getOwner()).GetReligions()->GetStateReligion(true))
+		{
+			iPressureMod += iPolicyMod;
+		}
+	}
+
+	// Strengthened spread from World Congress? (World Religion)
+	iPressureMod += GC.getGame().GetGameLeagues()->GetReligionSpreadStrengthModifier(pFromCity->getOwner(), eReligion);
+
+	// Building that boosts pressure from originating city?
+	iPressureMod += pFromCity->GetCityReligions()->GetReligiousPressureModifier(eReligion);
+
+	// Double pressure to vassals
+	if (GET_TEAM(GET_PLAYER(pToCity->getOwner()).getTeam()).IsVassal(GET_PLAYER(pFromCity->getOwner()).getTeam()))
+	{
+		iPressureMod += /*100*/ GD_INT_GET(VASSAL_PRESSURE_PERCENT);
+	}
+
+	// Modify iPressure based on city defenses, but only against hostile cities (ie any not the same player as this city)
+	PlayerTypes eFromPlayer = pFromCity->getOwner();
+	PlayerTypes eToPlayer = pToCity->getOwner();
+
+	if (eFromPlayer != eToPlayer)
+	{
+		CvPlayer& pToPlayer = GET_PLAYER(eToPlayer);
+		int iCityModifier = pToCity->GetConversionModifier() + pToPlayer.GetConversionModifier() + pToPlayer.GetPlayerPolicies()->GetNumericModifier(POLICYMOD_CONVERSION_MODIFIER);
+
+		if (MOD_BALANCE_QUEST_CHANGES && iCityModifier < 0 && pToPlayer.isMinorCiv())
+		{
+			if (pToPlayer.GetMinorCivAI()->IsActiveQuestForPlayer(eFromPlayer, MINOR_CIV_QUEST_SPREAD_RELIGION) && pToPlayer.GetMinorCivAI()->GetQuestData1(eFromPlayer, MINOR_CIV_QUEST_SPREAD_RELIGION) == eReligion)
+				iCityModifier = 0; // The City-State actively wants this religion
+		}
+
+		iPressureMod += iCityModifier;
+	}
+
+	int iWithTRPressure = iBasePressure * (100 + iPressureMod + iTradeReligionModifer);
+	int iWithTR = max(0, iWithTRPressure / 100);
+
+	int iNoTR = 0;
+	if (!MOD_BALANCE_PASSIVE_SPREAD_BY_CONNECTION || (pFromCity->getOwner() == pToCity->getOwner() && GET_PLAYER(pFromCity->getOwner()).IsCityConnectedToCity(pFromCity, pToCity)))
+	{
+		//if there is no traderoute, base pressure falls off with distance
+		int iPressurePercent = max(100 - iRelativeDistancePercent, 1);
+		//make the scaling quadratic - four times as many cities in range if we double the radius!
+		int iNoTRBasePressure = (iBasePressure * iPressurePercent * iPressurePercent) / (100 * 100);
+		int iNoTRPressure = iNoTRBasePressure * (100 + iPressureMod);
+		iNoTR = max(0, iNoTRPressure / 100);
+	}
+
+	return iWithTR - iNoTR;
+}
+
 /// How much does this prophet cost (recursive)
 int CvGameReligions::GetFaithGreatProphetNumber(int iNum) const
 {
@@ -4766,7 +4909,7 @@ bool CvCityReligions::WouldExertTradeRoutePressureToward (CvCity* pTargetCity, R
 	eReligion = GetReligiousMajority();
 
 	// if there isn't a religious connection, whatvz
-	if (eReligion == NO_RELIGION)
+	if (eReligion <= RELIGION_PANTHEON)
 	{
 		iAmount = 0;
 		return false;
@@ -4778,16 +4921,18 @@ bool CvCityReligions::WouldExertTradeRoutePressureToward (CvCity* pTargetCity, R
 		return false;
 	}
 	
-	int iNumTradeRoutes = 0;
-
 	bool bConnectedWithTrade = false;
 	int iRelativeDistancePercent = 0;
-	GC.getGame().GetGameReligions()->IsCityConnectedToCity(eReligion, m_pCity, pTargetCity, bConnectedWithTrade, iRelativeDistancePercent);
+	if (MOD_BALANCE_PASSIVE_SPREAD_BY_CONNECTION && m_pCity->getOwner() != pTargetCity->getOwner())
+	{
+		bConnectedWithTrade = GC.getGame().GetGameTrade()->CitiesHaveTradeConnection(m_pCity, pTargetCity);
+	}
+	else
+	{
+		GC.getGame().GetGameReligions()->IsCityConnectedToCity(eReligion, m_pCity, pTargetCity, bConnectedWithTrade, iRelativeDistancePercent);
+	}
 
-	int iWithTR = GC.getGame().GetGameReligions()->GetAdjacentCityReligiousPressure(eReligion, m_pCity, pTargetCity, iNumTradeRoutes, false, true, bConnectedWithTrade, iRelativeDistancePercent);
-	int iNoTR = GC.getGame().GetGameReligions()->GetAdjacentCityReligiousPressure(eReligion, m_pCity, pTargetCity, iNumTradeRoutes, false, false, bConnectedWithTrade, iRelativeDistancePercent);
-
-	iAmount = (iWithTR - iNoTR);
+	iAmount = GC.getGame().GetGameReligions()->GetTradeRouteReligiousPressureDelta(eReligion, m_pCity, pTargetCity, bConnectedWithTrade, iRelativeDistancePercent);
 	return iAmount>0;
 }
 

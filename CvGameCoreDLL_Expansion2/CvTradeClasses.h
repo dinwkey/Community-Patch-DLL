@@ -465,7 +465,7 @@ public:
 	void GetAvailableTR(TradeConnectionList& aTradeConnectionList, bool bSkipExisting, bool bHaveCaravans, bool bHaveCargoShips);
 
 	// generic methods
-	TRSortElement ScoreInternationalTR(const TradeConnection& kTradeConnection, bool bHaveTourism) const;
+	TRSortElement ScoreInternationalTR(const TradeConnection& kTradeConnection, bool bHaveTourism, map<__int64, int>* pReligionDeltaCache = NULL) const;
 	TRSortElement ScoreGoldInternalTR(const TradeConnection& kTradeConnection) const;
 	int ScoreInternalTR(const TradeConnection& kTradeConnection, const std::set<int>& siTargetCityIDs);
 
