@@ -7432,6 +7432,7 @@ CvTradeAI::TRSortElement CvTradeAI::ScoreInternationalTR(const TradeConnection& 
 			}
 		}
 	}
+	}
 	if (m_pPlayer->GetCorporations()->CanCreateFranchiseInCity(pFromCity, pToCity))
 	{
 		if (pkCorporationInfo != NULL)
@@ -7908,6 +7909,7 @@ int CvTradeAI::ScoreInternalTR(const TradeConnection& kTradeConnection, const st
 		{
 			iScore += m_pPlayer->GetGoldInternalTrade() * 10;
 		}
+	}
 
 	iScore += pPathInfo ? pPathInfo->iScoreFromTerrain : 0;
 

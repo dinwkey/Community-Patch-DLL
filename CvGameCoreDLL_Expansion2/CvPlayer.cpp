@@ -107,7 +107,7 @@ int CountBuildingResourcesForPlayer(const CvPlayer& kPlayer, ResourceTypes eReso
 		if (pLoopPlot->getResourceType() != eResource)
 			continue;
 
-		const CvCity* pOwningCity = pLoopPlot->getOwningCity();
+		CvCity* pOwningCity = pLoopPlot->getOwningCity();
 		if (!pOwningCity)
 			continue;
 
