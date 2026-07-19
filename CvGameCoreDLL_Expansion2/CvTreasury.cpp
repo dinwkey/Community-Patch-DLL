@@ -36,6 +36,7 @@ CvTreasury::CvTreasury():
 /// Destructor
 CvTreasury::~CvTreasury()
 {
+	Uninit();
 }
 
 /// Initialize
@@ -64,7 +65,8 @@ void CvTreasury::Init(CvPlayer* pPlayer)
 /// Deallocate memory created in initialize
 void CvTreasury::Uninit()
 {
-
+	std::vector<int>().swap(m_GoldBalanceForTurnTimes100);
+	std::vector<int>().swap(m_GoldChangeForTurnTimes100);
 }
 
 /// Update treasury for a turn
@@ -90,7 +92,7 @@ void CvTreasury::DoGold()
 	//but here we have to consider a negative gold rate, so fix it after the fact
 	if (iGoldChange < 0)
 	{
-		if (m_GoldChangeForTurnTimes100.size() < (size_t)GC.getGame().getGameTurn())
+		if (m_GoldChangeForTurnTimes100.size() <= (size_t)GC.getGame().getGameTurn())
 			m_GoldChangeForTurnTimes100.push_back(iGoldChange);
 		else
 			m_GoldChangeForTurnTimes100.back() += iGoldChange;
@@ -103,7 +105,7 @@ void CvTreasury::DoGold()
 		m_iLifetimeGrossGoldIncome += iGrossGoldChange;
 	}
 
-	if(m_GoldBalanceForTurnTimes100.size() < (unsigned int) GC.getGame().getGameTurn())
+	if(m_GoldBalanceForTurnTimes100.size() <= (unsigned int) GC.getGame().getGameTurn())
 	{
 		m_GoldBalanceForTurnTimes100.push_back(GetGoldTimes100());
 	}
@@ -184,7 +186,7 @@ void CvTreasury::ChangeGoldTimes100(int iChange)
 	//track the income for each turn (instant yields and regular)
 	if (iChange > 0)
 	{
-		if (m_GoldChangeForTurnTimes100.size() < (size_t)GC.getGame().getGameTurn())
+		if (m_GoldChangeForTurnTimes100.size() <= (size_t)GC.getGame().getGameTurn())
 			m_GoldChangeForTurnTimes100.push_back(iChange);
 		else
 			m_GoldChangeForTurnTimes100.back() += iChange;
