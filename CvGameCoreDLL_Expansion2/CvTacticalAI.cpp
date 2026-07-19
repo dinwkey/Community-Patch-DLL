@@ -1399,16 +1399,24 @@ static bool ShouldSkipLandUnitForCoastalCapture(const CvUnit* pUnit, const CvCit
 	return iCityHPPercent > 15;
 }
 
+static bool IsMajorDiplomacyPlayer(PlayerTypes ePlayer)
+{
+	return ePlayer >= 0 && ePlayer < MAX_MAJOR_CIVS;
+}
+
 static bool IsTrustedCoalitionPartner(const CvPlayer* pPlayer, PlayerTypes eOtherPlayer, PlayerTypes eTargetOwner)
 {
 	if (!pPlayer || eOtherPlayer == NO_PLAYER || eTargetOwner == NO_PLAYER)
+		return false;
+
+	if (!IsMajorDiplomacyPlayer(pPlayer->GetID()) || !IsMajorDiplomacyPlayer(eOtherPlayer))
 		return false;
 
 	CvDiplomacyAI* pDiploAI = pPlayer->GetDiplomacyAI();
 	if (!pDiploAI)
 		return false;
 
-	if (pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING)
+	if (IsMajorDiplomacyPlayer(eTargetOwner) && pDiploAI->GetCoopWarState(eOtherPlayer, eTargetOwner) >= COOP_WAR_STATE_PREPARING)
 		return true;
 
 	if (pDiploAI->IsFriendOrAlly(eOtherPlayer) || pDiploAI->IsDoFAccepted(eOtherPlayer))
