@@ -146,6 +146,10 @@ void CvAStar::DeInit()
 	{
 		for(int iI = 0; iI < m_iColumns; iI++)
 		{
+			for(int iJ = 0; iJ < m_iRows; iJ++)
+			{
+				m_ppaaNodes[iI][iJ].~CvAStarNode();
+			}
 			FFREEALIGNED(m_ppaaNodes[iI]);
 		}
 
