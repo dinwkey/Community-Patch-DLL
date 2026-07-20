@@ -815,6 +815,7 @@ void CvMap::uninit()
 	SAFE_DELETE_ARRAY(m_pRevealedImprovementType);
 	SAFE_DELETE_ARRAY(m_pRevealedRouteType);
 	SAFE_DELETE_ARRAY(m_pResourceForceReveal);
+	SAFE_DELETE_ARRAY(m_pHumanPlannedRouteState);
 
 	SAFE_DELETE_ARRAY(m_pIsImpassable);
 	SAFE_DELETE_ARRAY(m_pPlotNeighbors);
