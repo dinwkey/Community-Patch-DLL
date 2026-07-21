@@ -128,6 +128,7 @@ void CvLuaUnit::PushMethods(lua_State* L, int t)
 	Method(CanPillage);
 
 	Method(IsSelected);
+	Method(GetTacticalMove);
 
 	Method(CanFound);
 	Method(CanJoin);
@@ -1907,6 +1908,18 @@ int CvLuaUnit::lIsSelected(lua_State* L)
 
 	lua_pushboolean(L, bResult);
 	return 1;
+}
+
+//------------------------------------------------------------------------------
+// AITacticalMove getTacticalMove(int* pTurnSet);
+int CvLuaUnit::lGetTacticalMove(lua_State* L)
+{
+	CvUnit* pkUnit = GetInstance(L);
+	int iTurnSet = -1;
+	const AITacticalMove eMove = pkUnit->getTacticalMove(&iTurnSet);
+	lua_pushinteger(L, eMove);
+	lua_pushinteger(L, iTurnSet);
+	return 2;
 }
 //------------------------------------------------------------------------------
 //bool canFound(CyPlot* pPlot, bool bTestVisible = false);
