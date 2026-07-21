@@ -122,6 +122,7 @@ protected:
 	static int lCanPillage(lua_State* L);
 
 	static int lIsSelected(lua_State* L);
+	static int lGetTacticalMove(lua_State* L);
 
 	static int lCanFound(lua_State* L);
 
