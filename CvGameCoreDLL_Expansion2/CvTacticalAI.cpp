@@ -2416,6 +2416,7 @@ void CvTacticalAI::PlotGrabGoodyMoves()
 	//allow a fairly big range so we can clear islands as well unless we're at war and need the units otherwise
 	//note the barbarians are excluded from that check
 	int iRange = m_pPlayer->IsAtWarAnyMajor() ? 6 : 11;
+	int iCampRange = min(iRange, 6);
 
 	//ruins first
 	for (CvTacticalTarget* pTarget = GetFirstZoneTarget(AI_TACTICAL_TARGET_GOODY); pTarget!=NULL; pTarget = GetNextZoneTarget())
@@ -2446,7 +2447,7 @@ void CvTacticalAI::PlotGrabGoodyMoves()
 	for (CvTacticalTarget* pTarget = GetFirstZoneTarget(AI_TACTICAL_TARGET_BARBARIAN_CAMP); pTarget!=NULL; pTarget = GetNextZoneTarget())
 	{
 		CvPlot* pPlot = GC.getMap().plot(pTarget->GetTargetX(), pTarget->GetTargetY());
-		if (FindUnitsForHarassing(pPlot,iRange,-1,-1,DOMAIN_LAND,false,true,3))
+		if (FindUnitsForHarassing(pPlot,iCampRange,-1,-1,DOMAIN_LAND,false,true,3))
 		{
 			ExecuteBarbarianCampMove(pPlot);
 			if( GC.getLogging() && GC.getAILogging() )
