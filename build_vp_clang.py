@@ -291,21 +291,30 @@ class Task:
 
 class TaskMan:
     pending: Queue
-    def __init__(self):
+    def __init__(self, max_parallel: int):
         self.pending = Queue()
+        self.max_parallel = max_parallel
 
     def spawn(self, commands: typing.Union[str, list[str]], env: typing.Optional[dict[str, str]]=None, shell: bool=False, log:any =None):
-        task = Task(commands, env=env, shell=shell, log=log)
-        self.pending.put(task)
+        self.pending.put((commands, env, shell, log))
 
     def wait(self) -> list[TaskResult]:
         results: list[TaskResult] = []
-        while not self.pending.empty():
-            task = self.pending.get()
-            if result := task.poll():
-                results.append(result)
-            else:
-                self.pending.put(task)
+        active: list[Task] = []
+        while not self.pending.empty() or active:
+            while not self.pending.empty() and len(active) < self.max_parallel:
+                commands, env, shell, log = self.pending.get()
+                active.append(Task(commands, env=env, shell=shell, log=log))
+
+            completed = False
+            for task in active[:]:
+                if result := task.poll():
+                    results.append(result)
+                    active.remove(task)
+                    completed = True
+
+            if not completed:
+                time.sleep(0.01)
         return results
 
 def build_cl_config_args(config: Config) -> list[str]:
@@ -392,10 +401,10 @@ def build_pch(cl: str, cl_args: str, pch_path: Path, build_dir: Path, log: typin
     end_time = time.time()
     print(f'precompiled header build finished after {end_time - start_time} seconds')
 
-def build_cpps(cl: str, cl_args: str, pch_path: Path, build_dir: Path, log: typing.IO):
-    print('building cpps...')
+def build_cpps(cl: str, cl_args: str, pch_path: Path, build_dir: Path, log: typing.IO, jobs: int):
+    print(f'building cpps with {jobs} parallel jobs...')
     start_time = time.time()
-    build_tasks = TaskMan()
+    build_tasks = TaskMan(jobs)
     logs: dict[Path, typing.IO] = {}
     try:
         for cpp in CPP:
@@ -417,6 +426,10 @@ def build_cpps(cl: str, cl_args: str, pch_path: Path, build_dir: Path, log: typi
         for result in build_results:
             if result.returncode != 0:
                 failed += 1
+                exit_code = result.returncode & 0xFFFFFFFF
+                log.write(str.encode(f'==== compiler process failed: exit code {result.returncode} (0x{exit_code:08X}) ====\n'))
+                log.write(str.encode(f'{result.commands}\n'))
+        log.flush()
         if failed != 0:
             print(f'{failed} cpp(s) failed to build - see build log')
             sys.exit(1)
@@ -460,7 +473,10 @@ def link_dll(link: str, link_args: list[str], build_dir: Path, out_dir: Path, lo
 
 arg_parser = argparse.ArgumentParser(description='Build VP.')
 arg_parser.add_argument('--config', type=str, default='debug', choices=['release', 'debug'])
+arg_parser.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 1), help='maximum parallel C++ compiler processes')
 args = arg_parser.parse_args()
+if args.jobs < 1:
+    arg_parser.error('--jobs must be at least 1')
 config = Config.Release if args.config == 'release' else Config.Debug
 
 cl = 'clang-cl.exe'
@@ -477,7 +493,7 @@ try:
     update_commit_id(log)
     build_clang_cpp(cl, cl_args, build_dir, log)
     build_pch(cl, cl_args, pch_path, build_dir, log)
-    build_cpps(cl, cl_args, pch_path, build_dir, log)
+    build_cpps(cl, cl_args, pch_path, build_dir, log, args.jobs)
     link_dll(link, link_args, build_dir, out_dir, log)
 finally:
     log.close()
