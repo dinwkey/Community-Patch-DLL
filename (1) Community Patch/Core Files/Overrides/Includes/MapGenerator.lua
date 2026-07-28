@@ -12,6 +12,35 @@ include("AssignStartingPlots");
 -- Modpacks can insert files to this table to have them be included
 local g_uiAddins = {};
 
+-- Post-map-generation add-ins run after a map exists, regardless of whether
+-- it was procedurally generated or loaded from a WorldBuilder map. Keep this
+-- separate from PreMapGenScript: pre-generation overrides may depend on being
+-- loaded before GeneratePlotTypes(), while post-generation add-ins need the
+-- completed map state.
+local g_postMapGenAddins = {};
+local g_postMapGenAddinsLoaded = false;
+
+local function LoadPostMapGenAddins()
+	if g_postMapGenAddinsLoaded then
+		return;
+	end
+
+	g_postMapGenAddinsLoaded = true;
+
+	for entryPoint in Modding.GetActivatedModEntryPoints("PostMapGenScript") do
+		local file = string.match(entryPoint.File, "[^/]+$");
+		table.insert(g_postMapGenAddins, file);
+	end
+
+	local loadedFiles = {};
+	for _, file in ipairs(g_postMapGenAddins) do
+		if not loadedFiles[file] then
+			loadedFiles[file] = true;
+			include(file);
+		end
+	end
+end
+
 function GetCoreMapOptions()
 	--[[ All options have a default SortPriority of 0. Lower values will be shown above
 	higher values. Negative integers are valid. So the Core Map Options, which should 
@@ -632,6 +661,7 @@ function CanPlaceGoodyAt(improvement, plot)
 end
 
 function AddGoodies()
+	LoadPostMapGenAddins();
 
 	print("-------------------------------");
 	print("Map Generation - Adding Goodies");
@@ -797,3 +827,4 @@ function GenerateMap()
 end
 
 -- Modpacks will add "g_uiAddins[#g_uiAddins + 1] = fileName" lines below
+-- Post-map-generation add-ins may similarly be appended to g_postMapGenAddins.
