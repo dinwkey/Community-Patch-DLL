@@ -1300,7 +1300,7 @@
     <File md5="DDA7CA65AFBAC78647BE27D28C01203E" import="0">Database Changes/Text/en_US/Units/PreUnitTextChanges.sql</File>
     <File md5="AF719FC045F45D377CCB5C09EBC6AEED" import="0">Database Changes/Text/en_US/Units/MissionTextChanges.sql</File>
     <File md5="1833808BD4854A65C0D083DF8475BC54" import="0">Database Changes/Text/en_US/Units/NewMissionText.xml</File>
-    <File md5="A6725FFB3A17460C433585F4F8E41AB4" import="0">Database Changes/Text/en_US/Units/MoroccoUAFixes.sql</File>
+    <File md5="349A66941B58780D0A9C5C7A6DE36B3D" import="0">Database Changes/Text/en_US/Units/MoroccoUAFixes.sql</File>
     <File md5="D2EFE53DFE4412953E6A1B9F8C72DFD6" import="0">Database Changes/Text/en_US/Units/NewUnitText.xml</File>
     <File md5="7F6897296013D2AEFC1246A55590B077" import="0">Database Changes/Text/en_US/Units/UnitTextChanges.sql</File>
     <File md5="A257CBAE5C12FB43054F8FAAE36B384B" import="0">Database Changes/Text/en_US/WorldCongress/NewProjectText.xml</File>
