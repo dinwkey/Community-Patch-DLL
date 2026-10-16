@@ -13804,7 +13804,7 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	}
 
 	//give a bonus for potential fortifying/healing
-	if (unit.iMovesLeft == unit.iMaxMoves)
+	if (result->eAssignmentType == A_FINISH_TEMP && unit.iMovesLeft == unit.iMaxMoves)
 	{
 		if (pUnit->getDamage() + unit.iSelfDamage > 0 && !pUnit->IsCannotHeal(/*bConsiderResourceShortage*/ false) && !pUnit->isEmbarked())
 		{
@@ -13833,14 +13833,14 @@ STacticalAssignment* ScorePlotForCombatUnitMove(const SUnitStats& unit, const Cv
 	}
 	else if (evalMode == EM_FINAL)
 	{
-		if (unit.iMovesLeft != unit.iMaxMoves && pUnit->isAlwaysHeal())
+		if (result->eAssignmentType == A_FINISH_TEMP && unit.iMovesLeft != unit.iMaxMoves && pUnit->isAlwaysHeal())
 		{
 			int iHealRate = pUnit->ActualHealRate(pTestPlot, false);
 			if (iHealRate > pUnit->getDamage() + unit.iSelfDamage)
 				iHealRate = pUnit->getDamage() + unit.iSelfDamage;
 			iSelfDamage -= iHealRate;
 		}
-		else if (unit.iMovesLeft != unit.iMaxMoves && pUnit->GetFlatHealRate() > 0 && !pUnit->IsCannotHeal(true) && pUnit->getDomainType() == pTestPlot->getDomain())
+		else if (result->eAssignmentType == A_FINISH_TEMP && unit.iMovesLeft != unit.iMaxMoves && pUnit->GetFlatHealRate() > 0 && !pUnit->IsCannotHeal(true) && pUnit->getDomainType() == pTestPlot->getDomain())
 		{
 			int iHealRate = pUnit->GetFlatHealRate();
 			if (iHealRate > pUnit->getDamage() + unit.iSelfDamage)
